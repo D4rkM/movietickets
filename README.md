@@ -25,3 +25,32 @@ pnpm test:e2e
 ```
 
 Regra do projeto: toda feature nova precisa de teste unitário e, quando cruzar camadas (API+banco, API+cache), teste de integração também — ver `CLAUDE.md`.
+
+## Contribuindo
+
+Pré-requisitos além do Node/pnpm/Docker:
+
+- **[gitleaks](https://github.com/gitleaks/gitleaks)** — CLI externo, não é dependência npm. Necessário pro hook de pre-commit (escaneia segredos em commits que tocam `apps/web` ou `apps/api`). Sem ele instalado, commits nesses paths falham com erro pedindo pra instalar.
+
+  Instalação:
+  ```bash
+  # macOS (Homebrew)
+  brew install gitleaks
+
+  # Linux (via go)
+  go install github.com/gitleaks/gitleaks/v8@latest
+
+  # Windows (via scoop)
+  scoop install gitleaks
+  ```
+  Outras opções (binário direto, Docker) na [documentação oficial](https://github.com/gitleaks/gitleaks#installing).
+
+Depois de clonar:
+
+```bash
+pnpm install   # instala deps e ativa os git hooks (husky) via script "prepare"
+```
+
+Hooks configurados (`.husky/`):
+- **pre-commit**: `gitleaks protect --staged` — só roda se o commit tocar `apps/web/**` ou `apps/api/**`
+- **commit-msg**: `commitlint` — exige [Conventional Commits](https://www.conventionalcommits.org/), título até 73 caracteres
