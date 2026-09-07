@@ -11,6 +11,17 @@ Toda feature nova precisa vir com teste unitário. Se envolver fluxo entre camad
 - Front (`apps/web`): Vitest + React Testing Library.
 - Back (`apps/api`): Jest (padrão NestJS), testes de integração batendo em Postgres/Valkey reais (docker-compose ou testcontainers).
 
+## Regra permanente: branch + PR
+
+Nunca commitar direto em `main`. Todo ajuste (feature, fix, chore, docs) segue este fluxo:
+
+1. Criar branch nova a partir de `main` atualizada: `git checkout main && git pull && git checkout -b <tipo>/<descrição-curta>` — mesmo prefixo do Conventional Commits (`feat/`, `fix/`, `chore/`, `docs/`, `refactor/`, `test/`), descrição curta em kebab-case (ex: `feat/seat-map-endpoint`).
+2. Commitar o trabalho na branch (respeitando os hooks de pre-commit/commit-msg).
+3. Push da branch e abrir PR no GitHub via `gh pr create`, com título e corpo descrevendo a mudança.
+4. Nunca dar merge automático — o PR fica aberto pra revisão humana.
+
+Sem exceção mesmo pra mudanças pequenas (docs, config) — mantém `main` sempre passível de review antes de entrar.
+
 ## Arquitetura
 
 - Sem event sourcing completo. CQRS "light": commands/queries separados por módulo Nest, sem event store.
