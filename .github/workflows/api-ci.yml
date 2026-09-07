@@ -1,0 +1,54 @@
+name: api-ci
+
+on:
+  push:
+    paths:
+      - "apps/api/**"
+      - "pnpm-workspace.yaml"
+      - "package.json"
+  pull_request:
+    paths:
+      - "apps/api/**"
+      - "pnpm-workspace.yaml"
+      - "package.json"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: movietickets
+          POSTGRES_PASSWORD: movietickets
+          POSTGRES_DB: movietickets
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U movietickets"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter api lint
+      - run: pnpm --filter api test
+      - run: pnpm --filter api test:integration
+        env:
+          DATABASE_URL: postgres://movietickets:movietickets@localhost:5432/movietickets
+          REDIS_URL: redis://localhost:6379
