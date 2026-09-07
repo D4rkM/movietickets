@@ -11,7 +11,7 @@ Monorepo (pnpm workspaces):
 ## Subir o ambiente local
 
 ```bash
-docker-compose up -d   # Postgres + Redis
+docker-compose up -d   # Postgres + Valkey
 pnpm install
 pnpm dev:api            # apps/api
 pnpm dev:web             # apps/web

@@ -9,13 +9,13 @@ Ainda não inicializado — scaffold do projeto Nest entra na primeira feature.
 ## Rodar
 
 ```bash
-docker-compose up -d   # Postgres + Redis, a partir da raiz
+docker-compose up -d   # Postgres + Valkey, a partir da raiz
 pnpm dev:api
 ```
 
 ## Testes
 
-Jest, unitários por service/handler e integração batendo em Postgres/Redis reais.
+Jest, unitários por service/handler e integração batendo em Postgres/Valkey reais.
 
 ```bash
 pnpm --filter api test

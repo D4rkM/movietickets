@@ -6,13 +6,13 @@ Referência de decisões de arquitetura e stack: `docs/planning.md`. Diagramas m
 
 ## Regra permanente: testes
 
-Toda feature nova precisa vir com teste unitário. Se envolver fluxo entre camadas (API+banco, API+cache/Redis, seat hold/booking), precisa também de teste de integração. Não considerar uma feature pronta sem isso — sem exceção, mesmo pra mudanças pequenas.
+Toda feature nova precisa vir com teste unitário. Se envolver fluxo entre camadas (API+banco, API+cache/Valkey, seat hold/booking), precisa também de teste de integração. Não considerar uma feature pronta sem isso — sem exceção, mesmo pra mudanças pequenas.
 
 - Front (`apps/web`): Vitest + React Testing Library.
-- Back (`apps/api`): Jest (padrão NestJS), testes de integração batendo em Postgres/Redis reais (docker-compose ou testcontainers).
+- Back (`apps/api`): Jest (padrão NestJS), testes de integração batendo em Postgres/Valkey reais (docker-compose ou testcontainers).
 
 ## Arquitetura
 
 - Sem event sourcing completo. CQRS "light": commands/queries separados por módulo Nest, sem event store.
-- Assento: consistência forte via Postgres (constraint única `session_id + seat_id` + transação). Redis só pra hold temporário (TTL) durante checkout, não é fonte de verdade definitiva.
+- Assento: consistência forte via Postgres (constraint única `session_id + seat_id` + transação). Valkey só pra hold temporário (TTL) durante checkout, não é fonte de verdade definitiva.
 - Comunicação front↔back: REST por padrão. Não trocar pra GraphQL sem necessidade concreta identificada.

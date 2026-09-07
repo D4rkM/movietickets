@@ -29,12 +29,12 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 5
-      redis:
-        image: redis:7-alpine
+      valkey:
+        image: valkey/valkey:8-alpine
         ports:
           - 6379:6379
         options: >-
-          --health-cmd "redis-cli ping"
+          --health-cmd "valkey-cli ping"
           --health-interval 5s
           --health-timeout 5s
           --health-retries 5
@@ -51,4 +51,4 @@ jobs:
       - run: pnpm --filter api test:integration
         env:
           DATABASE_URL: postgres://movietickets:movietickets@localhost:5432/movietickets
-          REDIS_URL: redis://localhost:6379
+          VALKEY_URL: redis://localhost:6379

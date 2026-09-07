@@ -1,0 +1,7 @@
+if git diff --cached --name-only | grep -qE '^apps/(web|api)/'; then
+  if ! command -v gitleaks >/dev/null 2>&1; then
+    echo "gitleaks not found. Install it: https://github.com/gitleaks/gitleaks#installing" >&2
+    exit 1
+  fi
+  gitleaks protect --staged --verbose --redact
+fi

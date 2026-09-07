@@ -29,7 +29,7 @@
           <mxGeometry x="660" y="200" width="200" height="100" as="geometry" />
         </mxCell>
 
-        <mxCell id="c_redis" value="Redis&lt;br&gt;&lt;i&gt;[Container: Database]&lt;/i&gt;&lt;br&gt;Seat hold (TTL lock) + cache de catálogo" style="shape=cylinder3;size=15;whiteSpace=wrap;html=1;boundedLbl=1;rounded=0;labelBackgroundColor=none;fillColor=#23A2D9;fontSize=10;fontColor=#ffffff;align=center;strokeColor=#0E7DAD;metaEdit=1;resizable=0;" vertex="1" parent="1">
+        <mxCell id="c_redis" value="Valkey&lt;br&gt;&lt;i&gt;[Container: Database]&lt;/i&gt;&lt;br&gt;Seat hold (TTL lock) + cache de catálogo" style="shape=cylinder3;size=15;whiteSpace=wrap;html=1;boundedLbl=1;rounded=0;labelBackgroundColor=none;fillColor=#23A2D9;fontSize=10;fontColor=#ffffff;align=center;strokeColor=#0E7DAD;metaEdit=1;resizable=0;" vertex="1" parent="1">
           <mxGeometry x="660" y="340" width="200" height="100" as="geometry" />
         </mxCell>
 
@@ -57,7 +57,7 @@
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
 
-        <mxCell id="e6" value="Seat hold + cache [Redis protocol]" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=11;endArrow=block;exitX=1;exitY=0.7;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="c_api" target="c_redis">
+        <mxCell id="e6" value="Seat hold + cache [Valkey protocol]" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=11;endArrow=block;exitX=1;exitY=0.7;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="c_api" target="c_redis">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
 
