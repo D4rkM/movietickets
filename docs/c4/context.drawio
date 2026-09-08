@@ -1,38 +1,34 @@
 <mxfile host="app.diagrams.net">
-  <diagram name="Context" id="context1">
-    <mxGraphModel dx="800" dy="600" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="900" pageHeight="550" math="0" shadow="0">
+  <diagram name="Context" id="mQLFQ5LNz5LX2chRJqAw">
+    <mxGraphModel dx="2020" dy="1087" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="827" pageHeight="1169" math="0" shadow="0">
       <root>
         <mxCell id="0" />
         <mxCell id="1" parent="0" />
-
-        <mxCell id="p_cliente" value="Cliente&lt;br&gt;&lt;i&gt;[Person]&lt;/i&gt;&lt;br&gt;Compra ingresso de cinema" style="html=1;fontSize=11;dashed=0;whiteSpace=wrap;fillColor=#083F75;strokeColor=#06315C;fontColor=#ffffff;shape=mxgraph.c4.person2;align=center;metaEdit=1;points=[[0.5,0,0],[1,0.5,0],[1,0.75,0],[0.75,1,0],[0.5,1,0],[0.25,1,0],[0,0.75,0],[0,0.5,0]];resizable=0;" vertex="1" parent="1">
-          <mxGeometry x="40" y="60" width="160" height="100" as="geometry" />
+        <mxCell id="p_cliente" parent="1" style="html=1;fontSize=11;dashed=0;whiteSpace=wrap;fillColor=#083F75;strokeColor=#06315C;fontColor=#ffffff;shape=mxgraph.c4.person2;align=center;metaEdit=1;points=[[0.5,0,0],[1,0.5,0],[1,0.75,0],[0.75,1,0],[0.5,1,0],[0.25,1,0],[0,0.75,0],[0,0.5,0]];resizable=0;" value="Cliente&lt;br&gt;&lt;i&gt;[Person]&lt;/i&gt;&lt;br&gt;Compra ingresso de cinema" vertex="1">
+          <mxGeometry height="100" width="160" x="300" y="370" as="geometry" />
         </mxCell>
-
-        <mxCell id="p_admin" value="Admin&lt;br&gt;&lt;i&gt;[Person]&lt;/i&gt;&lt;br&gt;Cadastra filmes/salas/sessões" style="html=1;fontSize=11;dashed=0;whiteSpace=wrap;fillColor=#083F75;strokeColor=#06315C;fontColor=#ffffff;shape=mxgraph.c4.person2;align=center;metaEdit=1;points=[[0.5,0,0],[1,0.5,0],[1,0.75,0],[0.75,1,0],[0.5,1,0],[0.25,1,0],[0,0.75,0],[0,0.5,0]];resizable=0;" vertex="1" parent="1">
-          <mxGeometry x="40" y="250" width="160" height="100" as="geometry" />
+        <mxCell id="p_admin" parent="1" style="html=1;fontSize=11;dashed=0;whiteSpace=wrap;fillColor=#083F75;strokeColor=#06315C;fontColor=#ffffff;shape=mxgraph.c4.person2;align=center;metaEdit=1;points=[[0.5,0,0],[1,0.5,0],[1,0.75,0],[0.75,1,0],[0.5,1,0],[0.25,1,0],[0,0.75,0],[0,0.5,0]];resizable=0;" value="Admin&lt;br&gt;&lt;i&gt;[Person]&lt;/i&gt;&lt;br&gt;Cadastra filmes/salas/sessões" vertex="1">
+          <mxGeometry height="100" width="160" x="300" y="560" as="geometry" />
         </mxCell>
-
-        <mxCell id="sys_cinema" value="Cinema Tickets&lt;br&gt;&lt;i&gt;[Software System]&lt;/i&gt;&lt;br&gt;Permite buscar sessões, escolher assento e comprar ingresso" style="rounded=1;whiteSpace=wrap;html=1;labelBackgroundColor=none;fillColor=#1061B0;fontColor=#ffffff;align=center;arcSize=10;strokeColor=#0D5091;metaEdit=1;resizable=0;points=[[0.25,0,0],[0.5,0,0],[0.75,0,0],[1,0.25,0],[1,0.5,0],[1,0.75,0],[0.75,1,0],[0.5,1,0],[0.25,1,0],[0,0.75,0],[0,0.5,0],[0,0.25,0]];" vertex="1" parent="1">
-          <mxGeometry x="340" y="140" width="280" height="140" as="geometry" />
+        <object label="Cinema Tickets&lt;br&gt;&lt;i&gt;[Software System]&lt;/i&gt;&lt;br&gt;Permite buscar sessões, escolher assento e comprar ingresso" id="sys_cinema">
+          <mxCell parent="1" style="rounded=1;whiteSpace=wrap;html=1;labelBackgroundColor=none;fillColor=#1061B0;fontColor=#ffffff;align=center;arcSize=10;strokeColor=#0D5091;metaEdit=1;resizable=0;points=[[0.25,0,0],[0.5,0,0],[0.75,0,0],[1,0.25,0],[1,0.5,0],[1,0.75,0],[0.75,1,0],[0.5,1,0],[0.25,1,0],[0,0.75,0],[0,0.5,0],[0,0.25,0]];" vertex="1">
+            <mxGeometry height="140" width="280" x="690" y="455" as="geometry" />
+          </mxCell>
+        </object>
+        <mxCell id="sys_mp" parent="1" style="rounded=1;whiteSpace=wrap;html=1;labelBackgroundColor=none;fillColor=#8C8496;fontColor=#ffffff;align=center;arcSize=10;strokeColor=#736782;metaEdit=1;resizable=0;points=[[0.25,0,0],[0.5,0,0],[0.75,0,0],[1,0.25,0],[1,0.5,0],[1,0.75,0],[0.75,1,0],[0.5,1,0],[0.25,1,0],[0,0.75,0],[0,0.5,0],[0,0.25,0]];" value="Mercado Pago&lt;br&gt;&lt;i&gt;[Software System - External]&lt;/i&gt;&lt;br&gt;Gateway de pagamento (sandbox)" vertex="1">
+          <mxGeometry height="110" width="180" x="1160" y="470" as="geometry" />
         </mxCell>
-
-        <mxCell id="sys_mp" value="Mercado Pago&lt;br&gt;&lt;i&gt;[Software System - External]&lt;/i&gt;&lt;br&gt;Gateway de pagamento (sandbox)" style="rounded=1;whiteSpace=wrap;html=1;labelBackgroundColor=none;fillColor=#8C8496;fontColor=#ffffff;align=center;arcSize=10;strokeColor=#736782;metaEdit=1;resizable=0;points=[[0.25,0,0],[0.5,0,0],[0.75,0,0],[1,0.25,0],[1,0.5,0],[1,0.75,0],[0.75,1,0],[0.5,1,0],[0.25,1,0],[0,0.75,0],[0,0.5,0],[0,0.25,0]];" vertex="1" parent="1">
-          <mxGeometry x="700" y="160" width="180" height="110" as="geometry" />
-        </mxCell>
-
-        <mxCell id="e1" value="Busca sessão, escolhe assento,&lt;br&gt;compra ingresso&lt;br&gt;[HTTPS]" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=11;endArrow=block;elbow=vertical;" edge="1" parent="1" source="p_cliente" target="sys_cinema">
+        <mxCell id="e1" edge="1" parent="1" source="p_cliente" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=11;endArrow=block;elbow=vertical;" target="sys_cinema" value="Busca sessão, escolhe assento,&lt;br&gt;compra ingresso&lt;br&gt;[HTTPS]">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-
-        <mxCell id="e2" value="Cadastra filmes/salas/sessões&lt;br&gt;[HTTPS]" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=11;endArrow=block;elbow=vertical;" edge="1" parent="1" source="p_admin" target="sys_cinema">
+        <mxCell id="e2" edge="1" parent="1" source="p_admin" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=11;endArrow=block;elbow=vertical;" target="sys_cinema" value="Cadastra filmes/salas/sessões&lt;br&gt;[HTTPS]">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-
-        <mxCell id="e3" value="Cria cobrança, recebe confirmação&lt;br&gt;[HTTPS/Webhook]" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=11;endArrow=block;dashed=1;" edge="1" parent="1" source="sys_cinema" target="sys_mp">
-          <mxGeometry relative="1" as="geometry" />
+        <mxCell id="e3" edge="1" parent="1" source="sys_cinema" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=11;endArrow=block;dashed=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;exitPerimeter=0;" target="sys_mp" value="Cria cobrança, recebe confirmação&lt;br&gt;[HTTPS/Webhook]">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="1440" y="525" as="sourcePoint" />
+          </mxGeometry>
         </mxCell>
-
       </root>
     </mxGraphModel>
   </diagram>

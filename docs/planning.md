@@ -76,7 +76,8 @@ Cada pasta em `docs/flows/<feature>/` vai ganhar `sequence.md` e `class.md` (Mer
 ## Modelo de dados (core)
 
 - `Movie` (filme: título, sinopse, duração, poster, classificação)
-- `Room` (sala de cinema: capacidade, layout de fileiras/colunas)
+- `Cinema` (unidade física: nome, endereço, cidade — uma rede pode ter várias unidades, cada uma com suas próprias salas)
+- `Room` (sala de cinema: pertence a um Cinema, capacidade, layout de fileiras/colunas)
 - `Seat` (assento: pertence a Room, posição fileira/coluna)
 - `Session` (sessão/horário: Movie + Room + datetime + preço)
 - `Booking`/`Order` (pedido: User + Session + lista de Seats + status: pending/confirmed/cancelled)
@@ -84,6 +85,8 @@ Cada pasta em `docs/flows/<feature>/` vai ganhar `sequence.md` e `class.md` (Mer
 - `User` (conta: nome, email, senha hash)
 
 Constraint crítica: unique `(session_id, seat_id)` em tabela de assentos ocupados/reservados — garante que dois pedidos nunca fecham o mesmo assento na mesma sessão.
+
+Definição completa de colunas, tipos, PK/FK e a tabela de junção `booking_seats` (onde essa constraint realmente mora): `docs/schema.md`.
 
 ## Features / Stories (5 no total)
 
