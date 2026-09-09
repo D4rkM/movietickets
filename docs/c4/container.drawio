@@ -1,75 +1,68 @@
 <mxfile host="app.diagrams.net">
-  <diagram name="Container" id="container1">
-    <mxGraphModel dx="1000" dy="700" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1250" pageHeight="640" math="0" shadow="0">
+  <diagram name="Container" id="YXiod55AQ6NpULbv6zGa">
+    <mxGraphModel dx="2020" dy="1087" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="827" pageHeight="1169" math="0" shadow="0">
       <root>
         <mxCell id="0" />
         <mxCell id="1" parent="0" />
-
-        <mxCell id="p_cliente" value="Cliente&lt;br&gt;&lt;i&gt;[Person]&lt;/i&gt;" style="html=1;fontSize=11;dashed=0;whiteSpace=wrap;fillColor=#083F75;strokeColor=#06315C;fontColor=#ffffff;shape=mxgraph.c4.person2;align=center;metaEdit=1;points=[[0.5,0,0],[1,0.5,0],[1,0.75,0],[0.75,1,0],[0.5,1,0],[0.25,1,0],[0,0.75,0],[0,0.5,0]];resizable=0;" vertex="1" parent="1">
-          <mxGeometry x="30" y="60" width="150" height="90" as="geometry" />
+        <mxCell id="U1VL2mUGIcac9nUAljFS-1" parent="1" style="html=1;fontSize=11;dashed=0;whiteSpace=wrap;fillColor=#083F75;strokeColor=#06315C;fontColor=#ffffff;shape=mxgraph.c4.person2;align=center;metaEdit=1;points=[[0.5,0,0],[1,0.5,0],[1,0.75,0],[0.75,1,0],[0.5,1,0],[0.25,1,0],[0,0.75,0],[0,0.5,0]];resizable=0;" value="Cliente&lt;br&gt;&lt;i&gt;[Person]&lt;/i&gt;" vertex="1">
+          <mxGeometry height="90" width="150" x="30" y="320" as="geometry" />
         </mxCell>
-
-        <mxCell id="p_admin" value="Admin&lt;br&gt;&lt;i&gt;[Person]&lt;/i&gt;" style="html=1;fontSize=11;dashed=0;whiteSpace=wrap;fillColor=#083F75;strokeColor=#06315C;fontColor=#ffffff;shape=mxgraph.c4.person2;align=center;metaEdit=1;points=[[0.5,0,0],[1,0.5,0],[1,0.75,0],[0.75,1,0],[0.5,1,0],[0.25,1,0],[0,0.75,0],[0,0.5,0]];resizable=0;" vertex="1" parent="1">
-          <mxGeometry x="30" y="220" width="150" height="90" as="geometry" />
+        <mxCell id="U1VL2mUGIcac9nUAljFS-2" parent="1" style="html=1;fontSize=11;dashed=0;whiteSpace=wrap;fillColor=#083F75;strokeColor=#06315C;fontColor=#ffffff;shape=mxgraph.c4.person2;align=center;metaEdit=1;points=[[0.5,0,0],[1,0.5,0],[1,0.75,0],[0.75,1,0],[0.5,1,0],[0.25,1,0],[0,0.75,0],[0,0.5,0]];resizable=0;" value="Admin&lt;br&gt;&lt;i&gt;[Person]&lt;/i&gt;" vertex="1">
+          <mxGeometry height="90" width="150" x="30" y="460" as="geometry" />
         </mxCell>
-
-        <mxCell id="boundary" value="Cinema Tickets [Software System]" style="rounded=0;whiteSpace=wrap;html=1;dashed=1;dashPattern=8 4;arcSize=10;fillColor=none;strokeColor=#666666;fontColor=#666666;verticalAlign=top;align=left;spacingLeft=10;spacingTop=6;fontSize=12;" vertex="1" parent="1">
-          <mxGeometry x="260" y="20" width="680" height="500" as="geometry" />
+        <mxCell id="U1VL2mUGIcac9nUAljFS-3" parent="1" style="rounded=0;whiteSpace=wrap;html=1;dashed=1;dashPattern=8 4;arcSize=10;fillColor=none;strokeColor=#666666;fontColor=#666666;verticalAlign=top;align=left;spacingLeft=10;spacingTop=6;fontSize=12;" value="Cinema Tickets [Software System]" vertex="1">
+          <mxGeometry height="440" width="1320" x="260" y="290" as="geometry" />
         </mxCell>
-
-        <mxCell id="c_web" value="Web App&lt;br&gt;&lt;i&gt;[Container: React + Vite]&lt;/i&gt;&lt;br&gt;SPA: catálogo, mapa de assento, checkout, conta, admin" style="shape=hexagon;size=50;perimeter=hexagonPerimeter2;whiteSpace=wrap;html=1;fixedSize=1;rounded=1;labelBackgroundColor=none;fillColor=#23A2D9;fontSize=11;fontColor=#ffffff;align=center;strokeColor=#0E7DAD;metaEdit=1;points=[[0.5,0,0],[1,0.25,0],[1,0.5,0],[1,0.75,0],[0.5,1,0],[0,0.75,0],[0,0.5,0],[0,0.25,0]];resizable=0;" vertex="1" parent="1">
-          <mxGeometry x="300" y="70" width="240" height="100" as="geometry" />
+        <mxCell id="U1VL2mUGIcac9nUAljFS-4" parent="1" style="shape=hexagon;size=50;perimeter=hexagonPerimeter2;whiteSpace=wrap;html=1;fixedSize=1;rounded=1;labelBackgroundColor=none;fillColor=#23A2D9;fontSize=11;fontColor=#ffffff;align=center;strokeColor=#0E7DAD;metaEdit=1;points=[[0.5,0,0],[1,0.25,0],[1,0.5,0],[1,0.75,0],[0.5,1,0],[0,0.75,0],[0,0.5,0],[0,0.25,0]];resizable=0;" value="Web App&lt;br&gt;&lt;i&gt;[Container: React + Vite]&lt;/i&gt;&lt;br&gt;SPA: catálogo, mapa de assento, checkout, conta, admin" vertex="1">
+          <mxGeometry height="100" width="240" x="300" y="420" as="geometry" />
         </mxCell>
-
-        <mxCell id="c_api" value="API&lt;br&gt;&lt;i&gt;[Container: NestJS]&lt;/i&gt;&lt;br&gt;REST + WebSocket Gateway. Módulos: Catalog, Seating, Booking, Payment, Auth, Admin" style="shape=hexagon;size=50;perimeter=hexagonPerimeter2;whiteSpace=wrap;html=1;fixedSize=1;rounded=1;labelBackgroundColor=none;fillColor=#23A2D9;fontSize=11;fontColor=#ffffff;align=center;strokeColor=#0E7DAD;metaEdit=1;points=[[0.5,0,0],[1,0.25,0],[1,0.5,0],[1,0.75,0],[0.5,1,0],[0,0.75,0],[0,0.5,0],[0,0.25,0]];resizable=0;" vertex="1" parent="1">
-          <mxGeometry x="300" y="220" width="240" height="100" as="geometry" />
+        <mxCell id="U1VL2mUGIcac9nUAljFS-5" parent="1" style="shape=hexagon;size=50;perimeter=hexagonPerimeter2;whiteSpace=wrap;html=1;fixedSize=1;rounded=1;labelBackgroundColor=none;fillColor=#23A2D9;fontSize=11;fontColor=#ffffff;align=center;strokeColor=#0E7DAD;metaEdit=1;points=[[0.5,0,0],[1,0.25,0],[1,0.5,0],[1,0.75,0],[0.5,1,0],[0,0.75,0],[0,0.5,0],[0,0.25,0]];resizable=0;" value="API&lt;br&gt;&lt;i&gt;[Container: NestJS]&lt;/i&gt;&lt;br&gt;REST + WebSocket Gateway. Módulos: Catalog, Seating, Booking, Payment, Auth, Admin" vertex="1">
+          <mxGeometry height="100" width="240" x="750" y="500" as="geometry" />
         </mxCell>
-
-        <mxCell id="c_pg" value="PostgreSQL&lt;br&gt;&lt;i&gt;[Container: Database]&lt;/i&gt;&lt;br&gt;Dados transacionais: filmes, sessões, assentos, bookings, users" style="shape=cylinder3;size=15;whiteSpace=wrap;html=1;boundedLbl=1;rounded=0;labelBackgroundColor=none;fillColor=#23A2D9;fontSize=10;fontColor=#ffffff;align=center;strokeColor=#0E7DAD;metaEdit=1;resizable=0;" vertex="1" parent="1">
-          <mxGeometry x="660" y="200" width="200" height="100" as="geometry" />
+        <mxCell id="U1VL2mUGIcac9nUAljFS-6" parent="1" style="shape=cylinder3;size=15;whiteSpace=wrap;html=1;boundedLbl=1;rounded=0;labelBackgroundColor=none;fillColor=#23A2D9;fontSize=10;fontColor=#ffffff;align=center;strokeColor=#0E7DAD;metaEdit=1;resizable=0;" value="PostgreSQL&lt;br&gt;&lt;i&gt;[Container: Database]&lt;/i&gt;&lt;br&gt;Dados transacionais: filmes, sessões, assentos, bookings, users" vertex="1">
+          <mxGeometry height="100" width="200" x="1150" y="430" as="geometry" />
         </mxCell>
-
-        <mxCell id="c_redis" value="Valkey&lt;br&gt;&lt;i&gt;[Container: Database]&lt;/i&gt;&lt;br&gt;Seat hold (TTL lock) + cache de catálogo" style="shape=cylinder3;size=15;whiteSpace=wrap;html=1;boundedLbl=1;rounded=0;labelBackgroundColor=none;fillColor=#23A2D9;fontSize=10;fontColor=#ffffff;align=center;strokeColor=#0E7DAD;metaEdit=1;resizable=0;" vertex="1" parent="1">
-          <mxGeometry x="660" y="340" width="200" height="100" as="geometry" />
+        <mxCell id="U1VL2mUGIcac9nUAljFS-7" parent="1" style="shape=cylinder3;size=15;whiteSpace=wrap;html=1;boundedLbl=1;rounded=0;labelBackgroundColor=none;fillColor=#23A2D9;fontSize=10;fontColor=#ffffff;align=center;strokeColor=#0E7DAD;metaEdit=1;resizable=0;" value="Valkey&lt;br&gt;&lt;i&gt;[Container: Database]&lt;/i&gt;&lt;br&gt;Seat hold (TTL lock) + cache de catálogo" vertex="1">
+          <mxGeometry height="100" width="200" x="1150" y="585" as="geometry" />
         </mxCell>
-
-        <mxCell id="sys_mp" value="Mercado Pago&lt;br&gt;&lt;i&gt;[Software System - External]&lt;/i&gt;&lt;br&gt;Gateway de pagamento (sandbox)" style="rounded=1;whiteSpace=wrap;html=1;labelBackgroundColor=none;fillColor=#8C8496;fontColor=#ffffff;align=center;arcSize=10;strokeColor=#736782;metaEdit=1;resizable=0;points=[[0.25,0,0],[0.5,0,0],[0.75,0,0],[1,0.25,0],[1,0.5,0],[1,0.75,0],[0.75,1,0],[0.5,1,0],[0.25,1,0],[0,0.75,0],[0,0.5,0],[0,0.25,0]];" vertex="1" parent="1">
-          <mxGeometry x="1000" y="220" width="180" height="100" as="geometry" />
+        <mxCell id="U1VL2mUGIcac9nUAljFS-8" parent="1" style="rounded=1;whiteSpace=wrap;html=1;labelBackgroundColor=none;fillColor=#8C8496;fontColor=#ffffff;align=center;arcSize=10;strokeColor=#736782;metaEdit=1;resizable=0;points=[[0.25,0,0],[0.5,0,0],[0.75,0,0],[1,0.25,0],[1,0.5,0],[1,0.75,0],[0.75,1,0],[0.5,1,0],[0.25,1,0],[0,0.75,0],[0,0.5,0],[0,0.25,0]];" value="Mercado Pago&lt;br&gt;&lt;i&gt;[Software System - External]&lt;/i&gt;&lt;br&gt;Gateway de pagamento (sandbox)" vertex="1">
+          <mxGeometry height="100" width="180" x="1160" y="750" as="geometry" />
         </mxCell>
-
-        <mxCell id="e1" value="Usa [HTTPS]" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=11;endArrow=block;" edge="1" parent="1" source="p_cliente" target="c_web">
+        <mxCell id="U1VL2mUGIcac9nUAljFS-9" edge="1" parent="1" source="U1VL2mUGIcac9nUAljFS-1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=11;endArrow=block;" target="U1VL2mUGIcac9nUAljFS-4" value="Usa [HTTPS]">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-
-        <mxCell id="e2" value="Usa [HTTPS]" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=11;endArrow=block;" edge="1" parent="1" source="p_admin" target="c_web">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-
-        <mxCell id="e3" value="Chama [REST/HTTPS]" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=11;endArrow=block;exitX=1;exitY=0.35;entryX=0;entryY=0.35;" edge="1" parent="1" source="c_web" target="c_api">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-
-        <mxCell id="e4" value="Updates de assento em tempo real [WebSocket]" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=11;endArrow=block;dashed=1;exitX=1;exitY=0.65;entryX=0;entryY=0.65;" edge="1" parent="1" source="c_web" target="c_api">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-
-        <mxCell id="e5" value="Lê/escreve [SQL]" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=11;endArrow=block;exitX=1;exitY=0.3;exitDx=0;exitDy=0;entryX=0;entryY=0.3;entryDx=0;entryDy=0;" edge="1" parent="1" source="c_api" target="c_pg">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-
-        <mxCell id="e6" value="Seat hold + cache [Valkey protocol]" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=11;endArrow=block;exitX=1;exitY=0.7;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="c_api" target="c_redis">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-
-        <mxCell id="e7" value="Cria pagamento / recebe webhook [HTTPS]" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=11;endArrow=block;dashed=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=1;entryDx=0;entryDy=0;" edge="1" parent="1" source="c_api" target="sys_mp">
+        <mxCell id="U1VL2mUGIcac9nUAljFS-10" edge="1" parent="1" source="U1VL2mUGIcac9nUAljFS-2" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=11;endArrow=block;entryX=0;entryY=0.5;entryDx=0;entryDy=0;entryPerimeter=0;" target="U1VL2mUGIcac9nUAljFS-4" value="Usa [HTTPS]">
           <mxGeometry relative="1" as="geometry">
             <Array as="points">
-              <mxPoint x="420" y="560" />
-              <mxPoint x="1090" y="560" />
+              <mxPoint x="250" y="530" />
+              <mxPoint x="250" y="470" />
             </Array>
           </mxGeometry>
         </mxCell>
-
+        <mxCell id="U1VL2mUGIcac9nUAljFS-11" edge="1" parent="1" source="U1VL2mUGIcac9nUAljFS-4" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=11;endArrow=block;entryX=0.5;entryY=0;entryDx=0;entryDy=0;entryPerimeter=0;" target="U1VL2mUGIcac9nUAljFS-5" value="Chama [REST/HTTPS]">
+          <mxGeometry relative="1" x="-0.0005" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="U1VL2mUGIcac9nUAljFS-12" edge="1" parent="1" source="U1VL2mUGIcac9nUAljFS-4" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=11;endArrow=block;dashed=1;entryX=0;entryY=0.5;entryDx=0;entryDy=0;entryPerimeter=0;exitX=0.5;exitY=1;exitDx=0;exitDy=0;exitPerimeter=0;" target="U1VL2mUGIcac9nUAljFS-5" value="Updates de assento em tempo real [WebSocket]">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="526.67" y="483.33000000000004" as="sourcePoint" />
+            <mxPoint x="307.33" y="683.3299999999999" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="U1VL2mUGIcac9nUAljFS-13" edge="1" parent="1" source="U1VL2mUGIcac9nUAljFS-5" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=11;endArrow=block;exitX=1;exitY=0.3;exitDx=0;exitDy=0;entryX=0;entryY=0.3;entryDx=0;entryDy=0;" target="U1VL2mUGIcac9nUAljFS-6" value="Lê/escreve [SQL]">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="U1VL2mUGIcac9nUAljFS-14" edge="1" parent="1" source="U1VL2mUGIcac9nUAljFS-5" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=11;endArrow=block;exitX=1;exitY=0.7;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" target="U1VL2mUGIcac9nUAljFS-7" value="Seat hold + cache [Valkey protocol]">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="U1VL2mUGIcac9nUAljFS-15" edge="1" parent="1" source="U1VL2mUGIcac9nUAljFS-5" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=11;endArrow=block;dashed=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;entryPerimeter=0;" target="U1VL2mUGIcac9nUAljFS-8" value="Cria pagamento / recebe webhook [HTTPS]">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="870" y="800" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
       </root>
     </mxGraphModel>
   </diagram>

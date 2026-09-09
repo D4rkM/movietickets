@@ -1,0 +1,73 @@
+erDiagram
+    USERS ||--o{ BOOKINGS : places
+    MOVIES ||--o{ SESSIONS : "shown in"
+    CINEMAS ||--o{ ROOMS : has
+    ROOMS ||--o{ SESSIONS : hosts
+    ROOMS ||--o{ SEATS : contains
+    SESSIONS ||--o{ BOOKINGS : "booked for"
+    SESSIONS ||--o{ BOOKING_SEATS : "scopes uniqueness"
+    BOOKINGS ||--o{ BOOKING_SEATS : includes
+    SEATS ||--o{ BOOKING_SEATS : "reserved as"
+    BOOKINGS ||--|| PAYMENTS : "paid via"
+
+    USERS {
+        uuid id PK
+        text name
+        text email UK
+        text password_hash
+        text role
+    }
+    MOVIES {
+        uuid id PK
+        text title
+        text synopsis
+        int duration_minutes
+        text poster_url
+        text rating
+    }
+    CINEMAS {
+        uuid id PK
+        text name
+        text address
+        text city
+    }
+    ROOMS {
+        uuid id PK
+        uuid cinema_id FK
+        text name
+        int rows
+        int seats_per_row
+    }
+    SEATS {
+        uuid id PK
+        uuid room_id FK
+        text row_label
+        int seat_number
+    }
+    SESSIONS {
+        uuid id PK
+        uuid movie_id FK
+        uuid room_id FK
+        timestamptz starts_at
+        int price_cents
+    }
+    BOOKINGS {
+        uuid id PK
+        uuid user_id FK
+        uuid session_id FK
+        text status
+    }
+    BOOKING_SEATS {
+        uuid id PK
+        uuid booking_id FK
+        uuid session_id FK
+        uuid seat_id FK
+    }
+    PAYMENTS {
+        uuid id PK
+        uuid booking_id FK "unique"
+        text provider
+        text external_payment_id
+        text status
+        int amount_cents
+    }
