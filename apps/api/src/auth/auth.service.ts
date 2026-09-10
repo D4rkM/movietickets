@@ -37,7 +37,9 @@ export class AuthService {
       .values({ name: dto.name, email: dto.email, passwordHash })
       .returning();
 
-    return this.buildAuthResponse(user);
+    // Register only creates the account — no token here. Callers must log in
+    // separately to obtain an access token.
+    return { id: user.id, name: user.name, email: user.email, role: user.role };
   }
 
   async login(dto: LoginDto) {

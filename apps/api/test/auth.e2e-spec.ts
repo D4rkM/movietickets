@@ -43,7 +43,7 @@ describe("Auth (e2e)", () => {
   // The tests below share state (same email) and run in this order on purpose:
   // register -> duplicate register -> login -> wrong-password login.
 
-  it("should register a new user and return an access token", async () => {
+  it("should register a new user without issuing an access token", async () => {
     // GIVEN no user registered with this email
 
     // WHEN the client calls POST /auth/register
@@ -53,11 +53,11 @@ describe("Auth (e2e)", () => {
       payload: { name: "Ana", email, password: "password123" },
     });
 
-    // THEN it returns 201 with a token and the created user's data
+    // THEN it returns 201 with the created user's data, and no token
     expect(response.statusCode).toBe(201);
     const body = response.json();
-    expect(body.accessToken).toBeDefined();
-    expect(body.user.email).toBe(email);
+    expect(body.accessToken).toBeUndefined();
+    expect(body.email).toBe(email);
   });
 
   it("should reject registering the same email twice", async () => {

@@ -13,14 +13,15 @@ describe("AuthController", () => {
   it("should delegate register to AuthService", async () => {
     // ARRANGE
     const dto = { name: "Ana", email: "ana@test.com", password: "password123" };
-    mockAuthService.register.mockResolvedValue({ accessToken: "token" });
+    const createdUser = { id: "1", name: "Ana", email: "ana@test.com", role: "customer" };
+    mockAuthService.register.mockResolvedValue(createdUser);
 
     // ACT
     const result = await controller.register(dto);
 
     // ASSERT
     expect(mockAuthService.register).toHaveBeenCalledWith(dto);
-    expect(result).toEqual({ accessToken: "token" });
+    expect(result).toEqual(createdUser);
   });
 
   it("should delegate login to AuthService", async () => {

@@ -21,10 +21,7 @@
               "json": "{\n  \"name\": \"Ana\",\n  \"email\": \"ana@example.com\",\n  \"password\": \"password123\"\n}"
             },
             "auth": { "mode": "none" },
-            "script": {
-              "res": "if (res.body.accessToken) {\n  bru.setEnvVar(\"accessToken\", res.body.accessToken);\n}"
-            },
-            "docs": "Cria um usuário novo e salva o accessToken retornado na env var `accessToken`, usada nas rotas protegidas por JWT. Se o e-mail já existir, retorna 409 — nesse caso use o Login."
+            "docs": "Cria um usuário novo (201, retorna só os dados do usuário — sem token, por design: cadastro e login são passos separados). Depois de registrar, rode o Login pra pegar o accessToken. Se o e-mail já existir, retorna 409."
           }
         },
         {
