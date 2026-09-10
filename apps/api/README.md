@@ -8,6 +8,8 @@ REST + WebSocket Gateway. Módulos: Catalog, Seating, Booking, Payment, Auth, Ad
 
 **Logs:** `nestjs-pino` — JSON estruturado (pretty-print só fora de produção), com log de request/response automático via `pino-http`. Nível configurável por `LOG_LEVEL` (`.env.example`); `Authorization` e `body.password` ficam de fora do log por redact.
 
+**Build:** SWC (`nest-cli.json`), bem mais rápido que o `tsc` puro — o typecheck continua rodando em paralelo (`typeCheck: true`) e também dá pra rodar isolado com `pnpm --filter api typecheck`.
+
 Implementado até agora: **Auth MVP** (cadastro + login com JWT, `bcrypt` para hash de senha). Demais módulos entram junto com suas features.
 
 ## Rodar

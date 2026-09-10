@@ -12,6 +12,7 @@
     "start:dev": "nest start --watch",
     "start:prod": "node dist/main",
     "lint": "eslint \"{src,test}/**/*.ts\" --fix",
+    "typecheck": "tsc --noEmit -p tsconfig.build.json",
     "test": "jest",
     "test:watch": "jest --watch",
     "test:integration": "pnpm db:migrate && jest --config ./test/jest-integration.json",
@@ -41,6 +42,8 @@
   "devDependencies": {
     "@nestjs/cli": "11.0.24",
     "@nestjs/testing": "11.2.3",
+    "@swc/cli": "0.8.1",
+    "@swc/core": "1.16.2",
     "@types/bcrypt": "6.0.0",
     "@types/jest": "30.0.0",
     "@types/node": "22.20.1",

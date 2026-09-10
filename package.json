@@ -22,10 +22,11 @@
   },
   "pnpm": {
     "onlyBuiltDependencies": [
+      "@parcel/watcher",
+      "@swc/core",
       "bcrypt",
       "esbuild",
-      "unrs-resolver",
-      "@parcel/watcher"
+      "unrs-resolver"
     ]
   }
 }
