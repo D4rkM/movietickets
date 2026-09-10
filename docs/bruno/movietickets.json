@@ -1,0 +1,84 @@
+{
+  "version": "1",
+  "name": "movietickets",
+  "items": [
+    {
+      "type": "folder",
+      "name": "auth",
+      "seq": 1,
+      "items": [
+        {
+          "type": "http-request",
+          "name": "Register",
+          "seq": 1,
+          "request": {
+            "url": "{{baseUrl}}/auth/register",
+            "method": "POST",
+            "headers": [],
+            "params": [],
+            "body": {
+              "mode": "json",
+              "json": "{\n  \"name\": \"Ana\",\n  \"email\": \"ana@example.com\",\n  \"password\": \"password123\"\n}"
+            },
+            "auth": { "mode": "none" },
+            "script": {
+              "res": "if (res.body.accessToken) {\n  bru.setEnvVar(\"accessToken\", res.body.accessToken);\n}"
+            },
+            "docs": "Cria um usuário novo e salva o accessToken retornado na env var `accessToken`, usada nas rotas protegidas por JWT. Se o e-mail já existir, retorna 409 — nesse caso use o Login."
+          }
+        },
+        {
+          "type": "http-request",
+          "name": "Login",
+          "seq": 2,
+          "request": {
+            "url": "{{baseUrl}}/auth/login",
+            "method": "POST",
+            "headers": [],
+            "params": [],
+            "body": {
+              "mode": "json",
+              "json": "{\n  \"email\": \"admin@movietickets.dev\",\n  \"password\": \"password123\"\n}"
+            },
+            "auth": { "mode": "none" },
+            "script": {
+              "res": "if (res.body.accessToken) {\n  bru.setEnvVar(\"accessToken\", res.body.accessToken);\n}"
+            },
+            "docs": "Login com um usuário já existente e salva o accessToken retornado na env var `accessToken`. Por padrão usa o admin criado pelo `pnpm --filter api db:seed` (admin@movietickets.dev / password123) — troque pra cliente@movietickets.dev pra testar como customer."
+          }
+        }
+      ]
+    },
+    {
+      "type": "folder",
+      "name": "seating",
+      "seq": 2,
+      "items": [
+        {
+          "type": "http-request",
+          "name": "Get seat map",
+          "seq": 1,
+          "request": {
+            "url": "{{baseUrl}}/sessions/{{sessionId}}/seats",
+            "method": "GET",
+            "headers": [],
+            "params": [],
+            "body": { "mode": "none" },
+            "auth": { "mode": "bearer", "bearer": { "token": "{{accessToken}}" } },
+            "docs": "Retorna o mapa de assentos de uma sessão: layout da sala + status de cada assento (free / held_by_other / held_by_me / booked).\n\nPré-requisitos:\n1. Rode Login (ou Register) primeiro pra popular accessToken.\n2. Preencha a env var sessionId — ainda não existe endpoint de criação de sessão/filme (entra na feature de Catálogo/Admin), então por enquanto insira uma sessão de teste direto no banco:\n\ninsert into movies (title, duration_minutes) values ('Teste', 120) returning id;\ninsert into cinemas (name, address, city) values ('Cinema Teste', 'Rua X, 1', 'Cidade') returning id;\ninsert into rooms (cinema_id, name, rows, seats_per_row) values ('<cinema_id>', 'Sala 1', 2, 4) returning id;\ninsert into seats (room_id, row_label, seat_number) select '<room_id>', chr(64 + r), n from generate_series(1, 2) r, generate_series(1, 4) n;\ninsert into sessions (movie_id, room_id, starts_at, price_cents) values ('<movie_id>', '<room_id>', now(), 2500) returning id;\n\nCopie o id retornado no último insert pra env var sessionId.\n\nTesta sessão inexistente: troque sessionId por qualquer UUID aleatório, deve voltar 404."
+          }
+        }
+      ]
+    }
+  ],
+  "environments": [
+    {
+      "name": "local",
+      "variables": [
+        { "name": "baseUrl", "value": "http://localhost:3000", "type": "text", "enabled": true, "secret": false },
+        { "name": "sessionId", "value": "", "type": "text", "enabled": true, "secret": false },
+        { "name": "accessToken", "value": "", "type": "text", "enabled": true, "secret": false }
+      ]
+    }
+  ]
+}
