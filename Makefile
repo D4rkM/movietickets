@@ -6,7 +6,7 @@
 # Fall back to a real `podman` binary when a real `docker` binary isn't found.
 DOCKER := $(shell command -v docker 2>/dev/null || command -v podman 2>/dev/null || echo docker)
 
-.PHONY: help up down install migrate seed dev-api dev-web build lint test test-integration
+.PHONY: help up down up-full down-full install migrate seed dev-api dev-web build lint test test-integration
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-18s\033[0m %s\n", $$1, $$2}'
@@ -16,6 +16,12 @@ up: ## Start local infra (Postgres + Valkey) via docker/podman compose
 
 down: ## Stop local infra
 	$(DOCKER) compose down
+
+up-full: ## Start the whole stack containerized (infra + api), no Node/pnpm needed on the host
+	$(DOCKER) compose --profile full up -d --build
+
+down-full: ## Stop the whole containerized stack
+	$(DOCKER) compose --profile full down
 
 install: ## Install workspace dependencies
 	pnpm install

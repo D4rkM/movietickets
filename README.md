@@ -30,6 +30,16 @@ pnpm dev:api            # apps/api
 pnpm dev:web             # apps/web
 ```
 
+### Rodar tudo containerizado (sem instalar Node/pnpm)
+
+Pra quem só quer testar o projeto sem instalar nada além de Docker (ex: revisor em outro SO):
+
+```bash
+make up-full   # ou: docker compose --profile full up -d --build
+```
+
+Sobe Postgres, Valkey e a `api` (buildada de `apps/api/Dockerfile`) já com as migrations aplicadas no boot. `apps/web` entra aqui assim que tiver scaffold.
+
 ## Testes
 
 ```bash

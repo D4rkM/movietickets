@@ -34,6 +34,14 @@ pnpm dev:api
 
 `db:seed` é idempotente (`onConflictDoNothing` no email) — cria `admin@movietickets.dev` e `cliente@movietickets.dev`, senha `password123` pros dois.
 
+### Rodar containerizado (sem Node/pnpm no host)
+
+`Dockerfile` (multi-stage, build via monorepo pnpm workspace) sobe a API rodando as migrations no boot — pensado pra quem quer testar sem instalar nada além de Docker. Ver `make up-full` / `make down-full` na raiz do monorepo, ou:
+
+```bash
+docker compose --profile full up -d --build
+```
+
 ## Testes
 
 Jest — unitários por service (mockando o banco) e integração batendo em Postgres real.
