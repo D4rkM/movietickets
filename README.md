@@ -6,7 +6,7 @@ Monorepo (pnpm workspaces):
 
 - `apps/web` — front (React + Vite). Ver `apps/web/README.md`.
 - `apps/api` — back (NestJS). Ver `apps/api/README.md`.
-- `docs/` — documentação: `docs/planning.md` (decisões de stack/arquitetura), `docs/c4/` (diagramas C4), `docs/flows/<feature>/` (sequência/classe por feature).
+- `docs/` — documentação: `docs/planning.md` (decisões de stack/arquitetura), `docs/c4/` (diagramas C4), `docs/flows/<feature>/` (sequência/classe por feature), `docs/bruno/` (collection do [Bruno](https://www.usebruno.com/) pra testar as rotas manualmente).
 
 ## Subir o ambiente local
 

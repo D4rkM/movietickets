@@ -1,0 +1,33 @@
+meta {
+  name: Login
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{baseUrl}}/auth/login
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "email": "admin@movietickets.dev",
+    "password": "password123"
+  }
+}
+
+script:post-response {
+  if (res.body.accessToken) {
+    bru.setEnvVar("accessToken", res.body.accessToken);
+  }
+}
+
+docs {
+  Login com um usuário já existente e salva o accessToken retornado na
+  env var `accessToken`.
+
+  Por padrão usa o admin criado pelo `pnpm --filter api db:seed`
+  (`admin@movietickets.dev` / `password123`) — troque pra
+  `cliente@movietickets.dev` se quiser testar como customer.
+}
