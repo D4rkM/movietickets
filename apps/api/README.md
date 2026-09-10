@@ -30,11 +30,13 @@ Ou direto:
 docker compose up -d           # Postgres + Valkey, a partir da raiz
 cp apps/api/.env.example apps/api/.env
 pnpm --filter api db:migrate   # aplica as migrations no Postgres local
-pnpm --filter api db:seed      # popula usuários de teste (admin + customer)
+pnpm --filter api db:seed      # popula usuários + sessão de teste
 pnpm dev:api
 ```
 
-`db:seed` é idempotente (`onConflictDoNothing` no email) — cria `admin@movietickets.dev` e `cliente@movietickets.dev`, senha `password123` pros dois.
+`db:seed` é idempotente — roda quantas vezes quiser sem duplicar nada:
+- Usuários (`onConflictDoNothing` no email): `admin@movietickets.dev` e `cliente@movietickets.dev`, senha `password123` pros dois.
+- Fixture de sessão (movie + cinema + room + 8 seats + session), pra testar `GET /sessions/:id/seats` manualmente sem precisar de endpoint de Catálogo/Admin ainda. O `id` da sessão criada é impresso no console ao rodar o seed.
 
 ### Rodar containerizado (sem Node/pnpm no host)
 

@@ -12,7 +12,7 @@ Bruno → **Import Collection** → selecionar `docs/bruno/movietickets.json`.
 
 1. Selecione o environment **local** (`baseUrl` já vem com `http://localhost:3000`).
 2. Rode **auth/Login** (usa o admin do `pnpm --filter api db:seed`) ou **auth/Register** — o `accessToken` retornado é salvo automaticamente na env var `accessToken`.
-3. Preencha a env var `sessionId` (ver instruções na doc do request **seating/Get seat map**, já que ainda não existe endpoint de criação de sessão).
+3. Rode `pnpm --filter api db:seed` (idempotente) e copie o id da sessão de teste impresso no console pra env var `sessionId` (ver detalhes na doc do request **seating/Get seat map** — ainda não existe endpoint de criação de sessão via API, por isso o seed cobre isso).
 4. Rode **seating/Get seat map**.
 
 Cada request novo do backend deve ganhar uma entrada correspondente em `movietickets.json`, na pasta do módulo (`auth`, `seating`, etc).
