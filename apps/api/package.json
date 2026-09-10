@@ -12,7 +12,8 @@
     "test:watch": "jest --watch",
     "test:integration": "pnpm db:migrate && jest --config ./test/jest-integration.json",
     "db:generate": "drizzle-kit generate",
-    "db:migrate": "tsx src/db/migrate.ts"
+    "db:migrate": "tsx src/db/migrate.ts",
+    "db:seed": "tsx src/db/seed.ts"
   },
   "dependencies": {
     "@nestjs/common": "^11.2.3",

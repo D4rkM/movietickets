@@ -16,8 +16,11 @@ Implementado até agora: **Auth MVP** (cadastro + login com JWT, `bcrypt` para h
 docker-compose up -d           # Postgres + Valkey, a partir da raiz
 cp apps/api/.env.example apps/api/.env
 pnpm --filter api db:migrate   # aplica as migrations no Postgres local
+pnpm --filter api db:seed      # popula usuários de teste (admin + customer)
 pnpm dev:api
 ```
+
+`db:seed` é idempotente (`onConflictDoNothing` no email) — cria `admin@movietickets.dev` e `cliente@movietickets.dev`, senha `password123` pros dois.
 
 ## Testes
 

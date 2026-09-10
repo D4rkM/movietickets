@@ -16,6 +16,7 @@ module.exports = {
     "!**/main.ts",
     "!**/db/schema.ts",
     "!**/db/migrate.ts",
+    "!**/db/seed.ts",
     "!**/types/**",
   ],
   coverageDirectory: "../coverage",
