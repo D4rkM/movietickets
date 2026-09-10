@@ -12,8 +12,20 @@ Implementado até agora: **Auth MVP** (cadastro + login com JWT, `bcrypt` para h
 
 ## Rodar
 
+Via `make` (raiz do monorepo, ver `make help`):
+
 ```bash
-docker-compose up -d           # Postgres + Valkey, a partir da raiz
+make up        # Postgres + Valkey
+cp apps/api/.env.example apps/api/.env
+make migrate
+make seed      # cria admin@movietickets.dev + cliente@movietickets.dev
+make dev-api
+```
+
+Ou direto:
+
+```bash
+docker compose up -d           # Postgres + Valkey, a partir da raiz
 cp apps/api/.env.example apps/api/.env
 pnpm --filter api db:migrate   # aplica as migrations no Postgres local
 pnpm --filter api db:seed      # popula usuários de teste (admin + customer)

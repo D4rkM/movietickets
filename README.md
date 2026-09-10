@@ -10,8 +10,21 @@ Monorepo (pnpm workspaces):
 
 ## Subir o ambiente local
 
+Via `make` (ver todos os comandos com `make help`):
+
 ```bash
-docker-compose up -d   # Postgres + Valkey
+make install          # pnpm install
+make up                # Postgres + Valkey (docker compose)
+make migrate           # aplica migrations no Postgres local
+make seed              # popula usuários de teste
+make dev-api            # apps/api
+make dev-web             # apps/web
+```
+
+Ou direto com pnpm/docker, sem o Makefile:
+
+```bash
+docker compose up -d   # Postgres + Valkey
 pnpm install
 pnpm dev:api            # apps/api
 pnpm dev:web             # apps/web
@@ -20,6 +33,10 @@ pnpm dev:web             # apps/web
 ## Testes
 
 ```bash
+make test               # unitários (apps/api)
+make test-integration   # integração, contra Postgres local
+
+# ou:
 pnpm test        # unitários + integração, todos os apps
 pnpm test:e2e
 ```
