@@ -18,7 +18,7 @@ Projeto novo (sem código existente). Objetivo: clone simplificado do ingresso.c
 
 Projeto criado em `~/projects/movietickets`. **Esta primeira execução é só scaffold + documentação macro** — não escreve código de feature ainda (isso vem depois, feature por feature, junto com os diagramas de sequência/classe de cada uma). Escopo desta etapa:
 1. Estrutura de pastas do monorepo (`apps/web`, `apps/api`, `docs/`)
-2. `docs/c4/context.md` e `docs/c4/container.md` com os diagramas C4 (Mermaid) já desenhados nesta conversa
+2. `docs/c4/context.drawio` e `docs/c4/container.drawio` com os diagramas C4 (shapes oficiais, abrir em app.diagrams.net), referenciados por `docs/c4/context.md`/`container.md`
 3. `docs/planning.md` — cópia deste plano inicial (stack, arquitetura, features, decisões tomadas nesta conversa), como referência pra desenvolver as próximas features
 4. Arquivos de config base: `pnpm-workspace.yaml`, `package.json` raiz, `docker-compose.yml` (Postgres + Valkey), `.github/workflows/*.yml` (esqueleto), `CLAUDE.md` (regra de testes), `README.md` raiz + READMEs vazios/esqueleto em `apps/web` e `apps/api`
 5. `git init` + primeiro commit
@@ -40,8 +40,8 @@ movietickets/                    (raiz do monorepo, ~/projects/movietickets)
 │       └── README.md            (papel do back, como rodar/testar)
 ├── docs/
 │   ├── c4/
-│   │   ├── context.md           (diagrama C4 Context, Mermaid)
-│   │   └── container.md         (diagrama C4 Container, Mermaid)
+│   │   ├── context.drawio       (diagrama C4 Context, referenciado por context.md)
+│   │   └── container.drawio     (diagrama C4 Container, referenciado por container.md)
 │   └── flows/                   (por feature, preenchido conforme desenvolvimento)
 │       ├── seat-selection/
 │       ├── catalog/
