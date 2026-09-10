@@ -3,6 +3,8 @@ import { ConfigModule, ConfigService } from "@nestjs/config";
 import { LoggerModule } from "nestjs-pino";
 import { AuthModule } from "./auth/auth.module";
 import { DrizzleModule } from "./db/drizzle.module";
+import { SeatingModule } from "./seating/seating.module";
+import { ValkeyModule } from "./valkey/valkey.module";
 
 @Module({
   imports: [
@@ -21,7 +23,9 @@ import { DrizzleModule } from "./db/drizzle.module";
       }),
     }),
     DrizzleModule,
+    ValkeyModule,
     AuthModule,
+    SeatingModule,
   ],
 })
 export class AppModule {}
