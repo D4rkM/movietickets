@@ -17,6 +17,10 @@ Toda feature nova precisa vir com teste unitário. Se envolver fluxo entre camad
 - **Teste unitário**: comentários 3A dentro do corpo — `// ARRANGE`, `// ACT`, `// ASSERT`. Testa uma função/classe isolada, faz sentido pensar em passos.
 - **Teste de integração/e2e**: comentários Given/When/Then — `// GIVEN`, `// WHEN`, `// THEN`. Testa um comportamento fim a fim (dado um estado, quando uma ação ocorre, então tal resultado), mais natural que 3A pra esse tipo de teste.
 
+## Regra permanente: comentários em código
+
+Todo comentário de código (`//`, `/* */`, JSDoc) sempre em inglês, independente da linguagem do código ou da conversa. Nomes de variável/função também seguem inglês (padrão já usado no projeto). Documentação solta (`docs/`, `README.md`, mensagens de commit) continua em português.
+
 ## Regra permanente: branch + PR
 
 Nunca commitar direto em `main`. Todo ajuste (feature, fix, chore, docs) segue este fluxo:

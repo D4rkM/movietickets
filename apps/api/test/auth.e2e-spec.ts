@@ -38,20 +38,20 @@ describe("Auth (e2e)", () => {
     await app.close();
   });
 
-  // Os testes abaixo compartilham estado (mesmo email) e rodam nesta ordem de propósito:
-  // registro -> registro duplicado -> login -> login errado.
+  // The tests below share state (same email) and run in this order on purpose:
+  // register -> duplicate register -> login -> wrong-password login.
 
   it("should register a new user and return an access token", async () => {
-    // GIVEN nenhum usuário cadastrado com este e-mail
+    // GIVEN no user registered with this email
 
-    // WHEN o cliente chama POST /auth/register
+    // WHEN the client calls POST /auth/register
     const response = await app.inject({
       method: "POST",
       url: "/auth/register",
       payload: { name: "Ana", email, password: "password123" },
     });
 
-    // THEN retorna 201 com token e os dados do usuário criado
+    // THEN it returns 201 with a token and the created user's data
     expect(response.statusCode).toBe(201);
     const body = response.json();
     expect(body.accessToken).toBeDefined();
@@ -59,45 +59,45 @@ describe("Auth (e2e)", () => {
   });
 
   it("should reject registering the same email twice", async () => {
-    // GIVEN um usuário já cadastrado com este e-mail (teste anterior)
+    // GIVEN a user already registered with this email (previous test)
 
-    // WHEN o cliente tenta registrar de novo com o mesmo e-mail
+    // WHEN the client tries to register again with the same email
     const response = await app.inject({
       method: "POST",
       url: "/auth/register",
       payload: { name: "Ana", email, password: "password123" },
     });
 
-    // THEN retorna 409 (conflito)
+    // THEN it returns 409 (conflict)
     expect(response.statusCode).toBe(409);
   });
 
   it("should log in with valid credentials", async () => {
-    // GIVEN um usuário cadastrado com este e-mail/senha
+    // GIVEN a user registered with this email/password
 
-    // WHEN o cliente chama POST /auth/login com as credenciais corretas
+    // WHEN the client calls POST /auth/login with the correct credentials
     const response = await app.inject({
       method: "POST",
       url: "/auth/login",
       payload: { email, password: "password123" },
     });
 
-    // THEN retorna 200 com token de acesso
+    // THEN it returns 200 with an access token
     expect(response.statusCode).toBe(200);
     expect(response.json().accessToken).toBeDefined();
   });
 
   it("should reject login with wrong password", async () => {
-    // GIVEN um usuário cadastrado com este e-mail
+    // GIVEN a user registered with this email
 
-    // WHEN o cliente chama POST /auth/login com senha errada
+    // WHEN the client calls POST /auth/login with the wrong password
     const response = await app.inject({
       method: "POST",
       url: "/auth/login",
       payload: { email, password: "wrong-password" },
     });
 
-    // THEN retorna 401
+    // THEN it returns 401
     expect(response.statusCode).toBe(401);
   });
 });
