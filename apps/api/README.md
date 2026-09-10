@@ -22,7 +22,7 @@ pnpm dev:api
 Jest — unitários por service (mockando o banco) e integração batendo em Postgres real.
 
 ```bash
-pnpm --filter api test               # unitários
+pnpm --filter api test               # unitários (com coverage, mínimo 75% — ver jest.config.js)
 pnpm --filter api test:integration   # integração (roda migrations + testa contra Postgres real)
 ```
 
