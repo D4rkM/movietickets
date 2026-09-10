@@ -19,12 +19,14 @@ describe("Auth (e2e)", () => {
   beforeAll(async () => {
     process.env.JWT_SECRET ??= "test-secret";
 
-    cleanupClient = postgres(process.env.DATABASE_URL!);
-    db = drizzle(cleanupClient, { schema });
-
     const moduleRef = await Test.createTestingModule({
       imports: [ConfigModule.forRoot({ isGlobal: true }), DrizzleModule, AuthModule],
     }).compile();
+
+    // ConfigModule.forRoot() above loads .env into process.env as a side effect,
+    // so DATABASE_URL is only reliable after the module has compiled.
+    cleanupClient = postgres(process.env.DATABASE_URL!);
+    db = drizzle(cleanupClient, { schema });
 
     app = await buildFastifyApp(moduleRef);
     app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
