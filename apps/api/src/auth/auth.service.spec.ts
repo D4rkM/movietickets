@@ -31,15 +31,19 @@ describe("AuthService", () => {
   });
 
   describe("register", () => {
-    it("throws ConflictException when email already exists", async () => {
+    it("should throw ConflictException when email already exists", async () => {
+      // ARRANGE
       mockDb.query.users.findFirst.mockResolvedValue({ id: "1" });
 
-      await expect(
-        service.register({ name: "Ana", email: "ana@test.com", password: "password123" }),
-      ).rejects.toThrow(ConflictException);
+      // ACT
+      const result = service.register({ name: "Ana", email: "ana@test.com", password: "password123" });
+
+      // ASSERT
+      await expect(result).rejects.toThrow(ConflictException);
     });
 
-    it("hashes the password and returns an access token", async () => {
+    it("should hash the password and return an access token", async () => {
+      // ARRANGE
       mockDb.query.users.findFirst.mockResolvedValue(undefined);
       (bcrypt.hash as jest.Mock).mockResolvedValue("hashed-password");
       const insertedUser = {
@@ -55,12 +59,14 @@ describe("AuthService", () => {
         }),
       });
 
+      // ACT
       const result = await service.register({
         name: "Ana",
         email: "ana@test.com",
         password: "password123",
       });
 
+      // ASSERT
       expect(bcrypt.hash).toHaveBeenCalledWith("password123", 10);
       expect(result.accessToken).toBe("signed-token");
       expect(result.user).toEqual({
@@ -73,15 +79,19 @@ describe("AuthService", () => {
   });
 
   describe("login", () => {
-    it("throws UnauthorizedException when user does not exist", async () => {
+    it("should throw UnauthorizedException when user does not exist", async () => {
+      // ARRANGE
       mockDb.query.users.findFirst.mockResolvedValue(undefined);
 
-      await expect(
-        service.login({ email: "ghost@test.com", password: "password123" }),
-      ).rejects.toThrow(UnauthorizedException);
+      // ACT
+      const result = service.login({ email: "ghost@test.com", password: "password123" });
+
+      // ASSERT
+      await expect(result).rejects.toThrow(UnauthorizedException);
     });
 
-    it("throws UnauthorizedException when password does not match", async () => {
+    it("should throw UnauthorizedException when password does not match", async () => {
+      // ARRANGE
       mockDb.query.users.findFirst.mockResolvedValue({
         id: "1",
         email: "ana@test.com",
@@ -90,12 +100,15 @@ describe("AuthService", () => {
       });
       (bcrypt.compare as jest.Mock).mockResolvedValue(false);
 
-      await expect(
-        service.login({ email: "ana@test.com", password: "wrong" }),
-      ).rejects.toThrow(UnauthorizedException);
+      // ACT
+      const result = service.login({ email: "ana@test.com", password: "wrong" });
+
+      // ASSERT
+      await expect(result).rejects.toThrow(UnauthorizedException);
     });
 
-    it("returns an access token on valid credentials", async () => {
+    it("should return an access token on valid credentials", async () => {
+      // ARRANGE
       mockDb.query.users.findFirst.mockResolvedValue({
         id: "1",
         name: "Ana",
@@ -105,8 +118,10 @@ describe("AuthService", () => {
       });
       (bcrypt.compare as jest.Mock).mockResolvedValue(true);
 
+      // ACT
       const result = await service.login({ email: "ana@test.com", password: "password123" });
 
+      // ASSERT
       expect(result.accessToken).toBe("signed-token");
     });
   });

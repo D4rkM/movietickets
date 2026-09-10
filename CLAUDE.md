@@ -11,6 +11,12 @@ Toda feature nova precisa vir com teste unitário. Se envolver fluxo entre camad
 - Front (`apps/web`): Vitest + React Testing Library.
 - Back (`apps/api`): Jest (padrão NestJS), testes de integração batendo em Postgres/Valkey reais (docker-compose ou testcontainers).
 
+### Padrão de escrita dos testes
+
+- Nome do `it`: sempre `it("should ...")`, descrevendo o comportamento esperado.
+- **Teste unitário**: comentários 3A dentro do corpo — `// ARRANGE`, `// ACT`, `// ASSERT`. Testa uma função/classe isolada, faz sentido pensar em passos.
+- **Teste de integração/e2e**: comentários Given/When/Then — `// GIVEN`, `// WHEN`, `// THEN`. Testa um comportamento fim a fim (dado um estado, quando uma ação ocorre, então tal resultado), mais natural que 3A pra esse tipo de teste.
+
 ## Regra permanente: branch + PR
 
 Nunca commitar direto em `main`. Todo ajuste (feature, fix, chore, docs) segue este fluxo:
@@ -21,6 +27,10 @@ Nunca commitar direto em `main`. Todo ajuste (feature, fix, chore, docs) segue e
 4. Nunca dar merge automático — o PR fica aberto pra revisão humana.
 
 Sem exceção mesmo pra mudanças pequenas (docs, config) — mantém `main` sempre passível de review antes de entrar.
+
+## Regra permanente: instalar lib nova
+
+Toda dependência instalada (`pnpm add`) fica com versão exata no `package.json`, sem `^`/`~` — o `.npmrc` (`save-exact=true`) já faz isso por padrão, mas vale checar depois de instalar. Se a lib tiver script de build/postinstall (não é o caso comum), precisa entrar na allowlist `pnpm.onlyBuiltDependencies` do `package.json` raiz, senão o script fica bloqueado silenciosamente.
 
 ## Arquitetura
 

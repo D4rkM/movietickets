@@ -22,32 +22,50 @@ describe("JwtAuthGuard", () => {
     guard = new JwtAuthGuard(mockJwtService as unknown as JwtService);
   });
 
-  it("throws UnauthorizedException when there is no Authorization header", async () => {
+  it("should throw UnauthorizedException when there is no Authorization header", async () => {
+    // ARRANGE
     const { context } = buildContext();
 
-    await expect(guard.canActivate(context)).rejects.toThrow(UnauthorizedException);
+    // ACT
+    const result = guard.canActivate(context);
+
+    // ASSERT
+    await expect(result).rejects.toThrow(UnauthorizedException);
   });
 
-  it("throws UnauthorizedException when the header is not a Bearer token", async () => {
+  it("should throw UnauthorizedException when the header is not a Bearer token", async () => {
+    // ARRANGE
     const { context } = buildContext({ authorization: "Basic abc123" });
 
-    await expect(guard.canActivate(context)).rejects.toThrow(UnauthorizedException);
+    // ACT
+    const result = guard.canActivate(context);
+
+    // ASSERT
+    await expect(result).rejects.toThrow(UnauthorizedException);
   });
 
-  it("throws UnauthorizedException when the token is invalid or expired", async () => {
+  it("should throw UnauthorizedException when the token is invalid or expired", async () => {
+    // ARRANGE
     const { context } = buildContext({ authorization: "Bearer bad-token" });
     mockJwtService.verifyAsync.mockRejectedValue(new Error("jwt expired"));
 
-    await expect(guard.canActivate(context)).rejects.toThrow(UnauthorizedException);
+    // ACT
+    const result = guard.canActivate(context);
+
+    // ASSERT
+    await expect(result).rejects.toThrow(UnauthorizedException);
   });
 
-  it("allows the request and attaches the payload when the token is valid", async () => {
+  it("should allow the request and attach the payload when the token is valid", async () => {
+    // ARRANGE
     const payload = { sub: "1", email: "ana@test.com", role: "customer" };
     const { context, request } = buildContext({ authorization: "Bearer good-token" });
     mockJwtService.verifyAsync.mockResolvedValue(payload);
 
+    // ACT
     const result = await guard.canActivate(context);
 
+    // ASSERT
     expect(result).toBe(true);
     expect(request.user).toEqual(payload);
   });
