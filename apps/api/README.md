@@ -6,6 +6,8 @@ REST + WebSocket Gateway. Módulos: Catalog, Seating, Booking, Payment, Auth, Ad
 
 **Banco/ORM:** PostgreSQL via [Drizzle ORM](https://orm.drizzle.team/) (`postgres` driver). Schema em `src/db/schema.ts`, migrations geradas em `drizzle/`.
 
+**Logs:** `nestjs-pino` — JSON estruturado (pretty-print só fora de produção), com log de request/response automático via `pino-http`. Nível configurável por `LOG_LEVEL` (`.env.example`); `Authorization` e `body.password` ficam de fora do log por redact.
+
 Implementado até agora: **Auth MVP** (cadastro + login com JWT, `bcrypt` para hash de senha). Demais módulos entram junto com suas features.
 
 ## Rodar
