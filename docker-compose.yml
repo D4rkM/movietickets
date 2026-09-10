@@ -27,5 +27,30 @@ services:
       timeout: 5s
       retries: 5
 
+  # Containerized app, for testing the whole stack without installing
+  # Node/pnpm locally (e.g. on Windows, or just to try it out quickly).
+  # Not started by default — `docker compose up -d` alone only brings up
+  # infra, so day-to-day dev keeps using `pnpm dev:api` with hot reload.
+  # Start it with: docker compose --profile full up -d
+  api:
+    profiles: ["full"]
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      valkey:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://movietickets:movietickets@postgres:5432/movietickets
+      JWT_SECRET: dev-secret
+      JWT_EXPIRES_IN: 1h
+      PORT: 3000
+      LOG_LEVEL: info
+    ports:
+      - "3000:3000"
+
 volumes:
   postgres_data:
