@@ -79,7 +79,7 @@ async function seedSampleSession(db: PostgresJsDatabase<typeof schema>): Promise
   const FRONT_ROWS_WITHOUT_SIDE_SEATS = 3;
   const FRONT_ROW_SEAT_COUNT = 20;
 
-  await db.insert(schema.seats).values(
+  const insertedSeats = await db.insert(schema.seats).values(
     Array.from({ length: room.rows }, (_, rowIndex) => {
       const isBackRow = rowIndex === room.rows - 1;
       const isFrontRow = rowIndex < FRONT_ROWS_WITHOUT_SIDE_SEATS;
@@ -94,14 +94,72 @@ async function seedSampleSession(db: PostgresJsDatabase<typeof schema>): Promise
         seatNumber: seatIndex + 1,
       }));
     }).flat(),
-  );
+  ).returning();
 
   const [session] = await db
     .insert(schema.sessions)
     .values({ movieId: movie.id, roomId: room.id, startsAt: new Date(), priceCents: 2500 })
     .returning();
 
+  await seedBookedSeats(db, insertedSeats, session.id);
+
   return session.id;
+}
+
+/**
+ * Marks a handful of seats as already booked (small groups scattered around
+ * the room, like real moviegoers sitting together) so the seat map doesn't
+ * look empty on a fresh demo.
+ */
+async function seedBookedSeats(
+  db: PostgresJsDatabase<typeof schema>,
+  seats: schema.Seat[],
+  sessionId: string,
+): Promise<void> {
+  const adminUser = await db.query.users.findFirst({
+    where: eq(schema.users.email, "admin@movietickets.dev"),
+  });
+  if (!adminUser) {
+    return;
+  }
+
+  const seatByLabel = new Map(seats.map((seat) => [`${seat.rowLabel}${seat.seatNumber}`, seat]));
+  const alreadyBookedLabels = [
+    // A couple, front row
+    "B10",
+    "B11",
+    // Group of friends, mid room
+    "F12",
+    "F13",
+    "F14",
+    "F15",
+    // Solo moviegoers scattered around
+    "D6",
+    "H20",
+    "J3",
+    // Group near the back
+    "K16",
+    "K17",
+    "K18",
+    // A couple on the back row
+    "M8",
+    "M9",
+  ];
+  const seatIds = alreadyBookedLabels
+    .map((label) => seatByLabel.get(label)?.id)
+    .filter((id): id is string => id != null);
+  if (seatIds.length === 0) {
+    return;
+  }
+
+  const [booking] = await db
+    .insert(schema.bookings)
+    .values({ userId: adminUser.id, sessionId, status: "confirmed" })
+    .returning();
+
+  await db
+    .insert(schema.bookingSeats)
+    .values(seatIds.map((seatId) => ({ bookingId: booking.id, sessionId, seatId })));
 }
 
 main().catch((err) => {
