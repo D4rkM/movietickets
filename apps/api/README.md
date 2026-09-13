@@ -10,7 +10,9 @@ REST + WebSocket Gateway. Módulos: Catalog, Seating, Booking, Payment, Auth, Ad
 
 **Build:** SWC (`nest-cli.json`), bem mais rápido que o `tsc` puro — o typecheck continua rodando em paralelo (`typeCheck: true`) e também dá pra rodar isolado com `pnpm --filter api typecheck`.
 
-Implementado até agora: **Auth MVP** (cadastro + login com JWT, `bcrypt` para hash de senha). Demais módulos entram junto com suas features.
+**CORS:** liberado só pra origem configurada em `CORS_ORIGIN` (`.env.example`, default `http://localhost:5173` — origem do `apps/web` em dev).
+
+Implementado até agora: **Auth MVP** (cadastro + login com JWT, `bcrypt` para hash de senha), **Seating** (`GET /sessions/:id/seats`, mapa de assento combinando Postgres + Valkey), **Booking** (insert MVP de reserva, sem hold/conflito ainda). Demais módulos entram junto com suas features.
 
 ## Rodar
 
