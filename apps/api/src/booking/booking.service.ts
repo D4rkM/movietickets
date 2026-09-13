@@ -1,8 +1,9 @@
 import { ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { eq } from "drizzle-orm";
+import { desc, eq } from "drizzle-orm";
 import { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import { DRIZZLE } from "../db/drizzle.module";
 import * as schema from "../db/schema";
+import { MyBooking } from "./my-booking.types";
 
 export interface CreateBookingResult {
   bookingId: string;
@@ -65,5 +66,36 @@ export class BookingService {
       .returning();
 
     return { bookingId: updated.id, status: updated.status };
+  }
+
+  /** Lists the authenticated user's confirmed bookings, most recent first. */
+  async getMyBookings(userId: string): Promise<MyBooking[]> {
+    const bookings = await this.db.query.bookings.findMany({
+      where: eq(schema.bookings.userId, userId),
+      orderBy: desc(schema.bookings.createdAt),
+      with: {
+        session: { with: { movie: true, room: { with: { cinema: true } } } },
+        seats: { with: { seat: true } },
+      },
+    });
+
+    return bookings
+      .filter((booking) => booking.status === "confirmed")
+      .map((booking) => ({
+        bookingId: booking.id,
+        status: booking.status,
+        session: {
+          id: booking.session.id,
+          startsAt: booking.session.startsAt.toISOString(),
+          priceCents: booking.session.priceCents,
+          movie: { title: booking.session.movie.title },
+          room: { name: booking.session.room.name },
+          cinema: { name: booking.session.room.cinema.name, city: booking.session.room.cinema.city },
+        },
+        seats: booking.seats.map((bookingSeat) => ({
+          rowLabel: bookingSeat.seat.rowLabel,
+          seatNumber: bookingSeat.seat.seatNumber,
+        })),
+      }));
   }
 }
