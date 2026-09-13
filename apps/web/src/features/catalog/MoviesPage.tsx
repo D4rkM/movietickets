@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { useAuth } from "../auth/AuthContext";
+import { ProfileMenu } from "../auth/ProfileMenu";
 import { listMovies } from "./api";
 import type { CatalogMovie } from "./types";
 
@@ -9,7 +9,6 @@ function formatDateTime(iso: string): string {
 }
 
 export function MoviesPage() {
-  const { logout } = useAuth();
   const [movies, setMovies] = useState<CatalogMovie[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -33,9 +32,7 @@ export function MoviesPage() {
     <main className="mx-auto max-w-3xl px-4 py-8">
       <div className="mb-6 flex items-center justify-between">
         <h1 className="text-2xl font-semibold">Em cartaz</h1>
-        <button onClick={logout} className="text-sm text-gray-600 underline">
-          Sair
-        </button>
+        <ProfileMenu />
       </div>
 
       {error && (

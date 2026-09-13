@@ -4,6 +4,7 @@ import { LoginPage } from "./features/auth/LoginPage";
 import { CheckoutPage } from "./features/checkout/CheckoutPage";
 import { MoviesPage } from "./features/catalog/MoviesPage";
 import { SessionSeatsPage } from "./features/seating/SessionSeatsPage";
+import { TicketsPage } from "./features/tickets/TicketsPage";
 import { ProtectedRoute } from "./lib/ProtectedRoute";
 
 export function App() {
@@ -16,6 +17,7 @@ export function App() {
           <Route path="/movies" element={<MoviesPage />} />
           <Route path="/sessions/:id/seats" element={<SessionSeatsPage />} />
           <Route path="/checkout" element={<CheckoutPage />} />
+          <Route path="/tickets" element={<TicketsPage />} />
         </Route>
       </Routes>
     </AuthProvider>
