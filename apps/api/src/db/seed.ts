@@ -80,9 +80,10 @@ async function seedSampleSession(db: PostgresJsDatabase<typeof schema>): Promise
     ).flat(),
   );
 
+  const startsAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
   const [session] = await db
     .insert(schema.sessions)
-    .values({ movieId: movie.id, roomId: room.id, startsAt: new Date(), priceCents: 2500 })
+    .values({ movieId: movie.id, roomId: room.id, startsAt, priceCents: 2500 })
     .returning();
 
   return session.id;

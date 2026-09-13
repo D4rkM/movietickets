@@ -48,8 +48,29 @@
     },
     {
       "type": "folder",
-      "name": "seating",
+      "name": "catalog",
       "seq": 2,
+      "items": [
+        {
+          "type": "http-request",
+          "name": "List movies",
+          "seq": 1,
+          "request": {
+            "url": "{{baseUrl}}/movies",
+            "method": "GET",
+            "headers": [],
+            "params": [],
+            "body": { "mode": "none" },
+            "auth": { "mode": "none" },
+            "docs": "Lista filmes em cartaz com suas sessões futuras (sala + cinema + horário + preço). Rota pública, não exige token. Sessões com `startsAt` no passado não aparecem."
+          }
+        }
+      ]
+    },
+    {
+      "type": "folder",
+      "name": "seating",
+      "seq": 3,
       "items": [
         {
           "type": "http-request",
@@ -70,7 +91,7 @@
     {
       "type": "folder",
       "name": "booking",
-      "seq": 3,
+      "seq": 4,
       "items": [
         {
           "type": "http-request",
