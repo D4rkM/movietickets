@@ -10,6 +10,8 @@ import { AuthModule } from "../src/auth/auth.module";
 import { BookingModule } from "../src/booking/booking.module";
 import { DrizzleModule } from "../src/db/drizzle.module";
 import * as schema from "../src/db/schema";
+import { SeatingModule } from "../src/seating/seating.module";
+import { ValkeyModule } from "../src/valkey/valkey.module";
 import { buildFastifyApp } from "./helpers/build-app";
 
 describe("Booking (e2e)", () => {
@@ -17,6 +19,7 @@ describe("Booking (e2e)", () => {
   let db: PostgresJsDatabase<typeof schema>;
   let cleanupClient: ReturnType<typeof postgres>;
   let accessToken: string;
+  let jwtService: JwtService;
 
   let userId: string;
   let movieId: string;
@@ -24,12 +27,22 @@ describe("Booking (e2e)", () => {
   let roomId: string;
   let sessionId: string;
   let seatId: string;
+  let bookingId: string;
+
+  const otherUserId = "00000000-0000-0000-0000-000000000002";
 
   beforeAll(async () => {
     process.env.JWT_SECRET ??= "test-secret";
 
     const moduleRef = await Test.createTestingModule({
-      imports: [ConfigModule.forRoot({ isGlobal: true }), DrizzleModule, AuthModule, BookingModule],
+      imports: [
+        ConfigModule.forRoot({ isGlobal: true }),
+        DrizzleModule,
+        ValkeyModule,
+        AuthModule,
+        BookingModule,
+        SeatingModule,
+      ],
     }).compile();
 
     cleanupClient = postgres(process.env.DATABASE_URL!);
@@ -45,9 +58,8 @@ describe("Booking (e2e)", () => {
       .values({ name: "Booking E2E User", email: "booking-e2e@test.com", passwordHash: "n/a" })
       .returning({ id: schema.users.id });
 
-    accessToken = moduleRef
-      .get(JwtService)
-      .sign({ sub: userId, email: "booking-e2e@test.com", role: "customer" });
+    jwtService = moduleRef.get(JwtService);
+    accessToken = jwtService.sign({ sub: userId, email: "booking-e2e@test.com", role: "customer" });
 
     [{ id: movieId }] = await db
       .insert(schema.movies)
@@ -137,5 +149,73 @@ describe("Booking (e2e)", () => {
       where: eq(schema.bookingSeats.bookingId, body.bookingId),
     });
     expect(bookingSeat).toMatchObject({ sessionId, seatId });
+
+    bookingId = body.bookingId;
+  });
+
+  it("should reject confirming a booking without a valid token", async () => {
+    // GIVEN no Authorization header
+
+    // WHEN the client calls POST /bookings/:id/confirm
+    const response = await app.inject({ method: "POST", url: `/bookings/${bookingId}/confirm` });
+
+    // THEN it returns 401
+    expect(response.statusCode).toBe(401);
+  });
+
+  it("should return 404 when confirming a booking that belongs to someone else", async () => {
+    // GIVEN a token for a different user than the one who created the booking
+    const otherToken = jwtService.sign({
+      sub: otherUserId,
+      email: "someone-else@test.com",
+      role: "customer",
+    });
+
+    // WHEN that user tries to confirm the booking
+    const response = await app.inject({
+      method: "POST",
+      url: `/bookings/${bookingId}/confirm`,
+      headers: { authorization: `Bearer ${otherToken}` },
+    });
+
+    // THEN it returns 404
+    expect(response.statusCode).toBe(404);
+  });
+
+  it("should confirm a pending booking and make its seat show as booked on the seat map", async () => {
+    // GIVEN a pending booking for the authenticated user
+
+    // WHEN the client confirms the mocked payment
+    const confirmResponse = await app.inject({
+      method: "POST",
+      url: `/bookings/${bookingId}/confirm`,
+      headers: { authorization: `Bearer ${accessToken}` },
+    });
+
+    // THEN it returns 200 with status "confirmed", and the seat map reflects it as booked
+    expect(confirmResponse.statusCode).toBe(200);
+    expect(confirmResponse.json()).toEqual({ bookingId, status: "confirmed" });
+
+    const seatMapResponse = await app.inject({
+      method: "GET",
+      url: `/sessions/${sessionId}/seats`,
+      headers: { authorization: `Bearer ${accessToken}` },
+    });
+    const seat = seatMapResponse.json().seats.find((s: { id: string }) => s.id === seatId);
+    expect(seat.status).toBe("booked");
+  });
+
+  it("should reject confirming a booking that is already confirmed", async () => {
+    // GIVEN a booking that was already confirmed
+
+    // WHEN the client tries to confirm it again
+    const response = await app.inject({
+      method: "POST",
+      url: `/bookings/${bookingId}/confirm`,
+      headers: { authorization: `Bearer ${accessToken}` },
+    });
+
+    // THEN it returns 409
+    expect(response.statusCode).toBe(409);
   });
 });

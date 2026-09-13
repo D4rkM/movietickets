@@ -1,4 +1,4 @@
-import { Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { eq } from "drizzle-orm";
 import { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import { DRIZZLE } from "../db/drizzle.module";
@@ -7,6 +7,11 @@ import * as schema from "../db/schema";
 export interface CreateBookingResult {
   bookingId: string;
   seatId: string;
+  status: string;
+}
+
+export interface ConfirmBookingResult {
+  bookingId: string;
   status: string;
 }
 
@@ -35,5 +40,30 @@ export class BookingService {
     await this.db.insert(schema.bookingSeats).values({ bookingId: booking.id, sessionId, seatId });
 
     return { bookingId: booking.id, seatId, status: booking.status };
+  }
+
+  /**
+   * Mocked payment confirmation: flips a pending booking to confirmed so it
+   * shows as "booked" on the seat map. Real payment gateway integration and
+   * seat-conflict handling land in a later story.
+   */
+  async confirmBooking(bookingId: string, userId: string): Promise<ConfirmBookingResult> {
+    const booking = await this.db.query.bookings.findFirst({
+      where: eq(schema.bookings.id, bookingId),
+    });
+    if (!booking || booking.userId !== userId) {
+      throw new NotFoundException("Reserva não encontrada");
+    }
+    if (booking.status !== "pending") {
+      throw new ConflictException(`Reserva já está com status "${booking.status}"`);
+    }
+
+    const [updated] = await this.db
+      .update(schema.bookings)
+      .set({ status: "confirmed" })
+      .where(eq(schema.bookings.id, bookingId))
+      .returning();
+
+    return { bookingId: updated.id, status: updated.status };
   }
 }
