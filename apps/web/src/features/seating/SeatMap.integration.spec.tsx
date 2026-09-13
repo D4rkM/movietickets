@@ -27,7 +27,7 @@ describe("SeatMap (integration)", () => {
 
     // THEN it shows a loading state first, then the seat once the fetch resolves
     expect(screen.getByText("Carregando mapa de assentos…")).toBeInTheDocument();
-    expect(await screen.findByTitle("A1 — Livre")).toBeInTheDocument();
+    expect(await screen.findByTitle("A1 — Disponível")).toBeInTheDocument();
   });
 
   it("should show an error message when the API request fails", async () => {

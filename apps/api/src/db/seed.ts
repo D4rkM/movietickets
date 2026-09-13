@@ -67,17 +67,33 @@ async function seedSampleSession(db: PostgresJsDatabase<typeof schema>): Promise
 
   const [room] = await db
     .insert(schema.rooms)
-    .values({ cinemaId: cinema.id, name: "Sala 1", rows: 2, seatsPerRow: 4 })
+    .values({ cinemaId: cinema.id, name: "Sala 1", rows: 13, seatsPerRow: 28 })
     .returning();
 
+  // The back row has no aisle (seats run edge to edge), so it needs a few extra
+  // seats to visually span the same width as the front rows' two aisles.
+  const BACK_ROW_SEAT_COUNT = 32;
+  // The first rows (closest to the screen) have no side seats, only the middle
+  // block — must match the middle-block size (seatsPerRow - 2 side blocks) used
+  // by the rows that do have side seats, so seats line up across rows.
+  const FRONT_ROWS_WITHOUT_SIDE_SEATS = 3;
+  const FRONT_ROW_SEAT_COUNT = 20;
+
   await db.insert(schema.seats).values(
-    Array.from({ length: room.rows }, (_, rowIndex) =>
-      Array.from({ length: room.seatsPerRow }, (_, seatIndex) => ({
+    Array.from({ length: room.rows }, (_, rowIndex) => {
+      const isBackRow = rowIndex === room.rows - 1;
+      const isFrontRow = rowIndex < FRONT_ROWS_WITHOUT_SIDE_SEATS;
+      const seatCount = isBackRow
+        ? BACK_ROW_SEAT_COUNT
+        : isFrontRow
+          ? FRONT_ROW_SEAT_COUNT
+          : room.seatsPerRow;
+      return Array.from({ length: seatCount }, (_, seatIndex) => ({
         roomId: room.id,
         rowLabel: String.fromCharCode(65 + rowIndex),
         seatNumber: seatIndex + 1,
-      })),
-    ).flat(),
+      }));
+    }).flat(),
   );
 
   const [session] = await db

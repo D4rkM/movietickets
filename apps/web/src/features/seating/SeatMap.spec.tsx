@@ -23,10 +23,10 @@ describe("SeatMap", () => {
     render(<SeatMap sessionId="session-1" accessToken="token" />);
 
     // ASSERT
-    expect(await screen.findByTitle("A1 — Livre")).toBeInTheDocument();
-    expect(screen.getByTitle("A2 — Reservado (outra pessoa)")).toBeInTheDocument();
-    expect(screen.getByTitle("A3 — Selecionado por você")).toBeInTheDocument();
-    expect(screen.getByTitle("A4 — Ocupado")).toBeInTheDocument();
+    expect(await screen.findByTitle("A1 — Disponível")).toBeInTheDocument();
+    expect(screen.getByTitle("A2 — Bloqueado")).toBeInTheDocument();
+    expect(screen.getByTitle("A3 — Selecionado")).toBeInTheDocument();
+    expect(screen.getByTitle("A4 — Reservado")).toBeInTheDocument();
   });
 
   it("should show the session's price converted from cents", async () => {
@@ -54,12 +54,12 @@ describe("SeatMap", () => {
 
     // ACT
     render(<SeatMap sessionId="session-1" accessToken="token" />);
-    await screen.findByTitle("A1 — Livre");
+    await screen.findByTitle("A1 — Disponível");
 
     // ASSERT
-    expect(screen.getByText("Livre")).toBeInTheDocument();
-    expect(screen.getByText("Reservado (outra pessoa)")).toBeInTheDocument();
-    expect(screen.getByText("Selecionado por você")).toBeInTheDocument();
-    expect(screen.getByText("Ocupado")).toBeInTheDocument();
+    expect(screen.getByText("Disponível")).toBeInTheDocument();
+    expect(screen.getByText("Selecionado")).toBeInTheDocument();
+    expect(screen.getByText("Reservado")).toBeInTheDocument();
+    expect(screen.getByText("Bloqueado")).toBeInTheDocument();
   });
 });

@@ -1,0 +1,80 @@
+import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { AuthProvider } from "../auth/AuthContext";
+import { CheckoutPage } from "./CheckoutPage";
+
+function renderCheckoutPage(locationState: unknown) {
+  return render(
+    <MemoryRouter
+      initialEntries={[{ pathname: "/checkout", state: locationState }]}
+    >
+      <AuthProvider>
+        <Routes>
+          <Route path="/checkout" element={<CheckoutPage />} />
+          <Route path="/movies" element={<p>Movies page</p>} />
+        </Routes>
+      </AuthProvider>
+    </MemoryRouter>,
+  );
+}
+
+describe("CheckoutPage (integration)", () => {
+  beforeEach(() => {
+    localStorage.setItem("movietickets:accessToken", "token-123");
+    vi.stubGlobal("fetch", vi.fn());
+  });
+
+  afterEach(() => {
+    localStorage.clear();
+    vi.unstubAllGlobals();
+  });
+
+  it("should redirect to /movies when there is no checkout state", async () => {
+    // GIVEN the page is reached without going through seat selection
+    renderCheckoutPage(null);
+
+    // WHEN it renders
+    // THEN it redirects to the movies page
+    expect(await screen.findByText("Movies page")).toBeInTheDocument();
+  });
+
+  it("should show the order summary and confirm booking after a mocked payment", async () => {
+    // GIVEN a session with one selected seat
+    vi.mocked(fetch).mockImplementation((url: string | URL | Request) => {
+      const urlString = url.toString();
+      if (urlString.includes("/seats/") && urlString.includes("/book")) {
+        return Promise.resolve({ ok: true, json: async () => ({ bookingId: "booking-1" }) } as Response);
+      }
+      if (urlString.includes("/bookings/") && urlString.includes("/confirm")) {
+        return Promise.resolve({ ok: true } as Response);
+      }
+      return Promise.resolve({
+        ok: true,
+        json: async () => ({
+          room: { rows: 1, seatsPerRow: 1 },
+          priceCents: 2500,
+          seats: [{ id: "seat-1", rowLabel: "A", seatNumber: 1, status: "held_by_me" }],
+        }),
+      } as Response);
+    });
+    renderCheckoutPage({ sessionId: "session-1", seatIds: ["seat-1"] });
+
+    // WHEN the summary loads and the user confirms the mocked payment
+    expect(await screen.findByText("Assento A1")).toBeInTheDocument();
+    expect(screen.getByText("Total: R$ 25.00")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: /Pagar \(mock\)/ }));
+
+    // THEN it books the seat, confirms the payment, and shows the confirmation
+    expect(await screen.findByText("Ingresso confirmado!")).toBeInTheDocument();
+    expect(fetch).toHaveBeenCalledWith(
+      expect.stringContaining("/sessions/session-1/seats/seat-1/book"),
+      expect.objectContaining({ method: "POST" }),
+    );
+    expect(fetch).toHaveBeenCalledWith(
+      expect.stringContaining("/bookings/booking-1/confirm"),
+      expect.objectContaining({ method: "POST" }),
+    );
+  });
+});
