@@ -1,0 +1,81 @@
+{
+  "version": "1",
+  "name": "movietickets",
+  "items": [
+    {
+      "type": "folder",
+      "name": "auth",
+      "seq": 1,
+      "items": [
+        {
+          "type": "http-request",
+          "name": "Register",
+          "seq": 1,
+          "request": {
+            "url": "{{baseUrl}}/auth/register",
+            "method": "POST",
+            "headers": [],
+            "params": [],
+            "body": {
+              "mode": "json",
+              "json": "{\n  \"name\": \"Ana\",\n  \"email\": \"ana@example.com\",\n  \"password\": \"password123\"\n}"
+            },
+            "auth": { "mode": "none" },
+            "docs": "Cria um usuário novo (201, retorna só os dados do usuário — sem token, por design: cadastro e login são passos separados). Depois de registrar, rode o Login pra pegar o accessToken. Se o e-mail já existir, retorna 409."
+          }
+        },
+        {
+          "type": "http-request",
+          "name": "Login",
+          "seq": 2,
+          "request": {
+            "url": "{{baseUrl}}/auth/login",
+            "method": "POST",
+            "headers": [],
+            "params": [],
+            "body": {
+              "mode": "json",
+              "json": "{\n  \"email\": \"admin@movietickets.dev\",\n  \"password\": \"password123\"\n}"
+            },
+            "auth": { "mode": "none" },
+            "script": {
+              "res": "if (res.body.accessToken) {\n  bru.setEnvVar(\"accessToken\", res.body.accessToken);\n}"
+            },
+            "docs": "Login com um usuário já existente e salva o accessToken retornado na env var `accessToken`. Por padrão usa o admin criado pelo `pnpm --filter api db:seed` (admin@movietickets.dev / password123) — troque pra cliente@movietickets.dev pra testar como customer."
+          }
+        }
+      ]
+    },
+    {
+      "type": "folder",
+      "name": "seating",
+      "seq": 2,
+      "items": [
+        {
+          "type": "http-request",
+          "name": "Get seat map",
+          "seq": 1,
+          "request": {
+            "url": "{{baseUrl}}/sessions/{{sessionId}}/seats",
+            "method": "GET",
+            "headers": [],
+            "params": [],
+            "body": { "mode": "none" },
+            "auth": { "mode": "bearer", "bearer": { "token": "{{accessToken}}" } },
+            "docs": "Retorna o mapa de assentos de uma sessão: layout da sala + status de cada assento (free / held_by_other / held_by_me / booked).\n\nPré-requisitos:\n1. Rode Login (ou Register) primeiro pra popular accessToken.\n2. Rode `pnpm --filter api db:seed` (idempotente) — ele cria uma sessão de teste (filme + cinema + sala 2x4 = 8 assentos) e imprime o id dela no console. Cole esse id na env var sessionId.\n\nTesta sessão inexistente: troque sessionId por qualquer UUID aleatório, deve voltar 404."
+          }
+        }
+      ]
+    }
+  ],
+  "environments": [
+    {
+      "name": "local",
+      "variables": [
+        { "name": "baseUrl", "value": "http://localhost:3000", "type": "text", "enabled": true, "secret": false },
+        { "name": "sessionId", "value": "", "type": "text", "enabled": true, "secret": false },
+        { "name": "accessToken", "value": "", "type": "text", "enabled": true, "secret": false }
+      ]
+    }
+  ]
+}

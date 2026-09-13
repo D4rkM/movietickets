@@ -42,7 +42,7 @@ describe("AuthService", () => {
       await expect(result).rejects.toThrow(ConflictException);
     });
 
-    it("should hash the password and return an access token", async () => {
+    it("should hash the password and create the user, without issuing a token", async () => {
       // ARRANGE
       mockDb.query.users.findFirst.mockResolvedValue(undefined);
       (bcrypt.hash as jest.Mock).mockResolvedValue("hashed-password");
@@ -68,8 +68,8 @@ describe("AuthService", () => {
 
       // ASSERT
       expect(bcrypt.hash).toHaveBeenCalledWith("password123", 10);
-      expect(result.accessToken).toBe("signed-token");
-      expect(result.user).toEqual({
+      expect(mockJwtService.sign).not.toHaveBeenCalled();
+      expect(result).toEqual({
         id: "1",
         name: "Ana",
         email: "ana@test.com",
