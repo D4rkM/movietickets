@@ -138,4 +138,61 @@ describe("Booking (e2e)", () => {
     });
     expect(bookingSeat).toMatchObject({ sessionId, seatId });
   });
+
+  it("should reject GET /bookings/mine without a valid token", async () => {
+    // GIVEN no Authorization header
+
+    // WHEN the client calls GET /bookings/mine
+    const response = await app.inject({ method: "GET", url: "/bookings/mine" });
+
+    // THEN it returns 401
+    expect(response.statusCode).toBe(401);
+  });
+
+  it("should list only the user's confirmed bookings, with session and seat details", async () => {
+    // GIVEN a confirmed booking and a pending booking for the same user
+    const [otherSeat] = await db
+      .insert(schema.seats)
+      .values({ roomId, rowLabel: "A", seatNumber: 2 })
+      .returning();
+    const [confirmedBooking] = await db
+      .insert(schema.bookings)
+      .values({ userId, sessionId, status: "confirmed" })
+      .returning();
+    await db.insert(schema.bookingSeats).values({
+      bookingId: confirmedBooking.id,
+      sessionId,
+      seatId: otherSeat.id,
+    });
+    const [pendingBooking] = await db
+      .insert(schema.bookings)
+      .values({ userId, sessionId, status: "pending" })
+      .returning();
+
+    // WHEN the client requests their booking history
+    const response = await app.inject({
+      method: "GET",
+      url: "/bookings/mine",
+      headers: { authorization: `Bearer ${accessToken}` },
+    });
+
+    // THEN it returns only the confirmed booking, with movie/session/seat details
+    expect(response.statusCode).toBe(200);
+    const body = response.json();
+    const bookingIds = body.map((booking: { bookingId: string }) => booking.bookingId);
+    expect(bookingIds).toContain(confirmedBooking.id);
+    expect(bookingIds).not.toContain(pendingBooking.id);
+
+    const entry = body.find((booking: { bookingId: string }) => booking.bookingId === confirmedBooking.id);
+    expect(entry).toMatchObject({
+      status: "confirmed",
+      session: { movie: { title: "Booking E2E Movie" } },
+      seats: [{ rowLabel: "A", seatNumber: 2 }],
+    });
+
+    await db.delete(schema.bookingSeats).where(eq(schema.bookingSeats.bookingId, confirmedBooking.id));
+    await db.delete(schema.bookings).where(eq(schema.bookings.id, confirmedBooking.id));
+    await db.delete(schema.bookings).where(eq(schema.bookings.id, pendingBooking.id));
+    await db.delete(schema.seats).where(eq(schema.seats.id, otherSeat.id));
+  });
 });

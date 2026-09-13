@@ -5,7 +5,7 @@ import { BookingService } from "./booking.service";
 
 describe("BookingService", () => {
   const mockDb = {
-    query: { sessions: { findFirst: jest.fn() } },
+    query: { sessions: { findFirst: jest.fn() }, bookings: { findMany: jest.fn() } },
     insert: jest.fn(),
   };
 
@@ -58,5 +58,55 @@ describe("BookingService", () => {
       seatId: "seat-1",
     });
     expect(result).toEqual({ bookingId: "booking-1", seatId: "seat-1", status: "pending" });
+  });
+
+  it("should only return confirmed bookings, mapped with session and seat details", async () => {
+    // ARRANGE
+    mockDb.query.bookings.findMany.mockResolvedValue([
+      {
+        id: "booking-1",
+        status: "confirmed",
+        session: {
+          id: "session-1",
+          startsAt: new Date("2026-01-01T20:00:00.000Z"),
+          priceCents: 2500,
+          movie: { title: "Dune" },
+          room: { name: "Sala 1", cinema: { name: "Cine A", city: "Recife" } },
+        },
+        seats: [{ seat: { rowLabel: "A", seatNumber: 1 } }],
+      },
+      {
+        id: "booking-2",
+        status: "pending",
+        session: {
+          id: "session-2",
+          startsAt: new Date(),
+          priceCents: 1000,
+          movie: { title: "Other" },
+          room: { name: "Sala 2", cinema: { name: "Cine B", city: "Recife" } },
+        },
+        seats: [],
+      },
+    ]);
+
+    // ACT
+    const result = await service.getMyBookings("user-1");
+
+    // ASSERT
+    expect(result).toEqual([
+      {
+        bookingId: "booking-1",
+        status: "confirmed",
+        session: {
+          id: "session-1",
+          startsAt: "2026-01-01T20:00:00.000Z",
+          priceCents: 2500,
+          movie: { title: "Dune" },
+          room: { name: "Sala 1" },
+          cinema: { name: "Cine A", city: "Recife" },
+        },
+        seats: [{ rowLabel: "A", seatNumber: 1 }],
+      },
+    ]);
   });
 });
