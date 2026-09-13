@@ -1,8 +1,7 @@
 import { createContext, useCallback, useContext, useMemo, useState } from "react";
 import type { ReactNode } from "react";
+import { ACCESS_TOKEN_STORAGE_KEY } from "../../lib/api-client";
 import { login as loginRequest } from "./api";
-
-const STORAGE_KEY = "movietickets:accessToken";
 
 interface AuthContextValue {
   accessToken: string | null;
@@ -14,17 +13,17 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [accessToken, setAccessToken] = useState<string | null>(() =>
-    localStorage.getItem(STORAGE_KEY),
+    localStorage.getItem(ACCESS_TOKEN_STORAGE_KEY),
   );
 
   const login = useCallback(async (email: string, password: string) => {
     const { accessToken: token } = await loginRequest(email, password);
-    localStorage.setItem(STORAGE_KEY, token);
+    localStorage.setItem(ACCESS_TOKEN_STORAGE_KEY, token);
     setAccessToken(token);
   }, []);
 
   const logout = useCallback(() => {
-    localStorage.removeItem(STORAGE_KEY);
+    localStorage.removeItem(ACCESS_TOKEN_STORAGE_KEY);
     setAccessToken(null);
   }, []);
 

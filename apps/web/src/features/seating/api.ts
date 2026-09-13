@@ -1,10 +1,11 @@
-import { API_URL } from "../../lib/api-client";
+import { API_URL, assertAuthorized } from "../../lib/api-client";
 import type { SeatMapResponse } from "./types";
 
 export async function getSeatMap(sessionId: string, accessToken: string): Promise<SeatMapResponse> {
   const response = await fetch(`${API_URL}/sessions/${sessionId}/seats`, {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
+  assertAuthorized(response);
 
   if (!response.ok) {
     throw new Error(`Falha ao carregar o mapa de assentos (status ${response.status})`);
@@ -22,6 +23,7 @@ export async function bookSeat(
     method: "POST",
     headers: { Authorization: `Bearer ${accessToken}` },
   });
+  assertAuthorized(response);
 
   if (!response.ok) {
     throw new Error(`Falha ao reservar o assento ${seatId} (status ${response.status})`);
@@ -35,6 +37,7 @@ export async function confirmBooking(bookingId: string, accessToken: string): Pr
     method: "POST",
     headers: { Authorization: `Bearer ${accessToken}` },
   });
+  assertAuthorized(response);
 
   if (!response.ok) {
     throw new Error(`Falha ao confirmar a reserva ${bookingId} (status ${response.status})`);

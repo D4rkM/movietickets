@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, Navigate, useLocation } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
+import { UnauthorizedError } from "../../lib/api-client";
 import { bookSeat, confirmBooking, getSeatMap } from "../seating/api";
 import type { SeatMapSeat } from "../seating/types";
 
@@ -40,7 +41,12 @@ export function CheckoutPage() {
         setSeats(seatMap.seats.filter((seat) => state.seatIds.includes(seat.id)));
       })
       .catch((err: Error) => {
-        if (!cancelled) setError(err.message);
+        if (cancelled) return;
+        if (err instanceof UnauthorizedError) {
+          window.location.href = "/login";
+          return;
+        }
+        setError(err.message);
       });
 
     return () => {
@@ -62,6 +68,10 @@ export function CheckoutPage() {
       }
       setConfirmed(true);
     } catch (err) {
+      if (err instanceof UnauthorizedError) {
+        window.location.href = "/login";
+        return;
+      }
       setError((err as Error).message);
     } finally {
       setPaying(false);

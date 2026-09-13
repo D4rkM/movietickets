@@ -9,6 +9,7 @@ describe("SeatMap (integration)", () => {
 
   afterEach(() => {
     vi.unstubAllGlobals();
+    localStorage.clear();
   });
 
   it("should show a loading state and then the seat map once the request resolves", async () => {
@@ -39,6 +40,27 @@ describe("SeatMap (integration)", () => {
 
     // THEN it shows an error message instead of the seat map
     expect(await screen.findByRole("alert")).toHaveTextContent("404");
+  });
+
+  it("should redirect to /login when the API returns 401 (expired/invalid token)", async () => {
+    // GIVEN a stale token stored from a previous session
+    localStorage.setItem("movietickets:accessToken", "stale-token");
+    vi.mocked(fetch).mockResolvedValue({ ok: false, status: 401 } as Response);
+    const originalLocation = window.location;
+    // @ts-expect-error -- replacing location with a mock to observe the redirect
+    delete window.location;
+    // @ts-expect-error -- partial Location mock is enough to observe href
+    window.location = { ...originalLocation, href: "" };
+
+    // WHEN the seat map request comes back 401
+    render(<SeatMap sessionId="session-1" accessToken="stale-token" />);
+    await vi.waitFor(() => expect(window.location.href).toBe("/login"));
+
+    // THEN it clears the stale token and redirects to the login page
+    expect(localStorage.getItem("movietickets:accessToken")).toBeNull();
+
+    // @ts-expect-error -- restoring the original Location object
+    window.location = originalLocation;
   });
 
   it("should request the seat map for the given session with the token as a bearer header", async () => {

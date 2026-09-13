@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { UnauthorizedError } from "../../lib/api-client";
 import { getSeatMap } from "./api";
 import type { SeatMapResponse, SeatMapSeat, SeatState } from "./types";
 
@@ -95,9 +96,12 @@ export function SeatMap({ sessionId, accessToken, selectedSeatIds, onToggleSeat 
         }
       })
       .catch((err: Error) => {
-        if (!cancelled) {
-          setError(err.message);
+        if (cancelled) return;
+        if (err instanceof UnauthorizedError) {
+          window.location.href = "/login";
+          return;
         }
+        setError(err.message);
       });
 
     return () => {

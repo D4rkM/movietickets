@@ -77,4 +77,39 @@ describe("CheckoutPage (integration)", () => {
       expect.objectContaining({ method: "POST" }),
     );
   });
+
+  it("should redirect to /login when the payment gets a 401 (expired token)", async () => {
+    // GIVEN the seat map summary loads fine, but the token expires before paying
+    vi.mocked(fetch).mockImplementation((url: string | URL | Request) => {
+      const urlString = url.toString();
+      if (urlString.includes("/seats/") && urlString.includes("/book")) {
+        return Promise.resolve({ ok: false, status: 401 } as Response);
+      }
+      return Promise.resolve({
+        ok: true,
+        json: async () => ({
+          room: { rows: 1, seatsPerRow: 1 },
+          priceCents: 2500,
+          seats: [{ id: "seat-1", rowLabel: "A", seatNumber: 1, status: "held_by_me" }],
+        }),
+      } as Response);
+    });
+    const originalLocation = window.location;
+    // @ts-expect-error -- replacing location with a mock to observe the redirect
+    delete window.location;
+    // @ts-expect-error -- partial Location mock is enough to observe href
+    window.location = { ...originalLocation, href: "" };
+    renderCheckoutPage({ sessionId: "session-1", seatIds: ["seat-1"] });
+
+    // WHEN the user tries to pay
+    await screen.findByText("Assento A1");
+    await userEvent.click(screen.getByRole("button", { name: /Pagar \(mock\)/ }));
+
+    // THEN it clears the stale token and redirects to the login page
+    await vi.waitFor(() => expect(window.location.href).toBe("/login"));
+    expect(localStorage.getItem("movietickets:accessToken")).toBeNull();
+
+    // @ts-expect-error -- restoring the original Location object
+    window.location = originalLocation;
+  });
 });
