@@ -66,6 +66,27 @@
           }
         }
       ]
+    },
+    {
+      "type": "folder",
+      "name": "booking",
+      "seq": 3,
+      "items": [
+        {
+          "type": "http-request",
+          "name": "Book seat (MVP insert)",
+          "seq": 1,
+          "request": {
+            "url": "{{baseUrl}}/sessions/{{sessionId}}/seats/{{seatId}}/book",
+            "method": "POST",
+            "headers": [],
+            "params": [],
+            "body": { "mode": "none" },
+            "auth": { "mode": "bearer", "bearer": { "token": "{{accessToken}}" } },
+            "docs": "Insert MVP: cria um booking `pending` + booking_seat linkando o assento escolhido. Sem hold/TTL, sem checagem de conflito — dois clientes conseguem reservar o mesmo assento nesse MVP (isso é fechado nas próximas stories).\n\nPré-requisitos:\n1. Rode Login pra popular accessToken.\n2. Rode seating/Get seat map pra pegar um `id` de assento livre na resposta, cole na env var seatId.\n\nTesta sessão inexistente: troque sessionId por qualquer UUID aleatório, deve voltar 404."
+          }
+        }
+      ]
     }
   ],
   "environments": [
@@ -74,6 +95,7 @@
       "variables": [
         { "name": "baseUrl", "value": "http://localhost:3000", "type": "text", "enabled": true, "secret": false },
         { "name": "sessionId", "value": "", "type": "text", "enabled": true, "secret": false },
+        { "name": "seatId", "value": "", "type": "text", "enabled": true, "secret": false },
         { "name": "accessToken", "value": "", "type": "text", "enabled": true, "secret": false }
       ]
     }
