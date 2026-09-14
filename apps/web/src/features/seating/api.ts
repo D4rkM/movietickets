@@ -14,25 +14,36 @@ export async function getSeatMap(sessionId: string, accessToken: string): Promis
   return response.json();
 }
 
-export async function bookSeat(
+export interface SeatBookingChoice {
+  seatId: string;
+  ticketType: TicketType;
+  halfPriceDocument?: string;
+}
+
+/**
+ * Books every given seat in a single atomic request. The backend wraps the
+ * inserts in one DB transaction, so either every seat is booked under one
+ * booking, or (e.g. a seat was taken concurrently) none are — no partial
+ * bookings left behind for the caller to reconcile.
+ */
+export async function bookSeats(
   sessionId: string,
-  seatId: string,
+  seats: SeatBookingChoice[],
   accessToken: string,
-  ticketType: TicketType,
-  halfPriceDocument?: string,
-): Promise<{ bookingId: string; priceCents: number }> {
-  const response = await fetch(`${API_URL}/sessions/${sessionId}/seats/${seatId}/book`, {
+): Promise<{ bookingId: string }> {
+  const response = await fetch(`${API_URL}/sessions/${sessionId}/book`, {
     method: "POST",
     headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ ticketType, halfPriceDocument }),
+    body: JSON.stringify({ seats }),
   });
   assertAuthorized(response);
 
   if (!response.ok) {
-    throw new Error(`Falha ao reservar o assento ${seatId} (status ${response.status})`);
+    throw new Error(`Falha ao reservar os assentos (status ${response.status})`);
   }
 
-  return response.json();
+  const results: Array<{ bookingId: string }> = await response.json();
+  return { bookingId: results[0].bookingId };
 }
 
 export async function confirmBooking(bookingId: string, accessToken: string): Promise<void> {
