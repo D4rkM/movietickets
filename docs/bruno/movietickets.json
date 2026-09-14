@@ -102,6 +102,20 @@
             "auth": { "mode": "bearer", "bearer": { "token": "{{accessToken}}" } },
             "docs": "Confirmação mockada de pagamento: muda o booking de `pending` pra `confirmed`, o que faz o assento aparecer como `booked` no GET do mapa de assentos. Sem integração real com gateway de pagamento ainda.\n\nPré-requisitos:\n1. Rode booking/Book seat — o `bookingId` retornado é salvo automaticamente na env var.\n\nRetorna 404 se o booking não existir ou não for seu, 409 se já não estiver `pending`."
           }
+        },
+        {
+          "type": "http-request",
+          "name": "Get my bookings",
+          "seq": 2,
+          "request": {
+            "url": "{{baseUrl}}/bookings/mine",
+            "method": "GET",
+            "headers": [],
+            "params": [],
+            "body": { "mode": "none" },
+            "auth": { "mode": "bearer", "bearer": { "token": "{{accessToken}}" } },
+            "docs": "Lista os bookings `confirmed` do usuário autenticado (histórico de ingressos), com filme, sessão (horário, cinema, sala) e assentos de cada um. Bookings `pending` não aparecem aqui."
+          }
         }
       ]
     }
