@@ -2,6 +2,7 @@ import { useState } from "react";
 import type { FormEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { register } from "./api";
+import { isValidEmail } from "./validation";
 
 export function RegisterPage() {
   const navigate = useNavigate();
@@ -13,10 +14,11 @@ export function RegisterPage() {
   const [submitting, setSubmitting] = useState(false);
 
   const passwordsMismatch = confirmPassword.length > 0 && password !== confirmPassword;
+  const invalidEmail = email.length > 0 && !isValidEmail(email);
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
-    if (passwordsMismatch) return;
+    if (passwordsMismatch || invalidEmail) return;
     setError(null);
     setSubmitting(true);
     try {
@@ -49,11 +51,13 @@ export function RegisterPage() {
           <input
             type="email"
             required
+            pattern="[^\s@]+@[^\s@]+\.[^\s@]+"
             value={email}
             onChange={(event) => setEmail(event.target.value)}
             className="rounded border border-gray-300 px-3 py-2"
           />
         </label>
+        {invalidEmail && <p className="text-sm text-red-600">E-mail inválido</p>}
         <label className="flex flex-col gap-1">
           <span className="text-sm text-gray-600">Senha</span>
           <input
@@ -83,7 +87,7 @@ export function RegisterPage() {
         )}
         <button
           type="submit"
-          disabled={submitting || passwordsMismatch}
+          disabled={submitting || passwordsMismatch || invalidEmail}
           className="rounded bg-gray-900 px-4 py-2 text-white disabled:opacity-50"
         >
           {submitting ? "Criando…" : "Criar conta"}
