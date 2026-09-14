@@ -1,57 +1,53 @@
 # Sequence: Reserva de assentos (booking)
 
-Fluxo real de ponta a ponta hoje: cliente já autenticado escolhe assentos numa sessão, revisa no checkout e "paga" (mock). Cobre `SessionSeatsPage` → `CheckoutPage` → `BookingController` → `BookingService` → Postgres.
+Fluxo real de ponta a ponta hoje: cliente já autenticado escolhe assentos numa sessão, revisa no checkout e "paga" (mock). Cobre `SessionSeatsPage`/`CheckoutPage` (Frontend) → `BookingController`/`SeatingController`/`BookingService` (Backend) → Valkey (Cache) → Postgres (Database).
 
-Sem hold via Valkey ainda — o `SeatingService` lê chaves `seat-hold:*` pra decidir `held_by_other`/`held_by_me`, mas nada escreve essas chaves hoje, então esse ramo nunca dispara na prática (ver [[valkey-not-writing]] / próxima story "Segurar assento").
+Sem hold via Valkey ainda — o `SeatingService` já lê chaves `seat-hold:*` no Cache pra decidir `held_by_other`/`held_by_me` (ver passo no seat map), mas nada escreve essas chaves hoje, então o Cache sempre volta vazio e esse ramo nunca dispara na prática (próxima story "Segurar assento").
 
 ```mermaid
 sequenceDiagram
-    actor User as Cliente
-    participant Seats as SessionSeatsPage (front)
-    participant Checkout as CheckoutPage (front)
-    participant API as BookingController / SeatingController
-    participant Svc as BookingService
-    participant DB as Postgres
+    actor Cliente
+    participant Frontend
+    participant Backend
+    participant Cache
+    participant Database
 
-    User->>Seats: abre /sessions/:id/seats
-    Seats->>API: GET /sessions/:id/seats (Bearer token)
-    API->>DB: query sessão + sala + assentos + bookings confirmados
-    DB-->>API: assentos com status (free/booked)
-    API-->>Seats: mapa de assentos
-    User->>Seats: seleciona 1+ assentos
-    User->>Seats: clica "Pagar (N assentos)"
-    Seats->>Checkout: navigate /checkout {sessionId, seatIds}
+    Cliente->>Frontend: abre /sessions/:id/seats
+    Frontend->>Backend: GET /sessions/:id/seats (Bearer token)
+    Backend->>Database: query sessão + sala + assentos + bookings confirmados
+    Database-->>Backend: assentos com status (free/booked)
+    Backend->>Cache: SCAN/MGET seat-hold:{sessionId}:*
+    Cache-->>Backend: hoje sempre vazio (nada escreve hold ainda)
+    Backend-->>Frontend: mapa de assentos
+    Cliente->>Frontend: seleciona 1+ assentos
+    Cliente->>Frontend: clica "Pagar (N assentos)"
+    Frontend->>Frontend: navega pra /checkout {sessionId, seatIds}
 
-    Checkout->>API: GET /sessions/:id/seats (recarrega pra pegar preço + dados atuais)
-    API-->>Checkout: mapa de assentos
-    User->>Checkout: escolhe inteira/meia por assento (+ documento se meia)
-    User->>Checkout: clica "Pagar (mock)"
+    Frontend->>Backend: GET /sessions/:id/seats (recarrega pra pegar preço + dados atuais)
+    Backend-->>Frontend: mapa de assentos
+    Cliente->>Frontend: escolhe inteira/meia por assento (+ documento se meia)
+    Cliente->>Frontend: clica "Pagar (mock)"
 
-    Checkout->>API: POST /sessions/:id/book { seats: [{seatId, ticketType, halfPriceDocument?}] }
-    API->>Svc: createBookingForSeats(sessionId, seats, userId)
-    Svc->>DB: BEGIN transaction
-    Svc->>DB: insert booking (status=pending)
+    Frontend->>Backend: POST /sessions/:id/book { seats: [{seatId, ticketType, halfPriceDocument?}] }
+    Backend->>Database: BEGIN transaction
+    Backend->>Database: insert booking (status=pending)
     loop cada assento
-        Svc->>DB: insert booking_seat (unique session_id+seat_id)
+        Backend->>Database: insert booking_seat (unique session_id+seat_id)
     end
     alt algum assento já reservado (unique violation, code 23505)
-        DB-->>Svc: erro
-        Svc->>DB: ROLLBACK
-        Svc-->>API: 409 Conflict
-        API-->>Checkout: 409
-        Checkout-->>User: mostra erro, nada foi gravado
+        Database-->>Backend: erro
+        Backend->>Database: ROLLBACK
+        Backend-->>Frontend: 409 Conflict
+        Frontend-->>Cliente: mostra erro, nada foi gravado
     else todos os assentos livres
-        Svc->>DB: COMMIT
-        Svc-->>API: [{bookingId, seatId, priceCents}, ...]
-        API-->>Checkout: 201 + array (mesmo bookingId em todos)
+        Backend->>Database: COMMIT
+        Backend-->>Frontend: 201 + array [{bookingId, seatId, priceCents}, ...] (mesmo bookingId em todos)
 
-        Checkout->>API: POST /bookings/:bookingId/confirm
-        API->>Svc: confirmBooking(bookingId, userId)
-        Svc->>DB: update booking set status=confirmed
-        DB-->>Svc: ok
-        Svc-->>API: confirmado
-        API-->>Checkout: 200
-        Checkout-->>User: "Ingresso confirmado!"
+        Frontend->>Backend: POST /bookings/:bookingId/confirm
+        Backend->>Database: update booking set status=confirmed
+        Database-->>Backend: ok
+        Backend-->>Frontend: 200
+        Frontend-->>Cliente: "Ingresso confirmado!"
     end
 ```
 
