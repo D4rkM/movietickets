@@ -24,7 +24,8 @@ COPY --from=build /prod/api/node_modules ./node_modules
 COPY --from=build /prod/api/package.json ./package.json
 
 EXPOSE 3000
-# Single-container demo/dev setup, so running the migration on boot is safe
-# (no concurrent instances racing on it). Don't do this for a multi-instance
-# production deploy — run migrations as a separate release step instead.
-CMD ["sh", "-c", "node dist/db/migrate.js && node dist/main.js"]
+# Single-container demo/dev setup, so running migrate+seed on boot is safe (no
+# concurrent instances racing on it, and seed.ts is idempotent — safe to run
+# again on every restart). Don't do this for a multi-instance production
+# deploy — run migrations/seeding as a separate release step instead.
+CMD ["sh", "-c", "node dist/db/migrate.js && node dist/db/seed.js && node dist/main.js"]
