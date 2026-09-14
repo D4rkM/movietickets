@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 import { SeatMap } from "./SeatMap";
 import type { SeatMapSeat } from "./types";
@@ -30,6 +30,9 @@ export function SessionSeatsPage() {
 
   return (
     <main className="mx-auto max-w-3xl px-4 py-8">
+      <Link to="/movies" className="mb-4 inline-block text-sm text-gray-600 underline">
+        ← Voltar ao catálogo
+      </Link>
       <h1 className="mb-4 text-2xl font-semibold">Escolha seus assentos</h1>
       <SeatMap
         sessionId={sessionId}

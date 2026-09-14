@@ -131,6 +131,14 @@ export function CheckoutPage() {
 
   return (
     <main className="mx-auto max-w-md px-4 py-8">
+      {!paying && (
+        <Link
+          to={`/sessions/${state.sessionId}/seats`}
+          className="mb-4 inline-block text-sm text-gray-600 underline"
+        >
+          ← Voltar pra seleção de assentos
+        </Link>
+      )}
       <h1 className="mb-4 text-2xl font-semibold">Resumo do pedido</h1>
 
       {!seats && !error && <p>Carregando resumo…</p>}

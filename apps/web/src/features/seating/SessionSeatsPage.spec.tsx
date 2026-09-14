@@ -12,6 +12,7 @@ function renderSessionSeatsPage() {
         <Routes>
           <Route path="/sessions/:id/seats" element={<SessionSeatsPage />} />
           <Route path="/checkout" element={<p>Checkout page</p>} />
+          <Route path="/movies" element={<p>Movies page</p>} />
         </Routes>
       </AuthProvider>
     </MemoryRouter>,
@@ -74,5 +75,18 @@ describe("SessionSeatsPage (integration)", () => {
 
     // THEN it navigates to the checkout page
     expect(await screen.findByText("Checkout page")).toBeInTheDocument();
+  });
+
+  it("should let the user go back to the catalog without booking anything", async () => {
+    // GIVEN the seat map has loaded
+    renderSessionSeatsPage();
+    await screen.findByTitle("A1 — Disponível");
+
+    // WHEN the user clicks the back link
+    await userEvent.click(screen.getByRole("link", { name: /Voltar ao catálogo/ }));
+
+    // THEN it navigates to the catalog, with no booking request ever made
+    expect(await screen.findByText("Movies page")).toBeInTheDocument();
+    expect(fetch).not.toHaveBeenCalledWith(expect.stringContaining("/book"), expect.anything());
   });
 });
