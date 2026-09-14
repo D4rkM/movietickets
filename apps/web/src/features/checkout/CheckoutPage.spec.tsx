@@ -45,7 +45,10 @@ describe("CheckoutPage (integration)", () => {
     vi.mocked(fetch).mockImplementation((url: string | URL | Request) => {
       const urlString = url.toString();
       if (urlString.includes("/seats/") && urlString.includes("/book")) {
-        return Promise.resolve({ ok: true, json: async () => ({ bookingId: "booking-1" }) } as Response);
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ bookingId: "booking-1", priceCents: 2500 }),
+        } as Response);
       }
       if (urlString.includes("/bookings/") && urlString.includes("/confirm")) {
         return Promise.resolve({ ok: true } as Response);
@@ -61,20 +64,70 @@ describe("CheckoutPage (integration)", () => {
     });
     renderCheckoutPage({ sessionId: "session-1", seatIds: ["seat-1"] });
 
-    // WHEN the summary loads and the user confirms the mocked payment
+    // WHEN the summary loads and the user confirms the mocked payment (default: full price)
     expect(await screen.findByText("Assento A1")).toBeInTheDocument();
     expect(screen.getByText("Total: R$ 25.00")).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: /Pagar \(mock\)/ }));
 
-    // THEN it books the seat, confirms the payment, and shows the confirmation
+    // THEN it books the seat with a full ticket, confirms payment, and shows the confirmation
     expect(await screen.findByText("Ingresso confirmado!")).toBeInTheDocument();
     expect(fetch).toHaveBeenCalledWith(
       expect.stringContaining("/sessions/session-1/seats/seat-1/book"),
-      expect.objectContaining({ method: "POST" }),
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ ticketType: "full", halfPriceDocument: undefined }),
+      }),
     );
     expect(fetch).toHaveBeenCalledWith(
       expect.stringContaining("/bookings/booking-1/confirm"),
       expect.objectContaining({ method: "POST" }),
+    );
+  });
+
+  it("should halve the price and require a document when the user picks 'Meia'", async () => {
+    // GIVEN a session with one selected seat
+    vi.mocked(fetch).mockImplementation((url: string | URL | Request) => {
+      const urlString = url.toString();
+      if (urlString.includes("/seats/") && urlString.includes("/book")) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ bookingId: "booking-1", priceCents: 1250 }),
+        } as Response);
+      }
+      if (urlString.includes("/bookings/") && urlString.includes("/confirm")) {
+        return Promise.resolve({ ok: true } as Response);
+      }
+      return Promise.resolve({
+        ok: true,
+        json: async () => ({
+          room: { rows: 1, seatsPerRow: 1 },
+          priceCents: 2500,
+          seats: [{ id: "seat-1", rowLabel: "A", seatNumber: 1, status: "held_by_me" }],
+        }),
+      } as Response);
+    });
+    renderCheckoutPage({ sessionId: "session-1", seatIds: ["seat-1"] });
+    await screen.findByText("Assento A1");
+
+    // WHEN the user picks "Meia" without filling the document
+    await userEvent.click(screen.getByRole("radio", { name: "Meia" }));
+
+    // THEN the price halves and the pay button is disabled until a document is entered
+    expect(screen.getByText("Total: R$ 12.50")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Pagar \(mock\)/ })).toBeDisabled();
+
+    // WHEN the user fills the document and pays
+    await userEvent.type(screen.getByLabelText("Documento da meia-entrada"), "1234567890");
+    await userEvent.click(screen.getByRole("button", { name: /Pagar \(mock\)/ }));
+
+    // THEN it books the seat as a half ticket with the document
+    expect(await screen.findByText("Ingresso confirmado!")).toBeInTheDocument();
+    expect(fetch).toHaveBeenCalledWith(
+      expect.stringContaining("/sessions/session-1/seats/seat-1/book"),
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ ticketType: "half", halfPriceDocument: "1234567890" }),
+      }),
     );
   });
 

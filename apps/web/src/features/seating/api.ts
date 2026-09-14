@@ -1,5 +1,5 @@
 import { API_URL, assertAuthorized } from "../../lib/api-client";
-import type { SeatMapResponse } from "./types";
+import type { SeatMapResponse, TicketType } from "./types";
 
 export async function getSeatMap(sessionId: string, accessToken: string): Promise<SeatMapResponse> {
   const response = await fetch(`${API_URL}/sessions/${sessionId}/seats`, {
@@ -18,10 +18,13 @@ export async function bookSeat(
   sessionId: string,
   seatId: string,
   accessToken: string,
-): Promise<{ bookingId: string }> {
+  ticketType: TicketType,
+  halfPriceDocument?: string,
+): Promise<{ bookingId: string; priceCents: number }> {
   const response = await fetch(`${API_URL}/sessions/${sessionId}/seats/${seatId}/book`, {
     method: "POST",
-    headers: { Authorization: `Bearer ${accessToken}` },
+    headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ ticketType, halfPriceDocument }),
   });
   assertAuthorized(response);
 
