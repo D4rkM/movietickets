@@ -5,9 +5,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AuthProvider } from "./AuthContext";
 import { LoginPage } from "./LoginPage";
 
-function renderLoginPage() {
+function renderLoginPage(locationState: unknown = null) {
   return render(
-    <MemoryRouter initialEntries={["/login"]}>
+    <MemoryRouter initialEntries={[{ pathname: "/login", state: locationState }]}>
       <AuthProvider>
         <Routes>
           <Route path="/login" element={<LoginPage />} />
@@ -57,5 +57,23 @@ describe("LoginPage (integration)", () => {
 
     // THEN it shows an error and stays on the login page
     expect(await screen.findByRole("alert")).toHaveTextContent("E-mail ou senha inválidos");
+  });
+
+  it("should show a success message when arriving right after registering", () => {
+    // GIVEN the user was just redirected from the register page
+    renderLoginPage({ registered: true });
+
+    // WHEN the page renders
+    // THEN it shows the confirmation message
+    expect(screen.getByText("Conta criada! Entra com seu e-mail e senha.")).toBeInTheDocument();
+  });
+
+  it("should not show the success message on a normal visit", () => {
+    // GIVEN the user navigates to /login directly (no location state)
+    renderLoginPage();
+
+    // WHEN the page renders
+    // THEN there's no confirmation message
+    expect(screen.queryByText("Conta criada! Entra com seu e-mail e senha.")).not.toBeInTheDocument();
   });
 });

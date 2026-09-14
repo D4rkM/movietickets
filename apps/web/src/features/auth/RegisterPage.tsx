@@ -1,25 +1,27 @@
 import { useState } from "react";
 import type { FormEvent } from "react";
-import { Link, useLocation, useNavigate } from "react-router-dom";
-import { useAuth } from "./AuthContext";
+import { Link, useNavigate } from "react-router-dom";
+import { register } from "./api";
 
-export function LoginPage() {
-  const { login } = useAuth();
+export function RegisterPage() {
   const navigate = useNavigate();
-  const location = useLocation();
-  const justRegistered = Boolean((location.state as { registered?: boolean } | null)?.registered);
+  const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
+  const passwordsMismatch = confirmPassword.length > 0 && password !== confirmPassword;
+
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
+    if (passwordsMismatch) return;
     setError(null);
     setSubmitting(true);
     try {
-      await login(email, password);
-      navigate("/movies");
+      await register(name, email, password);
+      navigate("/login", { state: { registered: true } });
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -29,11 +31,19 @@ export function LoginPage() {
 
   return (
     <main className="mx-auto flex min-h-screen max-w-sm flex-col justify-center gap-6 px-4">
-      <h1 className="text-2xl font-semibold">movietickets</h1>
-      {justRegistered && (
-        <p className="text-sm text-green-700">Conta criada! Entra com seu e-mail e senha.</p>
-      )}
+      <h1 className="text-2xl font-semibold">Criar conta</h1>
       <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+        <label className="flex flex-col gap-1">
+          <span className="text-sm text-gray-600">Nome</span>
+          <input
+            type="text"
+            required
+            minLength={2}
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+            className="rounded border border-gray-300 px-3 py-2"
+          />
+        </label>
         <label className="flex flex-col gap-1">
           <span className="text-sm text-gray-600">E-mail</span>
           <input
@@ -49,11 +59,23 @@ export function LoginPage() {
           <input
             type="password"
             required
+            minLength={8}
             value={password}
             onChange={(event) => setPassword(event.target.value)}
             className="rounded border border-gray-300 px-3 py-2"
           />
         </label>
+        <label className="flex flex-col gap-1">
+          <span className="text-sm text-gray-600">Confirmar senha</span>
+          <input
+            type="password"
+            required
+            value={confirmPassword}
+            onChange={(event) => setConfirmPassword(event.target.value)}
+            className="rounded border border-gray-300 px-3 py-2"
+          />
+        </label>
+        {passwordsMismatch && <p className="text-sm text-red-600">Senhas não coincidem</p>}
         {error && (
           <p role="alert" className="text-sm text-red-600">
             {error}
@@ -61,16 +83,16 @@ export function LoginPage() {
         )}
         <button
           type="submit"
-          disabled={submitting}
+          disabled={submitting || passwordsMismatch}
           className="rounded bg-gray-900 px-4 py-2 text-white disabled:opacity-50"
         >
-          {submitting ? "Entrando…" : "Entrar"}
+          {submitting ? "Criando…" : "Criar conta"}
         </button>
       </form>
       <p className="text-center text-sm text-gray-600">
-        Não tem conta?{" "}
-        <Link to="/register" className="underline">
-          Criar conta
+        Já tem conta?{" "}
+        <Link to="/login" className="underline">
+          Entrar
         </Link>
       </p>
     </main>
