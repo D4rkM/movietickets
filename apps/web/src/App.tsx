@@ -1,32 +1,26 @@
-import { useState } from "react";
-import { SeatMap } from "./features/seating/SeatMap";
+import { Navigate, Route, Routes } from "react-router-dom";
+import { AuthProvider } from "./features/auth/AuthContext";
+import { LoginPage } from "./features/auth/LoginPage";
+import { CheckoutPage } from "./features/checkout/CheckoutPage";
+import { MoviesPage } from "./features/catalog/MoviesPage";
+import { SessionSeatsPage } from "./features/seating/SessionSeatsPage";
+import { TicketsPage } from "./features/tickets/TicketsPage";
+import { ProtectedRoute } from "./lib/ProtectedRoute";
 
 export function App() {
-  const [sessionId, setSessionId] = useState("");
-  const [accessToken, setAccessToken] = useState("");
-
   return (
-    <main style={{ padding: 16, fontFamily: "system-ui, sans-serif" }}>
-      <h1>movietickets</h1>
-      {/* Temporary manual inputs until routing/login exist — replace once those stories land. */}
-      <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
-        <input
-          placeholder="Session ID"
-          value={sessionId}
-          onChange={(event) => setSessionId(event.target.value)}
-        />
-        <input
-          placeholder="Access token"
-          value={accessToken}
-          onChange={(event) => setAccessToken(event.target.value)}
-        />
-      </div>
-      {sessionId && accessToken ? (
-        <SeatMap sessionId={sessionId} accessToken={accessToken} />
-      ) : (
-        <p>Informe o session ID e o access token pra ver o mapa de assentos.</p>
-      )}
-    </main>
+    <AuthProvider>
+      <Routes>
+        <Route path="/" element={<Navigate to="/movies" replace />} />
+        <Route path="/login" element={<LoginPage />} />
+        <Route element={<ProtectedRoute />}>
+          <Route path="/movies" element={<MoviesPage />} />
+          <Route path="/sessions/:id/seats" element={<SessionSeatsPage />} />
+          <Route path="/checkout" element={<CheckoutPage />} />
+          <Route path="/tickets" element={<TicketsPage />} />
+        </Route>
+      </Routes>
+    </AuthProvider>
   );
 }
 

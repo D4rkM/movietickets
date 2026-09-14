@@ -1,4 +1,5 @@
 export type SeatState = "free" | "held_by_other" | "held_by_me" | "booked";
+export type TicketType = "full" | "half";
 
 export interface SeatMapSeat {
   id: string;

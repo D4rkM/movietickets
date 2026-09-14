@@ -1,8 +1,18 @@
+@import "tailwindcss";
+
+/*
+ * The UI is only designed for a light theme (white cards, gray-50 panels,
+ * explicit gray-900 text). "light dark" let the browser apply its own dark
+ * defaults wherever a component didn't set an explicit color — e.g. white
+ * text on the white profile dropdown — so pin light here instead.
+ */
 :root {
-  color-scheme: light dark;
+  color-scheme: light;
   font-family: system-ui, "Segoe UI", Roboto, sans-serif;
 }
 
 body {
   margin: 0;
+  background-color: #fff;
+  color: #111827;
 }
