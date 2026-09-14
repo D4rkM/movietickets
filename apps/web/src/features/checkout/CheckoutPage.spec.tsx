@@ -14,6 +14,7 @@ function renderCheckoutPage(locationState: unknown) {
         <Routes>
           <Route path="/checkout" element={<CheckoutPage />} />
           <Route path="/movies" element={<p>Movies page</p>} />
+          <Route path="/sessions/:id/seats" element={<p>Seat selection page</p>} />
         </Routes>
       </AuthProvider>
     </MemoryRouter>,
@@ -38,6 +39,27 @@ describe("CheckoutPage (integration)", () => {
     // WHEN it renders
     // THEN it redirects to the movies page
     expect(await screen.findByText("Movies page")).toBeInTheDocument();
+  });
+
+  it("should let the user go back to seat selection without booking anything", async () => {
+    // GIVEN the order summary has loaded
+    vi.mocked(fetch).mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        room: { rows: 1, seatsPerRow: 1 },
+        priceCents: 2500,
+        seats: [{ id: "seat-1", rowLabel: "A", seatNumber: 1, status: "held_by_me" }],
+      }),
+    } as Response);
+    renderCheckoutPage({ sessionId: "session-1", seatIds: ["seat-1"] });
+    await screen.findByText("Assento A1");
+
+    // WHEN the user clicks the back link
+    await userEvent.click(screen.getByRole("link", { name: /Voltar pra seleção de assentos/ }));
+
+    // THEN it navigates back to seat selection, with no booking request ever made
+    expect(await screen.findByText("Seat selection page")).toBeInTheDocument();
+    expect(fetch).not.toHaveBeenCalledWith(expect.stringContaining("/book"), expect.anything());
   });
 
   it("should show the order summary and confirm booking after a mocked payment", async () => {
