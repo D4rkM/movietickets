@@ -4,6 +4,8 @@ Monorepo (pnpm workspaces): `apps/web` (React + Vite), `apps/api` (NestJS), `doc
 
 Referência de decisões de arquitetura e stack: `docs/planning.md`. Diagramas macro: `docs/c4/` (`.drawio`, abrir em app.diagrams.net). Diagramas de sequência/classe por feature: `docs/flows/<feature>/`.
 
+Esse arquivo é a referência única de regras pra qualquer agente de IA no repo. `AGENTS.md` aponta pra cá — existe só pra ferramentas (Codex, Cursor, Aider etc.) que procuram esse nome por padrão em vez de `CLAUDE.md`.
+
 ## Regra permanente: testes
 
 Toda feature nova precisa vir com teste unitário. Se envolver fluxo entre camadas (API+banco, API+cache/Valkey, seat hold/booking), precisa também de teste de integração. Não considerar uma feature pronta sem isso — sem exceção, mesmo pra mudanças pequenas.

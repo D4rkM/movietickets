@@ -42,7 +42,7 @@ pnpm dev:api
 
 ### Rodar containerizado (sem Node/pnpm no host)
 
-`Dockerfile` (multi-stage, build via monorepo pnpm workspace) sobe a API rodando as migrations no boot — pensado pra quem quer testar sem instalar nada além de Docker. Ver `make up-full` / `make down-full` na raiz do monorepo, ou:
+`Dockerfile` (multi-stage, build via monorepo pnpm workspace) sobe a API rodando migrations + seed no boot (idempotente) — pensado pra quem quer testar sem instalar nada além de Docker. Ver `make up-full` / `make down-full` na raiz do monorepo, ou:
 
 ```bash
 docker compose --profile full up -d --build

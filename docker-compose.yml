@@ -27,11 +27,11 @@ services:
       timeout: 5s
       retries: 5
 
-  # Containerized app, for testing the whole stack without installing
-  # Node/pnpm locally (e.g. on Windows, or just to try it out quickly).
-  # Not started by default — `docker compose up -d` alone only brings up
-  # infra, so day-to-day dev keeps using `pnpm dev:api` with hot reload.
-  # Start it with: docker compose --profile full up -d
+  # Containerized app (api + web), for testing the whole stack without
+  # installing Node/pnpm locally (e.g. on Windows, or just to try it out
+  # quickly). Not started by default — `docker compose up -d` alone only
+  # brings up infra, so day-to-day dev keeps using `pnpm dev:api`/`dev:web`
+  # with hot reload. Start both with: docker compose --profile full up -d
   api:
     profiles: ["full"]
     build:
@@ -45,12 +45,31 @@ services:
         condition: service_healthy
     environment:
       DATABASE_URL: postgres://movietickets:movietickets@postgres:5432/movietickets
+      VALKEY_URL: redis://valkey:6379
       JWT_SECRET: dev-secret
       JWT_EXPIRES_IN: 1h
       PORT: 3000
       LOG_LEVEL: info
     ports:
       - "3000:3000"
+
+  # Published on host port 5173 (same as `pnpm dev:web`'s Vite default) so it
+  # lines up with the API's CORS_ORIGIN default (http://localhost:5173) with
+  # no extra config. `VITE_API_URL` isn't set here on purpose: it's a
+  # build-time-only Vite env var, and the app's built-in default
+  # (http://localhost:3000) already matches the api service's published port
+  # — the browser (on the host) talks to both containers via their published
+  # ports, not the compose-internal network.
+  web:
+    profiles: ["full"]
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      - api
+    ports:
+      - "5173:5173"
 
 volumes:
   postgres_data:

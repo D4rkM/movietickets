@@ -17,7 +17,7 @@ up: ## Start local infra (Postgres + Valkey) via docker/podman compose
 down: ## Stop local infra
 	$(DOCKER) compose down
 
-up-full: ## Start the whole stack containerized (infra + api), no Node/pnpm needed on the host
+up-full: ## Start the whole stack containerized (infra + api + web), no Node/pnpm needed on the host
 	$(DOCKER) compose --profile full up -d --build
 
 down-full: ## Stop the whole containerized stack
