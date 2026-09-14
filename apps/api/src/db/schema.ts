@@ -113,6 +113,14 @@ export const payments = pgTable("payments", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+export const moviesRelations = relations(movies, ({ many }) => ({
+  sessions: many(sessions),
+}));
+
+export const cinemasRelations = relations(cinemas, ({ many }) => ({
+  rooms: many(rooms),
+}));
+
 export const roomsRelations = relations(rooms, ({ one, many }) => ({
   cinema: one(cinemas, { fields: [rooms.cinemaId], references: [cinemas.id] }),
   seats: many(seats),
