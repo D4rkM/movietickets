@@ -81,9 +81,12 @@
             "method": "POST",
             "headers": [],
             "params": [],
-            "body": { "mode": "none" },
+            "body": {
+              "mode": "json",
+              "json": "{\n  \"ticketType\": \"full\"\n}"
+            },
             "auth": { "mode": "bearer", "bearer": { "token": "{{accessToken}}" } },
-            "docs": "Insert MVP: cria um booking `pending` + booking_seat linkando o assento escolhido. Sem hold/TTL, sem checagem de conflito — dois clientes conseguem reservar o mesmo assento nesse MVP (isso é fechado nas próximas stories).\n\nPré-requisitos:\n1. Rode Login pra popular accessToken.\n2. Rode seating/Get seat map pra pegar um `id` de assento livre na resposta, cole na env var seatId.\n\nTesta sessão inexistente: troque sessionId por qualquer UUID aleatório, deve voltar 404.",
+            "docs": "Insert MVP: cria um booking `pending` + booking_seat linkando o assento escolhido. Sem hold/TTL, sem checagem de conflito — dois clientes conseguem reservar o mesmo assento nesse MVP (isso é fechado nas próximas stories).\n\n`ticketType`: `\"full\"` ou `\"half\"` (meia-entrada, 50% de desconto). Meia exige `halfPriceDocument` no body (400 se faltar).\n\nPré-requisitos:\n1. Rode Login pra popular accessToken.\n2. Rode seating/Get seat map pra pegar um `id` de assento livre na resposta, cole na env var seatId.\n\nTesta sessão inexistente: troque sessionId por qualquer UUID aleatório, deve voltar 404.",
             "script": {
               "res": "if (res.body.bookingId) {\n  bru.setEnvVar(\"bookingId\", res.body.bookingId);\n}"
             }
@@ -91,8 +94,25 @@
         },
         {
           "type": "http-request",
-          "name": "Confirm booking (mocked payment)",
+          "name": "Book seat (half price / meia-entrada)",
           "seq": 2,
+          "request": {
+            "url": "{{baseUrl}}/sessions/{{sessionId}}/seats/{{seatId}}/book",
+            "method": "POST",
+            "headers": [],
+            "params": [],
+            "body": {
+              "mode": "json",
+              "json": "{\n  \"ticketType\": \"half\",\n  \"halfPriceDocument\": \"1234567890\"\n}"
+            },
+            "auth": { "mode": "bearer", "bearer": { "token": "{{accessToken}}" } },
+            "docs": "Igual ao Book seat, mas com meia-entrada: 50% do preço da sessão, exige `halfPriceDocument` (código do documento — texto livre, sem validação de formato por hora). Retorna 400 se `halfPriceDocument` faltar."
+          }
+        },
+        {
+          "type": "http-request",
+          "name": "Confirm booking (mocked payment)",
+          "seq": 3,
           "request": {
             "url": "{{baseUrl}}/bookings/{{bookingId}}/confirm",
             "method": "POST",
@@ -106,7 +126,7 @@
         {
           "type": "http-request",
           "name": "Get my bookings",
-          "seq": 2,
+          "seq": 4,
           "request": {
             "url": "{{baseUrl}}/bookings/mine",
             "method": "GET",

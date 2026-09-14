@@ -95,6 +95,12 @@ export const bookingSeats = pgTable(
     seatId: uuid("seat_id")
       .notNull()
       .references(() => seats.id),
+    // "full" or "half" (meia-entrada, requires halfPriceDocument).
+    ticketType: text("ticket_type").notNull().default("full"),
+    halfPriceDocument: text("half_price_document"),
+    // Price actually paid for this seat, snapshotted at booking time so it
+    // doesn't drift if the session's price changes later.
+    priceCents: integer("price_cents").notNull().default(0),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [unique().on(table.sessionId, table.seatId)],
