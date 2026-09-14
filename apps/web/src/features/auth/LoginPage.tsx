@@ -2,6 +2,7 @@ import { useState } from "react";
 import type { FormEvent } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "./AuthContext";
+import { isValidEmail } from "./validation";
 
 export function LoginPage() {
   const { login } = useAuth();
@@ -13,8 +14,11 @@ export function LoginPage() {
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
+  const invalidEmail = email.length > 0 && !isValidEmail(email);
+
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
+    if (invalidEmail) return;
     setError(null);
     setSubmitting(true);
     try {
@@ -39,11 +43,13 @@ export function LoginPage() {
           <input
             type="email"
             required
+            pattern="[^\s@]+@[^\s@]+\.[^\s@]+"
             value={email}
             onChange={(event) => setEmail(event.target.value)}
             className="rounded border border-gray-300 px-3 py-2"
           />
         </label>
+        {invalidEmail && <p className="text-sm text-red-600">E-mail inválido</p>}
         <label className="flex flex-col gap-1">
           <span className="text-sm text-gray-600">Senha</span>
           <input
@@ -61,7 +67,7 @@ export function LoginPage() {
         )}
         <button
           type="submit"
-          disabled={submitting}
+          disabled={submitting || invalidEmail}
           className="rounded bg-gray-900 px-4 py-2 text-white disabled:opacity-50"
         >
           {submitting ? "Entrando…" : "Entrar"}

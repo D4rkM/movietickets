@@ -70,6 +70,22 @@ describe("RegisterPage (integration)", () => {
     expect(fetch).not.toHaveBeenCalled();
   });
 
+  it("should show an error and disable submit when the email has no valid domain", async () => {
+    // GIVEN the user fills the form with an email missing a proper domain/TLD
+    renderRegisterPage();
+    await userEvent.type(screen.getByLabelText("Nome"), "Ana");
+    await userEvent.type(screen.getByLabelText("E-mail"), "ana@localhost");
+    await userEvent.type(screen.getByLabelText("Senha"), "password123");
+    await userEvent.type(screen.getByLabelText("Confirmar senha"), "password123");
+
+    // WHEN the user tries to submit
+    expect(screen.getByText("E-mail inválido")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Criar conta" })).toBeDisabled();
+
+    // THEN it never calls the API
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
   it("should show an error message when the email is already registered", async () => {
     // GIVEN the API rejects the email as a duplicate
     vi.mocked(fetch).mockResolvedValue({ ok: false, status: 409 } as Response);

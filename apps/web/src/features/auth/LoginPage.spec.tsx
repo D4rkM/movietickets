@@ -76,4 +76,18 @@ describe("LoginPage (integration)", () => {
     // THEN there's no confirmation message
     expect(screen.queryByText("Conta criada! Entra com seu e-mail e senha.")).not.toBeInTheDocument();
   });
+
+  it("should show an error and disable submit when the email has no valid domain", async () => {
+    // GIVEN the user is on the login page
+    renderLoginPage();
+
+    // WHEN they type an email without a proper domain/TLD
+    await userEvent.type(screen.getByLabelText("E-mail"), "user@localhost");
+    await userEvent.type(screen.getByLabelText("Senha"), "password123");
+
+    // THEN it shows a validation error and the submit button is disabled
+    expect(screen.getByText("E-mail inválido")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Entrar" })).toBeDisabled();
+    expect(fetch).not.toHaveBeenCalled();
+  });
 });
