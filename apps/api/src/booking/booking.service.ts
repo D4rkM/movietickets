@@ -3,12 +3,17 @@ import { desc, eq } from "drizzle-orm";
 import { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import { DRIZZLE } from "../db/drizzle.module";
 import * as schema from "../db/schema";
+import { TicketType } from "./dto/book-seat.dto";
 import { MyBooking } from "./my-booking.types";
+
+const HALF_PRICE_RATIO = 0.5;
 
 export interface CreateBookingResult {
   bookingId: string;
   seatId: string;
   status: string;
+  ticketType: TicketType;
+  priceCents: number;
 }
 
 export interface ConfirmBookingResult {
@@ -25,7 +30,13 @@ export class BookingService {
    * Two clients can insert the same seat here — that gets closed in the
    * "Segurar assento" and "Confirmar assento definitivo" stories.
    */
-  async createBooking(sessionId: string, seatId: string, userId: string): Promise<CreateBookingResult> {
+  async createBooking(
+    sessionId: string,
+    seatId: string,
+    userId: string,
+    ticketType: TicketType,
+    halfPriceDocument: string | undefined,
+  ): Promise<CreateBookingResult> {
     const session = await this.db.query.sessions.findFirst({
       where: eq(schema.sessions.id, sessionId),
     });
@@ -33,14 +44,26 @@ export class BookingService {
       throw new NotFoundException("Sessão não encontrada");
     }
 
+    const priceCents =
+      ticketType === TicketType.HALF
+        ? Math.round(session.priceCents * HALF_PRICE_RATIO)
+        : session.priceCents;
+
     const [booking] = await this.db
       .insert(schema.bookings)
       .values({ userId, sessionId, status: "pending" })
       .returning();
 
-    await this.db.insert(schema.bookingSeats).values({ bookingId: booking.id, sessionId, seatId });
+    await this.db.insert(schema.bookingSeats).values({
+      bookingId: booking.id,
+      sessionId,
+      seatId,
+      ticketType,
+      halfPriceDocument: ticketType === TicketType.HALF ? halfPriceDocument : null,
+      priceCents,
+    });
 
-    return { bookingId: booking.id, seatId, status: booking.status };
+    return { bookingId: booking.id, seatId, status: booking.status, ticketType, priceCents };
   }
 
   /**

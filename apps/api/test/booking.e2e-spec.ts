@@ -27,6 +27,7 @@ describe("Booking (e2e)", () => {
   let roomId: string;
   let sessionId: string;
   let seatId: string;
+  let otherSeatId: string;
   let bookingId: string;
 
   const otherUserId = "00000000-0000-0000-0000-000000000002";
@@ -80,6 +81,10 @@ describe("Booking (e2e)", () => {
       .insert(schema.seats)
       .values({ roomId, rowLabel: "A", seatNumber: 1 })
       .returning({ id: schema.seats.id });
+    [{ id: otherSeatId }] = await db
+      .insert(schema.seats)
+      .values({ roomId, rowLabel: "A", seatNumber: 2 })
+      .returning({ id: schema.seats.id });
 
     [{ id: sessionId }] = await db
       .insert(schema.sessions)
@@ -107,6 +112,7 @@ describe("Booking (e2e)", () => {
     const response = await app.inject({
       method: "POST",
       url: `/sessions/${sessionId}/seats/${seatId}/book`,
+      payload: { ticketType: "full" },
     });
 
     // THEN it returns 401
@@ -121,26 +127,64 @@ describe("Booking (e2e)", () => {
       method: "POST",
       url: `/sessions/00000000-0000-0000-0000-0000000000ff/seats/${seatId}/book`,
       headers: { authorization: `Bearer ${accessToken}` },
+      payload: { ticketType: "full" },
     });
 
     // THEN it returns 404
     expect(response.statusCode).toBe(404);
   });
 
-  it("should create a pending booking and link the chosen seat", async () => {
-    // GIVEN an authenticated user and a valid session + seat
+  it("should return 400 for an unknown ticket type", async () => {
+    // GIVEN an authenticated user
 
-    // WHEN the client books the seat
+    // WHEN the client books with an invalid ticketType
     const response = await app.inject({
       method: "POST",
       url: `/sessions/${sessionId}/seats/${seatId}/book`,
       headers: { authorization: `Bearer ${accessToken}` },
+      payload: { ticketType: "vip" },
+    });
+
+    // THEN it returns 400
+    expect(response.statusCode).toBe(400);
+  });
+
+  it("should return 400 for a half ticket with no document", async () => {
+    // GIVEN an authenticated user
+
+    // WHEN the client books a half ticket without a document
+    const response = await app.inject({
+      method: "POST",
+      url: `/sessions/${sessionId}/seats/${seatId}/book`,
+      headers: { authorization: `Bearer ${accessToken}` },
+      payload: { ticketType: "half" },
+    });
+
+    // THEN it returns 400
+    expect(response.statusCode).toBe(400);
+  });
+
+  it("should create a pending booking with the full price and link the chosen seat", async () => {
+    // GIVEN an authenticated user and a valid session + seat
+
+    // WHEN the client books a full-price ticket
+    const response = await app.inject({
+      method: "POST",
+      url: `/sessions/${sessionId}/seats/${seatId}/book`,
+      headers: { authorization: `Bearer ${accessToken}` },
+      payload: { ticketType: "full" },
     });
 
     // THEN it returns 201 with the booking data, and the rows exist in Postgres
     expect(response.statusCode).toBe(201);
     const body = response.json();
-    expect(body).toEqual({ bookingId: expect.any(String), seatId, status: "pending" });
+    expect(body).toEqual({
+      bookingId: expect.any(String),
+      seatId,
+      status: "pending",
+      ticketType: "full",
+      priceCents: 3000,
+    });
 
     const booking = await db.query.bookings.findFirst({ where: eq(schema.bookings.id, body.bookingId) });
     expect(booking).toMatchObject({ userId, sessionId, status: "pending" });
@@ -148,9 +192,41 @@ describe("Booking (e2e)", () => {
     const bookingSeat = await db.query.bookingSeats.findFirst({
       where: eq(schema.bookingSeats.bookingId, body.bookingId),
     });
-    expect(bookingSeat).toMatchObject({ sessionId, seatId });
+    expect(bookingSeat).toMatchObject({
+      sessionId,
+      seatId,
+      ticketType: "full",
+      halfPriceDocument: null,
+      priceCents: 3000,
+    });
 
     bookingId = body.bookingId;
+  });
+
+  it("should charge half price and store the document for a half ticket", async () => {
+    // GIVEN an authenticated user and a valid session + seat
+
+    // WHEN the client books a half-price ticket with a document
+    const response = await app.inject({
+      method: "POST",
+      url: `/sessions/${sessionId}/seats/${otherSeatId}/book`,
+      headers: { authorization: `Bearer ${accessToken}` },
+      payload: { ticketType: "half", halfPriceDocument: "1234567890" },
+    });
+
+    // THEN it returns 201 with half the session price, and the document is stored
+    expect(response.statusCode).toBe(201);
+    const body = response.json();
+    expect(body).toMatchObject({ ticketType: "half", priceCents: 1500 });
+
+    const bookingSeat = await db.query.bookingSeats.findFirst({
+      where: eq(schema.bookingSeats.bookingId, body.bookingId),
+    });
+    expect(bookingSeat).toMatchObject({
+      ticketType: "half",
+      halfPriceDocument: "1234567890",
+      priceCents: 1500,
+    });
   });
 
   it("should reject confirming a booking without a valid token", async () => {
@@ -233,7 +309,7 @@ describe("Booking (e2e)", () => {
     // GIVEN a confirmed booking and a pending booking for the same user
     const [otherSeat] = await db
       .insert(schema.seats)
-      .values({ roomId, rowLabel: "A", seatNumber: 2 })
+      .values({ roomId, rowLabel: "A", seatNumber: 3 })
       .returning();
     const [confirmedBooking] = await db
       .insert(schema.bookings)
@@ -267,7 +343,7 @@ describe("Booking (e2e)", () => {
     expect(entry).toMatchObject({
       status: "confirmed",
       session: { movie: { title: "Booking E2E Movie" } },
-      seats: [{ rowLabel: "A", seatNumber: 2 }],
+      seats: [{ rowLabel: "A", seatNumber: 3 }],
     });
 
     await db.delete(schema.bookingSeats).where(eq(schema.bookingSeats.bookingId, confirmedBooking.id));

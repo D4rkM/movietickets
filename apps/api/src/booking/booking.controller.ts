@@ -1,7 +1,8 @@
-import { Controller, HttpCode, HttpStatus, Param, Post, Req, UseGuards } from "@nestjs/common";
+import { Body, Controller, HttpCode, HttpStatus, Param, Post, Req, UseGuards } from "@nestjs/common";
 import { FastifyRequest } from "fastify";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { BookingService } from "./booking.service";
+import { BookSeatDto } from "./dto/book-seat.dto";
 
 @Controller("sessions")
 @UseGuards(JwtAuthGuard)
@@ -13,8 +14,15 @@ export class BookingController {
   createBooking(
     @Param("id") sessionId: string,
     @Param("seatId") seatId: string,
+    @Body() dto: BookSeatDto,
     @Req() request: FastifyRequest,
   ) {
-    return this.bookingService.createBooking(sessionId, seatId, request.user!.sub);
+    return this.bookingService.createBooking(
+      sessionId,
+      seatId,
+      request.user!.sub,
+      dto.ticketType,
+      dto.halfPriceDocument,
+    );
   }
 }
