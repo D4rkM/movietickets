@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, Navigate, useLocation } from "react-router-dom";
 import { UnauthorizedError } from "../../lib/api-client";
 import { useAuth } from "../auth/AuthContext";
-import { bookSeat, confirmBooking, getSeatMap } from "../seating/api";
+import { bookSeats, confirmBooking, getSeatMap } from "../seating/api";
 import type { SeatMapSeat, TicketType } from "../seating/types";
 
 interface CheckoutLocationState {
@@ -85,20 +85,20 @@ export function CheckoutPage() {
     setError(null);
     setPaying(true);
     try {
-      // Mocked payment: skip any real gateway, but still confirm each booking so
-      // the seat map reflects it as booked (see [Back] Confirmação definitiva do
-      // assento no pagamento).
-      for (const seatId of state.seatIds) {
+      // Mocked payment: skip any real gateway. All seats are booked in a single
+      // atomic request (one booking, one DB transaction on the backend), then
+      // one confirm call marks that booking as paid so the seat map reflects
+      // it as booked — see "[Back] Definitive seat confirmation on payment".
+      const seats = state.seatIds.map((seatId) => {
         const choice = choices[seatId];
-        const { bookingId } = await bookSeat(
-          state.sessionId,
+        return {
           seatId,
-          accessToken,
-          choice.ticketType,
-          choice.ticketType === "half" ? choice.halfPriceDocument.trim() : undefined,
-        );
-        await confirmBooking(bookingId, accessToken);
-      }
+          ticketType: choice.ticketType,
+          halfPriceDocument: choice.ticketType === "half" ? choice.halfPriceDocument.trim() : undefined,
+        };
+      });
+      const { bookingId } = await bookSeats(state.sessionId, seats, accessToken);
+      await confirmBooking(bookingId, accessToken);
       setConfirmed(true);
     } catch (err) {
       if (err instanceof UnauthorizedError) {
