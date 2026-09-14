@@ -7,6 +7,13 @@ import { TicketType } from "./dto/book-seat.dto";
 import { MyBooking } from "./my-booking.types";
 
 const HALF_PRICE_RATIO = 0.5;
+const UNIQUE_VIOLATION = "23505";
+
+export interface SeatChoice {
+  seatId: string;
+  ticketType: TicketType;
+  halfPriceDocument?: string;
+}
 
 export interface CreateBookingResult {
   bookingId: string;
@@ -14,6 +21,19 @@ export interface CreateBookingResult {
   status: string;
   ticketType: TicketType;
   priceCents: number;
+}
+
+function hasCode(err: unknown, code: string): boolean {
+  return typeof err === "object" && err !== null && "code" in err && err.code === code;
+}
+
+// drizzle-orm wraps the driver's PostgresError in a DrizzleQueryError, so the
+// Postgres error code (e.g. "23505" for a unique violation) lives on `.cause`
+// rather than on the error itself.
+function isUniqueViolation(err: unknown): boolean {
+  if (hasCode(err, UNIQUE_VIOLATION)) return true;
+  const cause = err instanceof Error ? err.cause : undefined;
+  return hasCode(cause, UNIQUE_VIOLATION);
 }
 
 export interface ConfirmBookingResult {
@@ -25,11 +45,7 @@ export interface ConfirmBookingResult {
 export class BookingService {
   constructor(@Inject(DRIZZLE) private readonly db: PostgresJsDatabase<typeof schema>) {}
 
-  /**
-   * MVP insert: no hold/TTL, no conflict check, no unique constraint yet.
-   * Two clients can insert the same seat here — that gets closed in the
-   * "Segurar assento" and "Confirmar assento definitivo" stories.
-   */
+  /** Single-seat convenience wrapper around {@link createBookingForSeats}. */
   async createBooking(
     sessionId: string,
     seatId: string,
@@ -37,6 +53,27 @@ export class BookingService {
     ticketType: TicketType,
     halfPriceDocument: string | undefined,
   ): Promise<CreateBookingResult> {
+    const [result] = await this.createBookingForSeats(
+      sessionId,
+      [{ seatId, ticketType, halfPriceDocument }],
+      userId,
+    );
+    return result;
+  }
+
+  /**
+   * Creates a single booking covering every given seat in one Postgres
+   * transaction: either all seats end up inserted, or none do. Without this,
+   * a client booking several seats one call at a time can crash mid-loop and
+   * leave some seats booked and others not, with no way to tell from the
+   * response which ones made it — and a retry would hit the unique
+   * `(session_id, seat_id)` constraint on the seats that already succeeded.
+   */
+  async createBookingForSeats(
+    sessionId: string,
+    seats: SeatChoice[],
+    userId: string,
+  ): Promise<CreateBookingResult[]> {
     const session = await this.db.query.sessions.findFirst({
       where: eq(schema.sessions.id, sessionId),
     });
@@ -44,26 +81,45 @@ export class BookingService {
       throw new NotFoundException("Sessão não encontrada");
     }
 
-    const priceCents =
-      ticketType === TicketType.HALF
-        ? Math.round(session.priceCents * HALF_PRICE_RATIO)
-        : session.priceCents;
+    try {
+      return await this.db.transaction(async (tx) => {
+        const [booking] = await tx
+          .insert(schema.bookings)
+          .values({ userId, sessionId, status: "pending" })
+          .returning();
 
-    const [booking] = await this.db
-      .insert(schema.bookings)
-      .values({ userId, sessionId, status: "pending" })
-      .returning();
+        const results: CreateBookingResult[] = [];
+        for (const seat of seats) {
+          const priceCents =
+            seat.ticketType === TicketType.HALF
+              ? Math.round(session.priceCents * HALF_PRICE_RATIO)
+              : session.priceCents;
 
-    await this.db.insert(schema.bookingSeats).values({
-      bookingId: booking.id,
-      sessionId,
-      seatId,
-      ticketType,
-      halfPriceDocument: ticketType === TicketType.HALF ? halfPriceDocument : null,
-      priceCents,
-    });
+          await tx.insert(schema.bookingSeats).values({
+            bookingId: booking.id,
+            sessionId,
+            seatId: seat.seatId,
+            ticketType: seat.ticketType,
+            halfPriceDocument: seat.ticketType === TicketType.HALF ? seat.halfPriceDocument : null,
+            priceCents,
+          });
 
-    return { bookingId: booking.id, seatId, status: booking.status, ticketType, priceCents };
+          results.push({
+            bookingId: booking.id,
+            seatId: seat.seatId,
+            status: booking.status,
+            ticketType: seat.ticketType,
+            priceCents,
+          });
+        }
+        return results;
+      });
+    } catch (err) {
+      if (isUniqueViolation(err)) {
+        throw new ConflictException("Um ou mais assentos já foram reservados para esta sessão");
+      }
+      throw err;
+    }
   }
 
   /**
