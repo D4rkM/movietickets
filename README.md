@@ -1,6 +1,6 @@
 # movietickets
 
-Site de venda de ingressos de cinema, com foco em seleção de assento sem double-booking.
+Site de compra de ingressos para filmes: o cliente cria conta, navega pelo catálogo de filmes e sessões, escolhe os assentos na sala e finaliza a compra. Foco principal do projeto é a seleção de assento funcionar bem — sem double-booking mesmo com concorrência —, junto com catálogo, checkout e histórico de ingressos do usuário.
 
 Monorepo (pnpm workspaces):
 
