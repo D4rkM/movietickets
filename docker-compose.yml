@@ -53,6 +53,25 @@ services:
     ports:
       - "3000:3000"
 
+  # Drizzle Studio (DB browser UI), pointed at the same Postgres as `api`.
+  # Access it at https://local.drizzle.studio (it talks to the local server
+  # below over the published port — the studio UI itself is static, hosted
+  # by Drizzle, not served by this container).
+  studio:
+    profiles: ["full"]
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+      target: studio
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://movietickets:movietickets@postgres:5432/movietickets
+    ports:
+      - "4983:4983"
+
   # Published on host port 5173 (same as `pnpm dev:web`'s Vite default) so it
   # lines up with the API's CORS_ORIGIN default (http://localhost:5173) with
   # no extra config. `VITE_API_URL` isn't set here on purpose: it's a

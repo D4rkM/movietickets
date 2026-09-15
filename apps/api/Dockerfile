@@ -16,6 +16,14 @@ COPY apps/api apps/api
 RUN pnpm --filter api build
 RUN pnpm --filter api deploy --prod /prod/api
 
+# Drizzle Studio needs drizzle-kit (devDependency, pruned in the runtime
+# stage below) plus the schema/config sources — built from `deps` instead of
+# `build` so it skips the Nest build it doesn't need.
+FROM deps AS studio
+COPY apps/api apps/api
+EXPOSE 4983
+CMD ["pnpm", "--filter", "api", "db:studio"]
+
 FROM base AS runtime
 ENV NODE_ENV=production
 COPY --from=build /prod/api/dist ./dist
