@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link, Navigate, useLocation } from "react-router-dom";
+import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
 import { UnauthorizedError } from "../../lib/api-client";
 import { useAuth } from "../auth/AuthContext";
 import { bookSeats, confirmBooking, getSeatMap } from "../seating/api";
@@ -33,6 +33,7 @@ function priceForChoice(basePriceCents: number, choice: TicketChoice): number {
 export function CheckoutPage() {
   const { accessToken } = useAuth();
   const location = useLocation();
+  const navigate = useNavigate();
   const state = isCheckoutLocationState(location.state) ? location.state : null;
 
   const [seats, setSeats] = useState<SeatMapSeat[] | null>(null);
@@ -41,6 +42,7 @@ export function CheckoutPage() {
   const [error, setError] = useState<string | null>(null);
   const [paying, setPaying] = useState(false);
   const [confirmed, setConfirmed] = useState(false);
+  const [showCancelModal, setShowCancelModal] = useState(false);
 
   useEffect(() => {
     if (!state || !accessToken) return;
@@ -79,6 +81,12 @@ export function CheckoutPage() {
   const missingDocument = Object.values(choices).some(
     (choice) => choice.ticketType === "half" && choice.halfPriceDocument.trim() === "",
   );
+
+  function confirmCancel() {
+    // No seat hold exists yet (the Valkey lock is planned but not implemented),
+    // so there's nothing to release — just leave the page.
+    navigate("/movies");
+  }
 
   async function handlePay() {
     if (!state || !accessToken || missingDocument) return;
@@ -132,12 +140,13 @@ export function CheckoutPage() {
   return (
     <main className="mx-auto max-w-md px-4 py-8">
       {!paying && (
-        <Link
-          to={`/sessions/${state.sessionId}/seats`}
-          className="mb-4 inline-block text-sm text-gray-600 underline"
+        <button
+          type="button"
+          onClick={() => setShowCancelModal(true)}
+          className="mb-4 text-sm text-gray-600 underline"
         >
-          ← Voltar pra seleção de assentos
-        </Link>
+          ← Voltar
+        </button>
       )}
       <h1 className="mb-4 text-2xl font-semibold">Resumo do pedido</h1>
 
@@ -212,8 +221,32 @@ export function CheckoutPage() {
         onClick={handlePay}
         className="rounded bg-gray-900 px-4 py-2 text-white disabled:opacity-50"
       >
-        {paying ? "Processando…" : "Pagar (mock)"}
+        {paying ? "Processando…" : "Pagar"}
       </button>
+
+      {showCancelModal && (
+        <div className="fixed inset-0 flex items-center justify-center bg-black/50 px-4">
+          <div role="dialog" aria-modal="true" className="w-full max-w-sm rounded bg-white p-6">
+            <p className="mb-4">Deseja mesmo cancelar a reserva?</p>
+            <div className="flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setShowCancelModal(false)}
+                className="rounded px-3 py-1.5 text-sm text-gray-600"
+              >
+                Não
+              </button>
+              <button
+                type="button"
+                onClick={confirmCancel}
+                className="rounded bg-red-600 px-3 py-1.5 text-sm text-white"
+              >
+                Sim, cancelar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   );
 }

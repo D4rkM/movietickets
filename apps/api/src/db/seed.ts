@@ -7,7 +7,7 @@ import * as schema from "./schema";
 
 const SALT_ROUNDS = 10;
 const DEV_PASSWORD = "password123";
-const SAMPLE_MOVIE_TITLE = "Sessão de Teste (seed)";
+const SAMPLE_MOVIE_TITLE = "Vingadores Ultimato";
 
 async function main() {
   const connectionString = process.env.DATABASE_URL;
@@ -62,7 +62,7 @@ async function seedSampleSession(db: PostgresJsDatabase<typeof schema>): Promise
 
   const [cinema] = await db
     .insert(schema.cinemas)
-    .values({ name: "Cinema de Teste (seed)", address: "Rua de Teste, 123", city: "Testópolis" })
+    .values({ name: "Cinemarcus", address: "Rua de Teste, 123", city: "Testópolis" })
     .returning();
 
   const [room] = await db
