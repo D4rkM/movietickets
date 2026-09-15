@@ -27,10 +27,10 @@ Os dois comandos essenciais:
 
 ```bash
 make install    # pnpm install
-make up-full     # infra + api + web, containerizado
+make up-full     # infra + api + web + Drizzle Studio, containerizado
 ```
 
-A `api` (buildada de `apps/api/Dockerfile`) já aplica as migrations e popula o banco com dados de teste sozinha no boot (idempotente — seguro rodar de novo a cada restart do container). O `web` (buildado de `apps/web/Dockerfile`) é servido via `vite preview`. Front em `http://localhost:5173`, API em `http://localhost:3000`, login de teste: `cliente@movietickets.dev` / `password123` (ou `admin@movietickets.dev` pro papel de admin). Pra derrubar: `make down-full`.
+A `api` (buildada de `apps/api/Dockerfile`) já aplica as migrations e popula o banco com dados de teste sozinha no boot (idempotente — seguro rodar de novo a cada restart do container). O `web` (buildado de `apps/web/Dockerfile`) é servido via `vite preview`. Front em `http://localhost:5173`, API em `http://localhost:3000`, [Drizzle Studio](https://orm.drizzle.team/drizzle-studio/overview) (interface pra ver/editar o banco) em `http://localhost:4983`, login de teste: `cliente@movietickets.dev` / `password123` (ou `admin@movietickets.dev` pro papel de admin). Pra derrubar: `make down-full`.
 
 Ou por partes, rodando cada app localmente com hot reload em vez de containerizado:
 
@@ -41,6 +41,7 @@ make migrate           # aplica migrations no Postgres local
 make seed              # popula usuários de teste
 make dev-api            # apps/api
 make dev-web             # apps/web
+make studio              # Drizzle Studio (opcional)
 ```
 
 Ver todos os comandos com `make help`.
@@ -58,11 +59,11 @@ Os dois comandos essenciais, sem `make`:
 # 1. instalar as dependências
 pnpm install
 
-# 2. subir tudo containerizado — infra + api + web
+# 2. subir tudo containerizado — infra + api + web + Drizzle Studio
 docker compose --profile full up -d --build
 ```
 
-A `api` já aplica as migrations e popula o banco sozinha no boot (idempotente), o `web` é servido via `vite preview`. Front em `http://localhost:5173`, API em `http://localhost:3000`, login de teste: `cliente@movietickets.dev` / `password123`. Pra derrubar: `docker compose --profile full down`.
+A `api` já aplica as migrations e popula o banco sozinha no boot (idempotente), o `web` é servido via `vite preview`. Front em `http://localhost:5173`, API em `http://localhost:3000`, [Drizzle Studio](https://orm.drizzle.team/drizzle-studio/overview) em `http://localhost:4983`, login de teste: `cliente@movietickets.dev` / `password123`. Pra derrubar: `docker compose --profile full down`.
 
 Todo `make <alvo>` do [`Makefile`](./Makefile) tem um comando direto equivalente:
 
@@ -75,6 +76,7 @@ Todo `make <alvo>` do [`Makefile`](./Makefile) tem um comando direto equivalente
 | `down-full` | `docker compose --profile full down` |
 | `migrate` | `pnpm --filter api db:migrate` |
 | `seed` | `pnpm --filter api db:seed` |
+| `studio` | `pnpm --filter api db:studio` |
 | `dev-api` | `pnpm dev:api` |
 | `dev-web` | `pnpm dev:web` |
 | `build` | `pnpm build` |
