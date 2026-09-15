@@ -229,6 +229,78 @@ describe("Booking (e2e)", () => {
     });
   });
 
+  it("should create one booking covering every seat in the request", async () => {
+    // GIVEN an authenticated user and two free seats
+    const [seatA, seatB] = await db
+      .insert(schema.seats)
+      .values([
+        { roomId, rowLabel: "B", seatNumber: 1 },
+        { roomId, rowLabel: "B", seatNumber: 2 },
+      ])
+      .returning();
+
+    // WHEN the client books both seats in a single request
+    const response = await app.inject({
+      method: "POST",
+      url: `/sessions/${sessionId}/book`,
+      headers: { authorization: `Bearer ${accessToken}` },
+      payload: {
+        seats: [
+          { seatId: seatA.id, ticketType: "full" },
+          { seatId: seatB.id, ticketType: "half", halfPriceDocument: "1234567890" },
+        ],
+      },
+    });
+
+    // THEN it returns 201 with both seats sharing the same bookingId
+    expect(response.statusCode).toBe(201);
+    const body = response.json();
+    expect(body).toHaveLength(2);
+    expect(body[0].bookingId).toBe(body[1].bookingId);
+
+    const bookingSeats = await db.query.bookingSeats.findMany({
+      where: eq(schema.bookingSeats.bookingId, body[0].bookingId),
+    });
+    expect(bookingSeats).toHaveLength(2);
+  });
+
+  it("should book nothing when one of the requested seats is already taken", async () => {
+    // GIVEN a free seat and a seat that's already booked for this session
+    const [freeSeat, takenSeat] = await db
+      .insert(schema.seats)
+      .values([
+        { roomId, rowLabel: "C", seatNumber: 1 },
+        { roomId, rowLabel: "C", seatNumber: 2 },
+      ])
+      .returning();
+    await app.inject({
+      method: "POST",
+      url: `/sessions/${sessionId}/seats/${takenSeat.id}/book`,
+      headers: { authorization: `Bearer ${accessToken}` },
+      payload: { ticketType: "full" },
+    });
+
+    // WHEN the client tries to book the free seat together with the taken one
+    const response = await app.inject({
+      method: "POST",
+      url: `/sessions/${sessionId}/book`,
+      headers: { authorization: `Bearer ${accessToken}` },
+      payload: {
+        seats: [
+          { seatId: freeSeat.id, ticketType: "full" },
+          { seatId: takenSeat.id, ticketType: "full" },
+        ],
+      },
+    });
+
+    // THEN it returns 409, and the free seat was NOT booked either — the whole request rolled back
+    expect(response.statusCode).toBe(409);
+    const freeSeatBooking = await db.query.bookingSeats.findFirst({
+      where: eq(schema.bookingSeats.seatId, freeSeat.id),
+    });
+    expect(freeSeatBooking).toBeUndefined();
+  });
+
   it("should reject confirming a booking without a valid token", async () => {
     // GIVEN no Authorization header
 

@@ -132,8 +132,28 @@
         },
         {
           "type": "http-request",
-          "name": "Confirm booking (mocked payment)",
+          "name": "Book seats (atomic, multiple)",
           "seq": 3,
+          "request": {
+            "url": "{{baseUrl}}/sessions/{{sessionId}}/book",
+            "method": "POST",
+            "headers": [],
+            "params": [],
+            "body": {
+              "mode": "json",
+              "json": "{\n  \"seats\": [\n    { \"seatId\": \"{{seatId}}\", \"ticketType\": \"full\" },\n    { \"seatId\": \"{{otherSeatId}}\", \"ticketType\": \"half\", \"halfPriceDocument\": \"1234567890\" }\n  ]\n}"
+            },
+            "auth": { "mode": "bearer", "bearer": { "token": "{{accessToken}}" } },
+            "docs": "Reserva vários assentos de uma vez sob **um único booking**, dentro de **uma transação Postgres**: ou todos os assentos entram, ou nenhum entra. É o que o checkout do front usa (em vez de chamar o endpoint de assento único em loop) — evita o cenário de metade dos assentos ficar `pending` no banco enquanto a UI só mostra erro.\n\nRetorna um array (um item por assento, todos com o mesmo `bookingId`). Se algum assento já estiver ocupado, retorna 409 e **nada** é gravado — nem os outros assentos da lista.\n\nPré-requisitos:\n1. Rode Login pra popular accessToken.\n2. Rode seating/Get seat map, cole dois `id` de assentos livres em seatId e otherSeatId.\n\nTesta conflito: rode duas vezes com o mesmo par de assentos — a segunda deve voltar 409, e nenhum assento novo aparece no GET do mapa de assentos.",
+            "script": {
+              "res": "if (res.body[0]?.bookingId) {\n  bru.setEnvVar(\"bookingId\", res.body[0].bookingId);\n}"
+            }
+          }
+        },
+        {
+          "type": "http-request",
+          "name": "Confirm booking (mocked payment)",
+          "seq": 4,
           "request": {
             "url": "{{baseUrl}}/bookings/{{bookingId}}/confirm",
             "method": "POST",
@@ -147,7 +167,7 @@
         {
           "type": "http-request",
           "name": "Get my bookings",
-          "seq": 4,
+          "seq": 5,
           "request": {
             "url": "{{baseUrl}}/bookings/mine",
             "method": "GET",
@@ -168,6 +188,7 @@
         { "name": "baseUrl", "value": "http://localhost:3000", "type": "text", "enabled": true, "secret": false },
         { "name": "sessionId", "value": "", "type": "text", "enabled": true, "secret": false },
         { "name": "seatId", "value": "", "type": "text", "enabled": true, "secret": false },
+        { "name": "otherSeatId", "value": "", "type": "text", "enabled": true, "secret": false },
         { "name": "bookingId", "value": "", "type": "text", "enabled": true, "secret": false },
         { "name": "accessToken", "value": "", "type": "text", "enabled": true, "secret": false }
       ]
