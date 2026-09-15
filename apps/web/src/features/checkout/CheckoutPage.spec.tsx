@@ -41,7 +41,7 @@ describe("CheckoutPage (integration)", () => {
     expect(await screen.findByText("Movies page")).toBeInTheDocument();
   });
 
-  it("should let the user go back to seat selection without booking anything", async () => {
+  it("should ask for confirmation before cancelling and stay on the page when dismissed", async () => {
     // GIVEN the order summary has loaded
     vi.mocked(fetch).mockResolvedValue({
       ok: true,
@@ -54,11 +54,35 @@ describe("CheckoutPage (integration)", () => {
     renderCheckoutPage({ sessionId: "session-1", seatIds: ["seat-1"] });
     await screen.findByText("Assento A1");
 
-    // WHEN the user clicks the back link
-    await userEvent.click(screen.getByRole("link", { name: /Voltar pra seleção de assentos/ }));
+    // WHEN the user clicks back and then dismisses the confirmation
+    await userEvent.click(screen.getByRole("button", { name: "← Voltar" }));
+    expect(screen.getByText("Deseja mesmo cancelar a reserva?")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Não" }));
 
-    // THEN it navigates back to seat selection, with no booking request ever made
-    expect(await screen.findByText("Seat selection page")).toBeInTheDocument();
+    // THEN the modal closes and the user stays on the checkout page
+    expect(screen.queryByText("Deseja mesmo cancelar a reserva?")).not.toBeInTheDocument();
+    expect(screen.getByText("Resumo do pedido")).toBeInTheDocument();
+  });
+
+  it("should cancel and go back to the catalog when the user confirms, without booking anything", async () => {
+    // GIVEN the order summary has loaded
+    vi.mocked(fetch).mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        room: { rows: 1, seatsPerRow: 1 },
+        priceCents: 2500,
+        seats: [{ id: "seat-1", rowLabel: "A", seatNumber: 1, status: "held_by_me" }],
+      }),
+    } as Response);
+    renderCheckoutPage({ sessionId: "session-1", seatIds: ["seat-1"] });
+    await screen.findByText("Assento A1");
+
+    // WHEN the user clicks back and confirms the cancellation
+    await userEvent.click(screen.getByRole("button", { name: "← Voltar" }));
+    await userEvent.click(screen.getByRole("button", { name: "Sim, cancelar" }));
+
+    // THEN it navigates to the catalog, with no booking request ever made
+    expect(await screen.findByText("Movies page")).toBeInTheDocument();
     expect(fetch).not.toHaveBeenCalledWith(expect.stringContaining("/book"), expect.anything());
   });
 
@@ -214,11 +238,11 @@ describe("CheckoutPage (integration)", () => {
     await screen.findByText("Assento A1");
 
     // WHEN the user tries to pay
-    await userEvent.click(screen.getByRole("button", { name: /Pagar \(mock\)/ }));
+    await userEvent.click(screen.getByRole("button", { name: /^Pagar$/ }));
 
     // THEN it shows the error, never reaches the confirm step, and the pay button is usable again
     expect(await screen.findByRole("alert")).toHaveTextContent(/status 409/);
     expect(confirmCalls).toHaveLength(0);
-    expect(screen.getByRole("button", { name: /Pagar \(mock\)/ })).toBeEnabled();
+    expect(screen.getByRole("button", { name: /^Pagar$/ })).toBeEnabled();
   });
 });
