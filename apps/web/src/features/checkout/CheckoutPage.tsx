@@ -212,7 +212,7 @@ export function CheckoutPage() {
         onClick={handlePay}
         className="rounded bg-gray-900 px-4 py-2 text-white disabled:opacity-50"
       >
-        {paying ? "Processando…" : "Pagar (mock)"}
+        {paying ? "Processando…" : "Pagar"}
       </button>
     </main>
   );

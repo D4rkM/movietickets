@@ -1,6 +1,6 @@
 # movietickets
 
-Site simplificado de venda de ingressos de cinema (estilo ingresso.com), com foco em seleção de assento sem double-booking.
+Site de venda de ingressos de cinema, com foco em seleção de assento sem double-booking.
 
 Monorepo (pnpm workspaces):
 

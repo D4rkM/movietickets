@@ -77,13 +77,29 @@ describe("SessionSeatsPage (integration)", () => {
     expect(await screen.findByText("Checkout page")).toBeInTheDocument();
   });
 
-  it("should let the user go back to the catalog without booking anything", async () => {
+  it("should ask for confirmation before cancelling and stay on the page when dismissed", async () => {
     // GIVEN the seat map has loaded
     renderSessionSeatsPage();
     await screen.findByTitle("A1 — Disponível");
 
-    // WHEN the user clicks the back link
-    await userEvent.click(screen.getByRole("link", { name: /Voltar ao catálogo/ }));
+    // WHEN the user clicks back and then dismisses the confirmation
+    await userEvent.click(screen.getByRole("button", { name: "← Voltar" }));
+    expect(screen.getByText("Deseja mesmo cancelar a reserva?")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Não" }));
+
+    // THEN the modal closes and the user stays on the seat selection page
+    expect(screen.queryByText("Deseja mesmo cancelar a reserva?")).not.toBeInTheDocument();
+    expect(screen.getByText("Escolha seus assentos")).toBeInTheDocument();
+  });
+
+  it("should cancel and go back to the catalog when the user confirms, without booking anything", async () => {
+    // GIVEN the seat map has loaded
+    renderSessionSeatsPage();
+    await screen.findByTitle("A1 — Disponível");
+
+    // WHEN the user clicks back and confirms the cancellation
+    await userEvent.click(screen.getByRole("button", { name: "← Voltar" }));
+    await userEvent.click(screen.getByRole("button", { name: "Sim, cancelar" }));
 
     // THEN it navigates to the catalog, with no booking request ever made
     expect(await screen.findByText("Movies page")).toBeInTheDocument();

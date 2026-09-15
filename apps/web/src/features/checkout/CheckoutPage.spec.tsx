@@ -89,7 +89,7 @@ describe("CheckoutPage (integration)", () => {
     // WHEN the summary loads and the user confirms the mocked payment (default: full price)
     expect(await screen.findByText("Assento A1")).toBeInTheDocument();
     expect(screen.getByText("Total: R$ 25.00")).toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: /Pagar \(mock\)/ }));
+    await userEvent.click(screen.getByRole("button", { name: /^Pagar$/ }));
 
     // THEN it books the seat with a full ticket in one request, confirms payment once, and shows the confirmation
     expect(await screen.findByText("Ingresso confirmado!")).toBeInTheDocument();
@@ -137,11 +137,11 @@ describe("CheckoutPage (integration)", () => {
 
     // THEN the price halves and the pay button is disabled until a document is entered
     expect(screen.getByText("Total: R$ 12.50")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /Pagar \(mock\)/ })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /^Pagar$/ })).toBeDisabled();
 
     // WHEN the user fills the document and pays
     await userEvent.type(screen.getByLabelText("Documento da meia-entrada"), "1234567890");
-    await userEvent.click(screen.getByRole("button", { name: /Pagar \(mock\)/ }));
+    await userEvent.click(screen.getByRole("button", { name: /^Pagar$/ }));
 
     // THEN it books the seat as a half ticket with the document, in the single batch request
     expect(await screen.findByText("Ingresso confirmado!")).toBeInTheDocument();
@@ -179,7 +179,7 @@ describe("CheckoutPage (integration)", () => {
 
     // WHEN the user tries to pay
     await screen.findByText("Assento A1");
-    await userEvent.click(screen.getByRole("button", { name: /Pagar \(mock\)/ }));
+    await userEvent.click(screen.getByRole("button", { name: /^Pagar$/ }));
 
     // THEN it clears the stale token and redirects to the login page
     await vi.waitFor(() => expect(window.location.href).toBe("/login"));
