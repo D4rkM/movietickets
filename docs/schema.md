@@ -90,6 +90,9 @@ Tabela de junção — **é aqui que mora a constraint crítica que evita double
 | booking_id | uuid FK → bookings.id | not null |
 | session_id | uuid FK → sessions.id | not null (denormalizado, necessário pra constraint abaixo) |
 | seat_id | uuid FK → seats.id | not null |
+| ticket_type | text | not null, default `'full'` (`full` \| `half`, meia-entrada) |
+| half_price_document | text | nullable — obrigatório quando `ticket_type = 'half'` (validado na API, não no banco) |
+| price_cents | int | not null, default `0` — preço efetivo desse assento, snapshotado no momento da reserva (não recalcula se o preço da sessão mudar depois) |
 
 Constraint crítica: `unique (session_id, seat_id)` — garante que dois `booking_seats` nunca reservam o mesmo assento na mesma sessão, não importa de qual `booking`.
 
