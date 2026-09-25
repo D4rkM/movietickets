@@ -26,7 +26,7 @@ sequenceDiagram
     Frontend->>Backend: GET /sessions/:id/seats (recarrega pra pegar preço + dados atuais)
     Backend-->>Frontend: mapa de assentos
     Cliente->>Frontend: escolhe inteira/meia por assento (+ documento se meia)
-    Cliente->>Frontend: clica "Pagar (mock)"
+    Cliente->>Frontend: clica "Pagar"
 
     Frontend->>Backend: POST /sessions/:id/book { seats: [{seatId, ticketType, halfPriceDocument?}] }
     Backend->>Database: BEGIN transaction
@@ -54,7 +54,7 @@ sequenceDiagram
 ## Fora do fluxo feliz
 
 - **Token expirado** (`401` em qualquer chamada): front limpa o token e redireciona pra `/login`.
-- **Desistência**: botão "← Voltar" tanto em `SessionSeatsPage` quanto `CheckoutPage` navega de volta sem chamar `/book` — como não há hold hoje, não há nada pra limpar no banco/Valkey. Quando o hold TTL existir, esse voltar vai precisar liberar a chave.
+- **Desistência**: botão "← Voltar" tanto em `SessionSeatsPage` quanto `CheckoutPage` abre um modal de confirmação ("Deseja mesmo cancelar a reserva?") antes de navegar — só sai da tela se o cliente confirmar. Em ambas as telas, confirmar cancela a reserva inteira e volta direto pro catálogo (`/movies`), sem chamar `/book`. Como não há hold hoje, não há nada pra limpar no banco/Valkey nesse cancelamento. Quando o hold TTL existir, esse fluxo vai precisar liberar a chave também.
 
 ## Referências
 
