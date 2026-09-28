@@ -3,6 +3,7 @@ import { desc, eq } from "drizzle-orm";
 import { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import { DRIZZLE } from "../db/drizzle.module";
 import * as schema from "../db/schema";
+import { SeatingGateway } from "../seating/seating.gateway";
 import { TicketType } from "./dto/book-seat.dto";
 import { MyBooking } from "./my-booking.types";
 
@@ -43,7 +44,10 @@ export interface ConfirmBookingResult {
 
 @Injectable()
 export class BookingService {
-  constructor(@Inject(DRIZZLE) private readonly db: PostgresJsDatabase<typeof schema>) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: PostgresJsDatabase<typeof schema>,
+    private readonly gateway: SeatingGateway,
+  ) {}
 
   /** Single-seat convenience wrapper around {@link createBookingForSeats}. */
   async createBooking(
@@ -143,6 +147,13 @@ export class BookingService {
       .set({ status: "confirmed" })
       .where(eq(schema.bookings.id, bookingId))
       .returning();
+
+    const bookedSeats = await this.db.query.bookingSeats.findMany({
+      where: eq(schema.bookingSeats.bookingId, bookingId),
+    });
+    for (const seat of bookedSeats) {
+      this.gateway.broadcastSeatUpdate(updated.sessionId, { seatId: seat.seatId, status: "booked" });
+    }
 
     return { bookingId: updated.id, status: updated.status };
   }

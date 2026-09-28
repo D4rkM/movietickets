@@ -2,6 +2,7 @@ import { ConflictException, NotFoundException } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import { DRIZZLE } from "../db/drizzle.module";
 import { VALKEY } from "../valkey/valkey.module";
+import { SeatingGateway } from "./seating.gateway";
 import { SeatingService } from "./seating.service";
 
 describe("SeatingService", () => {
@@ -19,6 +20,7 @@ describe("SeatingService", () => {
     set: jest.fn(),
     expire: jest.fn(),
   };
+  const mockGateway = { broadcastSeatUpdate: jest.fn() };
 
   let service: SeatingService;
 
@@ -50,6 +52,7 @@ describe("SeatingService", () => {
         SeatingService,
         { provide: DRIZZLE, useValue: mockDb },
         { provide: VALKEY, useValue: mockValkey },
+        { provide: SeatingGateway, useValue: mockGateway },
       ],
     }).compile();
 
@@ -215,6 +218,8 @@ describe("SeatingService", () => {
       expect(mockValkey.expire).toHaveBeenCalledWith("seat-hold:session-1:seat-A1", 600);
       expect(mockValkey.set).not.toHaveBeenCalled();
       expect(result).toEqual({ seatId: "seat-A1", status: "held", expiresInSeconds: 600 });
+      // No state change for other clients on a same-user refresh, so no broadcast.
+      expect(mockGateway.broadcastSeatUpdate).not.toHaveBeenCalled();
     });
 
     it("should throw ConflictException when the user already holds the max seats allowed", async () => {
@@ -246,6 +251,11 @@ describe("SeatingService", () => {
         "NX",
       );
       expect(result).toEqual({ seatId: "seat-A1", status: "held", expiresInSeconds: 600 });
+      expect(mockGateway.broadcastSeatUpdate).toHaveBeenCalledWith("session-1", {
+        seatId: "seat-A1",
+        status: "held",
+        heldByUserId: "user-1",
+      });
     });
 
     it("should throw ConflictException when SETNX loses a race to another request", async () => {
@@ -257,6 +267,7 @@ describe("SeatingService", () => {
 
       // ASSERT
       await expect(result).rejects.toThrow(ConflictException);
+      expect(mockGateway.broadcastSeatUpdate).not.toHaveBeenCalled();
     });
   });
 });
