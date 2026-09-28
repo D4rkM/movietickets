@@ -3,7 +3,7 @@ import { SeatingController } from "./seating.controller";
 import { SeatingService } from "./seating.service";
 
 describe("SeatingController", () => {
-  const mockSeatingService = { getSeatMap: jest.fn() };
+  const mockSeatingService = { getSeatMap: jest.fn(), holdSeat: jest.fn() };
   let controller: SeatingController;
 
   beforeEach(() => {
@@ -22,5 +22,18 @@ describe("SeatingController", () => {
     // ASSERT
     expect(mockSeatingService.getSeatMap).toHaveBeenCalledWith("session-1", "user-1");
     expect(result).toEqual({ room: { rows: 1, seatsPerRow: 1 }, priceCents: 1000, seats: [] });
+  });
+
+  it("should delegate holdSeat to SeatingService with the session, seat and requesting user", async () => {
+    // ARRANGE
+    const request = { user: { sub: "user-1", email: "ana@test.com", role: "customer" } } as FastifyRequest;
+    mockSeatingService.holdSeat.mockResolvedValue({ seatId: "seat-A1", status: "held", expiresInSeconds: 600 });
+
+    // ACT
+    const result = await controller.holdSeat("session-1", "seat-A1", request);
+
+    // ASSERT
+    expect(mockSeatingService.holdSeat).toHaveBeenCalledWith("session-1", "seat-A1", "user-1");
+    expect(result).toEqual({ seatId: "seat-A1", status: "held", expiresInSeconds: 600 });
   });
 });
