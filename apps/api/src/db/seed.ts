@@ -7,7 +7,17 @@ import * as schema from "./schema";
 
 const SALT_ROUNDS = 10;
 const DEV_PASSWORD = "password123";
-const SAMPLE_MOVIE_TITLE = "Vingadores Ultimato";
+export const SAMPLE_MOVIE_TITLE = "Vingadores Ultimato";
+const MIN_SESSION_DAYS_AHEAD = 3;
+const MAX_SESSION_DAYS_AHEAD = 7;
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
+/** Random date 3-7 days out, so the sample session never ages into the past. */
+export function randomFutureSessionDate(): Date {
+  const daysAhead =
+    MIN_SESSION_DAYS_AHEAD + Math.floor(Math.random() * (MAX_SESSION_DAYS_AHEAD - MIN_SESSION_DAYS_AHEAD + 1));
+  return new Date(Date.now() + daysAhead * MS_PER_DAY);
+}
 
 async function main() {
   const connectionString = process.env.DATABASE_URL;
@@ -39,7 +49,7 @@ async function main() {
 }
 
 /** Creates (or reuses, if already seeded) a movie/cinema/room/seats/session fixture for manual testing. */
-async function seedSampleSession(db: PostgresJsDatabase<typeof schema>): Promise<string> {
+export async function seedSampleSession(db: PostgresJsDatabase<typeof schema>): Promise<string> {
   const existingMovie = await db.query.movies.findFirst({
     where: eq(schema.movies.title, SAMPLE_MOVIE_TITLE),
   });
@@ -48,6 +58,13 @@ async function seedSampleSession(db: PostgresJsDatabase<typeof schema>): Promise
       where: eq(schema.sessions.movieId, existingMovie.id),
     });
     if (existingSession) {
+      // Re-rolled on every run so the sample session never ages out of the
+      // catalog's "future sessions only" filter — otherwise it'd only ever
+      // show up once, right after the first seed.
+      await db
+        .update(schema.sessions)
+        .set({ startsAt: randomFutureSessionDate() })
+        .where(eq(schema.sessions.id, existingSession.id));
       return existingSession.id;
     }
   }
@@ -96,10 +113,9 @@ async function seedSampleSession(db: PostgresJsDatabase<typeof schema>): Promise
     }).flat(),
   ).returning();
 
-  const startsAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
   const [session] = await db
     .insert(schema.sessions)
-    .values({ movieId: movie.id, roomId: room.id, startsAt, priceCents: 2500 })
+    .values({ movieId: movie.id, roomId: room.id, startsAt: randomFutureSessionDate(), priceCents: 2500 })
     .returning();
 
   await seedBookedSeats(db, insertedSeats, session.id);
@@ -163,7 +179,9 @@ async function seedBookedSeats(
     .values(seatIds.map((seatId) => ({ bookingId: booking.id, sessionId, seatId })));
 }
 
-main().catch((err) => {
-  console.error(err);
-  process.exit(1);
-});
+if (require.main === module) {
+  main().catch((err) => {
+    console.error(err);
+    process.exit(1);
+  });
+}
