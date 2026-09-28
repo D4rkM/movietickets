@@ -14,14 +14,12 @@ describe("randomFutureSessionDate", () => {
   });
 
   it("should return a date at most 7 days ahead", () => {
-    // ARRANGE
-    const before = Date.now();
-
     // ACT
     const result = randomFutureSessionDate();
+    const after = Date.now();
 
     // ASSERT
-    const maxMs = before + 7 * 24 * 60 * 60 * 1000;
+    const maxMs = after + 7 * 24 * 60 * 60 * 1000;
     expect(result.getTime()).toBeLessThanOrEqual(maxMs);
   });
 

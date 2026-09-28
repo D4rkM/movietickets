@@ -7,7 +7,7 @@ import * as schema from "./schema";
 
 const SALT_ROUNDS = 10;
 const DEV_PASSWORD = "password123";
-const SAMPLE_MOVIE_TITLE = "Vingadores Ultimato";
+export const SAMPLE_MOVIE_TITLE = "Vingadores Ultimato";
 const MIN_SESSION_DAYS_AHEAD = 3;
 const MAX_SESSION_DAYS_AHEAD = 7;
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
@@ -49,7 +49,7 @@ async function main() {
 }
 
 /** Creates (or reuses, if already seeded) a movie/cinema/room/seats/session fixture for manual testing. */
-async function seedSampleSession(db: PostgresJsDatabase<typeof schema>): Promise<string> {
+export async function seedSampleSession(db: PostgresJsDatabase<typeof schema>): Promise<string> {
   const existingMovie = await db.query.movies.findFirst({
     where: eq(schema.movies.title, SAMPLE_MOVIE_TITLE),
   });
