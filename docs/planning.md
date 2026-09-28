@@ -13,6 +13,7 @@ Projeto novo (sem código existente). Objetivo: clone simplificado do ingresso.c
 - **Pagamento:** Mercado Pago (sandbox) — ambiente de teste, comum em projeto BR
 - **Comunicação front↔back:** REST no início. Revisar pra GraphQL (ou outro) só se aparecer necessidade concreta (ex.: over-fetching no mapa de assentos, múltiplos consumidores com necessidades diferentes) — não trocar de forma especulativa.
 - **Real-time (recomendado):** WebSocket via Nest Gateway (Socket.io) — broadcast de mudanças no mapa de assentos (held/released/booked) pra todos usuários vendo a mesma sessão. Sem isso, mapa de assento fica "stale" e usuário tenta escolher assento já pego — prejudica exatamente a feature que precisa funcionar bem.
+- **E-mail:** notificação de confirmação de compra, via `nodemailer` (SMTP). Dev local usa [Mailpit](https://github.com/axllent/mailpit) (`docker run -p 1025:1025 -p 8025:8025 axllent/mailpit`) — SMTP fake + UI web em `http://localhost:8025`, e-mail nunca sai da rede local. Provedor real de produção (SES, SendGrid etc.) fica em aberto, decide quando o projeto for pra produção de verdade.
 
 ## Localização e escopo desta primeira execução
 
@@ -88,33 +89,42 @@ Constraint crítica: unique `(session_id, seat_id)` em tabela de assentos ocupad
 
 Definição completa de colunas, tipos, PK/FK e a tabela de junção `booking_seats` (onde essa constraint realmente mora): `docs/schema.md`.
 
-## Features / Stories (5 no total)
+## Features / Stories (6 no total)
 
 ### 1. Seleção de assento (core, prioridade máxima)
-- Mapa visual de assentos por sessão (livre / ocupado / segurado-por-outro-usuário / selecionado-por-mim)
-- Ao clicar assento: cria hold no Valkey (`SETNX` com TTL) — evita dois usuários segurando mesmo assento
-- WebSocket broadcast pros outros clientes na mesma sessão quando assento muda de estado
-- Ao expirar TTL sem confirmar checkout: hold libera automaticamente, assento volta a ficar livre (evento broadcast)
-- Ao confirmar pagamento: transação Postgres grava assento como ocupado definitivamente (respeitando unique constraint) e remove o hold do Valkey
+- Mapa visual de assentos por sessão (livre / ocupado / segurado-por-outro-usuário / selecionado-por-mim) — **implementado**
+- Ao confirmar pagamento: transação Postgres grava assento como ocupado definitivamente (respeitando unique constraint) — **implementado**
+- Ao clicar assento: cria hold no Valkey (`SETNX` com TTL) — evita dois usuários segurando mesmo assento — **pendente, AC2**
+- WebSocket broadcast pros outros clientes na mesma sessão quando assento muda de estado — **pendente, AC2**
+- Ao expirar TTL sem confirmar checkout, ou ao cliente cancelar: hold libera (automático ou manual), assento volta a ficar livre (evento broadcast), e remove o hold do Valkey na confirmação — **pendente, AC2**
 
 ### 2. Catálogo — busca/listagem de filmes e sessões
-- Lista de filmes em cartaz, filtro por data/cinema/sala
-- Detalhe do filme com horários disponíveis (sessões)
-- Cache Valkey na listagem (invalida quando admin cria/edita filme ou sessão)
+- Lista de filmes em cartaz com sessões futuras — **implementado**
+- Filtro por cidade/cinema/data (query params em `GET /movies`) — **pendente, AC2**
+- Detalhe do filme com horários disponíveis (sessões) — **implementado** (embutido na listagem)
 
 ### 3. Checkout / pagamento (Mercado Pago sandbox)
-- Resumo do pedido (filme, sessão, assentos, valor)
-- Integração Mercado Pago sandbox (checkout transparente ou redirect, a definir na implementação)
-- Webhook de confirmação de pagamento → atualiza `Booking` pra `confirmed`, grava assento definitivo
-- Falha/timeout de pagamento → libera hold do assento
+- Resumo do pedido (filme, sessão, assentos, valor) — **implementado**
+- Pagamento mockado (sem gateway real), reserva atômica multi-assento numa transação só — **implementado**
+- Integração Mercado Pago sandbox de verdade (checkout transparente ou redirect, a definir na implementação) — **pendente, AC2**
+- Webhook de confirmação de pagamento → atualiza `Booking` pra `confirmed`, grava assento definitivo — **pendente, AC2**
+- Falha/timeout de pagamento → libera hold do assento — depende do hold existir (feature #1)
 
 ### 4. Conta de usuário + histórico de ingressos
-- Cadastro/login (JWT)
-- "Meus ingressos": lista de bookings confirmados, com detalhe (QR code simples pode ser opcional/fora do MVP)
+- Cadastro/login (JWT) — **implementado**
+- "Meus ingressos": lista de bookings confirmados, com detalhe — **implementado**
+- Cancelamento de ingresso pelo cliente (self-service), libera o(s) assento(s) de volta pro catálogo — **pendente, AC2**
+- QR code simples — opcional/fora do MVP
 
 ### 5. Painel admin
 - CRUD de filmes, salas e sessões
 - Sem necessidade de UI sofisticada — formulários simples, protegido por role admin
+- **Status: não iniciado**, sem entrega planejada ainda
+
+### 6. Notificação por e-mail
+- Confirmação de compra por e-mail quando o `Booking` é confirmado
+- Dev local via Mailpit (ver seção Stack) — sem depender de provedor real
+- **Status: não iniciado, AC2**
 
 ## Arquitetura de módulos (NestJS)
 
@@ -124,6 +134,7 @@ Definição completa de colunas, tipos, PK/FK e a tabela de junção `booking_se
 - `PaymentModule` — integração Mercado Pago sandbox, webhook handler
 - `AuthModule` — login/cadastro, JWT
 - `AdminModule` — CRUD filmes/salas/sessões (reusa services do CatalogModule onde fizer sentido)
+- `NotificationModule` — envio de e-mail de confirmação de compra (`nodemailer`, Mailpit em dev), disparado pelo `BookingModule` na confirmação
 
 ## Verificação end-to-end
 
