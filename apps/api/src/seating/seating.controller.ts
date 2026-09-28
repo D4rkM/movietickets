@@ -1,4 +1,4 @@
-import { Controller, Get, Param, Req, UseGuards } from "@nestjs/common";
+import { Controller, Get, HttpCode, HttpStatus, Param, Post, Req, UseGuards } from "@nestjs/common";
 import { FastifyRequest } from "fastify";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { SeatingService } from "./seating.service";
@@ -11,5 +11,15 @@ export class SeatingController {
   @Get(":id/seats")
   getSeatMap(@Param("id") sessionId: string, @Req() request: FastifyRequest) {
     return this.seatingService.getSeatMap(sessionId, request.user!.sub);
+  }
+
+  @Post(":id/seats/:seatId/hold")
+  @HttpCode(HttpStatus.OK)
+  holdSeat(
+    @Param("id") sessionId: string,
+    @Param("seatId") seatId: string,
+    @Req() request: FastifyRequest,
+  ) {
+    return this.seatingService.holdSeat(sessionId, seatId, request.user!.sub);
   }
 }
