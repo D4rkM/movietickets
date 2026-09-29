@@ -85,6 +85,20 @@
             "auth": { "mode": "bearer", "bearer": { "token": "{{accessToken}}" } },
             "docs": "Retorna o mapa de assentos de uma sessão: layout da sala + status de cada assento (free / held_by_other / held_by_me / booked).\n\nPré-requisitos:\n1. Rode Login (ou Register) primeiro pra popular accessToken.\n2. Rode `pnpm --filter api db:seed` (idempotente) — ele cria uma sessão de teste (filme + cinema + sala 2x4 = 8 assentos) e imprime o id dela no console. Cole esse id na env var sessionId.\n\nTesta sessão inexistente: troque sessionId por qualquer UUID aleatório, deve voltar 404."
           }
+        },
+        {
+          "type": "http-request",
+          "name": "Hold seat",
+          "seq": 2,
+          "request": {
+            "url": "{{baseUrl}}/sessions/{{sessionId}}/seats/{{seatId}}/hold",
+            "method": "POST",
+            "headers": [],
+            "params": [],
+            "body": { "mode": "none" },
+            "auth": { "mode": "bearer", "bearer": { "token": "{{accessToken}}" } },
+            "docs": "Segura o assento temporariamente no Valkey (SETNX + TTL de 10min), pra reservar o tempo do checkout antes do booking definitivo. Retorna `{ seatId, status: \"held\", expiresInSeconds }`.\n\nComportamento:\n- Reenviar com o mesmo usuário e assento **renova o TTL** (não dá conflito).\n- 409 se o assento já estiver reservado, já estiver held por outro usuário, ou se esse usuário já estiver segurando 6 assentos nessa sessão (limite por usuário).\n- 404 se a sessão ou o assento não existir.\n- Também dispara um evento `seat:update` (`{ seatId, status: \"held\", heldByUserId }`) no WebSocket (`/seating`, room `session:{sessionId}`) pra quem estiver com o mapa de assentos aberto — não testável direto pelo Bruno (REST-only); ver seção WebSocket no README da collection.\n\nPré-requisitos:\n1. Rode Login pra popular accessToken.\n2. Rode seating/Get seat map pra pegar um `id` de assento livre, cole na env var seatId.\n\nTesta o limite: rode 6x trocando seatId por assentos diferentes, a 7ª deve voltar 409."
+          }
         }
       ]
     },
