@@ -18,6 +18,15 @@ export interface HoldSeatResult {
   expiresInSeconds: number;
 }
 
+export interface ReleaseSeatResult {
+  seatId: string;
+  released: boolean;
+}
+
+export interface ReleaseAllHoldsResult {
+  releasedSeatIds: string[];
+}
+
 @Injectable()
 export class SeatingService {
   constructor(
@@ -108,6 +117,58 @@ export class SeatingService {
 
     this.gateway.broadcastSeatUpdate(sessionId, { seatId, status: "held", heldByUserId: userId });
     return { seatId, status: "held", expiresInSeconds: HOLD_TTL_SECONDS };
+  }
+
+  /**
+   * Releases a single seat hold the requesting user owns — used when the
+   * client backs out of a seat before finishing checkout. Idempotent and
+   * silent when there's nothing to release (already expired, never held, or
+   * held by someone else): a user can never release someone else's hold.
+   */
+  async releaseSeat(sessionId: string, seatId: string, userId: string): Promise<ReleaseSeatResult> {
+    const session = await this.db.query.sessions.findFirst({
+      where: eq(schema.sessions.id, sessionId),
+    });
+    if (!session) {
+      throw new NotFoundException("Sessão não encontrada");
+    }
+
+    const key = this.holdKey(sessionId, seatId);
+    const currentHolder = await this.valkey.get(key);
+    if (currentHolder !== userId) {
+      return { seatId, released: false };
+    }
+
+    await this.valkey.del(key);
+    this.gateway.broadcastSeatUpdate(sessionId, { seatId, status: "released" });
+    return { seatId, released: true };
+  }
+
+  /**
+   * Releases every hold the requesting user has in a session — used when
+   * they abandon the seat-selection/checkout flow entirely (back button,
+   * navigating away, cancel confirmation) instead of backing out one seat at
+   * a time.
+   */
+  async releaseAllHoldsForUser(sessionId: string, userId: string): Promise<ReleaseAllHoldsResult> {
+    const keys = await this.scanHoldKeys(sessionId);
+    if (keys.length === 0) {
+      return { releasedSeatIds: [] };
+    }
+
+    const values = await this.valkey.mget(...keys);
+    const ownedKeys = keys.filter((_, index) => values[index] === userId);
+    if (ownedKeys.length === 0) {
+      return { releasedSeatIds: [] };
+    }
+
+    await this.valkey.del(...ownedKeys);
+
+    const releasedSeatIds = ownedKeys.map((key) => key.slice(`${HOLD_KEY_PREFIX}:${sessionId}:`.length));
+    for (const seatId of releasedSeatIds) {
+      this.gateway.broadcastSeatUpdate(sessionId, { seatId, status: "released" });
+    }
+    return { releasedSeatIds };
   }
 
   private async isSeatBooked(sessionId: string, seatId: string): Promise<boolean> {

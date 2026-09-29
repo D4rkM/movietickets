@@ -1,4 +1,4 @@
-import { Controller, Get, HttpCode, HttpStatus, Param, Post, Req, UseGuards } from "@nestjs/common";
+import { Controller, Delete, Get, HttpCode, HttpStatus, Param, Post, Req, UseGuards } from "@nestjs/common";
 import { FastifyRequest } from "fastify";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { SeatingService } from "./seating.service";
@@ -21,5 +21,19 @@ export class SeatingController {
     @Req() request: FastifyRequest,
   ) {
     return this.seatingService.holdSeat(sessionId, seatId, request.user!.sub);
+  }
+
+  @Delete(":id/seats/:seatId/hold")
+  releaseSeat(
+    @Param("id") sessionId: string,
+    @Param("seatId") seatId: string,
+    @Req() request: FastifyRequest,
+  ) {
+    return this.seatingService.releaseSeat(sessionId, seatId, request.user!.sub);
+  }
+
+  @Delete(":id/holds")
+  releaseAllHolds(@Param("id") sessionId: string, @Req() request: FastifyRequest) {
+    return this.seatingService.releaseAllHoldsForUser(sessionId, request.user!.sub);
   }
 }

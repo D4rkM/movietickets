@@ -19,6 +19,7 @@ describe("SeatingService", () => {
     get: jest.fn(),
     set: jest.fn(),
     expire: jest.fn(),
+    del: jest.fn(),
   };
   const mockGateway = { broadcastSeatUpdate: jest.fn() };
 
@@ -268,6 +269,122 @@ describe("SeatingService", () => {
       // ASSERT
       await expect(result).rejects.toThrow(ConflictException);
       expect(mockGateway.broadcastSeatUpdate).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("releaseSeat", () => {
+    beforeEach(() => {
+      mockDb.query.sessions.findFirst.mockResolvedValue(session);
+    });
+
+    it("should throw NotFoundException when the session does not exist", async () => {
+      // ARRANGE
+      mockDb.query.sessions.findFirst.mockResolvedValue(undefined);
+
+      // ACT
+      const result = service.releaseSeat("missing-session", "seat-A1", "user-1");
+
+      // ASSERT
+      await expect(result).rejects.toThrow(NotFoundException);
+    });
+
+    it("should delete the hold and broadcast 'released' when the requesting user owns it", async () => {
+      // ARRANGE
+      mockValkey.get.mockResolvedValue("user-1");
+
+      // ACT
+      const result = await service.releaseSeat("session-1", "seat-A1", "user-1");
+
+      // ASSERT
+      expect(mockValkey.del).toHaveBeenCalledWith("seat-hold:session-1:seat-A1");
+      expect(mockGateway.broadcastSeatUpdate).toHaveBeenCalledWith("session-1", {
+        seatId: "seat-A1",
+        status: "released",
+      });
+      expect(result).toEqual({ seatId: "seat-A1", released: true });
+    });
+
+    it("should be a silent no-op when the seat isn't held at all", async () => {
+      // ARRANGE
+      mockValkey.get.mockResolvedValue(null);
+
+      // ACT
+      const result = await service.releaseSeat("session-1", "seat-A1", "user-1");
+
+      // ASSERT
+      expect(mockValkey.del).not.toHaveBeenCalled();
+      expect(mockGateway.broadcastSeatUpdate).not.toHaveBeenCalled();
+      expect(result).toEqual({ seatId: "seat-A1", released: false });
+    });
+
+    it("should be a silent no-op when the seat is held by someone else", async () => {
+      // ARRANGE
+      mockValkey.get.mockResolvedValue("user-2");
+
+      // ACT
+      const result = await service.releaseSeat("session-1", "seat-A1", "user-1");
+
+      // ASSERT
+      expect(mockValkey.del).not.toHaveBeenCalled();
+      expect(mockGateway.broadcastSeatUpdate).not.toHaveBeenCalled();
+      expect(result).toEqual({ seatId: "seat-A1", released: false });
+    });
+  });
+
+  describe("releaseAllHoldsForUser", () => {
+    it("should release only the requesting user's holds and broadcast one event per seat", async () => {
+      // ARRANGE
+      mockValkey.scan.mockResolvedValue([
+        "0",
+        ["seat-hold:session-1:seat-A1", "seat-hold:session-1:seat-A2", "seat-hold:session-1:seat-B1"],
+      ]);
+      mockValkey.mget.mockResolvedValue(["user-1", "user-2", "user-1"]);
+
+      // ACT
+      const result = await service.releaseAllHoldsForUser("session-1", "user-1");
+
+      // ASSERT
+      expect(mockValkey.del).toHaveBeenCalledWith(
+        "seat-hold:session-1:seat-A1",
+        "seat-hold:session-1:seat-B1",
+      );
+      expect(mockGateway.broadcastSeatUpdate).toHaveBeenCalledTimes(2);
+      expect(mockGateway.broadcastSeatUpdate).toHaveBeenCalledWith("session-1", {
+        seatId: "seat-A1",
+        status: "released",
+      });
+      expect(mockGateway.broadcastSeatUpdate).toHaveBeenCalledWith("session-1", {
+        seatId: "seat-B1",
+        status: "released",
+      });
+      expect(result).toEqual({ releasedSeatIds: ["seat-A1", "seat-B1"] });
+    });
+
+    it("should do nothing when the user holds no seats in the session", async () => {
+      // ARRANGE
+      mockValkey.scan.mockResolvedValue(["0", ["seat-hold:session-1:seat-A1"]]);
+      mockValkey.mget.mockResolvedValue(["user-2"]);
+
+      // ACT
+      const result = await service.releaseAllHoldsForUser("session-1", "user-1");
+
+      // ASSERT
+      expect(mockValkey.del).not.toHaveBeenCalled();
+      expect(mockGateway.broadcastSeatUpdate).not.toHaveBeenCalled();
+      expect(result).toEqual({ releasedSeatIds: [] });
+    });
+
+    it("should do nothing when there are no holds at all in the session", async () => {
+      // ARRANGE
+      mockValkey.scan.mockResolvedValue(["0", []]);
+
+      // ACT
+      const result = await service.releaseAllHoldsForUser("session-1", "user-1");
+
+      // ASSERT
+      expect(mockValkey.mget).not.toHaveBeenCalled();
+      expect(mockValkey.del).not.toHaveBeenCalled();
+      expect(result).toEqual({ releasedSeatIds: [] });
     });
   });
 });

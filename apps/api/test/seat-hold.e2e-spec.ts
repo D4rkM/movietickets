@@ -260,4 +260,134 @@ describe("Seating hold (e2e)", () => {
 
     await db.delete(schema.seats).where(eq(schema.seats.rowLabel, "Z"));
   });
+
+  it("should release a held seat and let another user hold it afterward", async () => {
+    // GIVEN a seat held by one user
+    await app.inject({
+      method: "POST",
+      url: `/sessions/${sessionId}/seats/${seatId}/hold`,
+      headers: { authorization: `Bearer ${accessToken}` },
+    });
+
+    // WHEN that user releases it
+    const releaseResponse = await app.inject({
+      method: "DELETE",
+      url: `/sessions/${sessionId}/seats/${seatId}/hold`,
+      headers: { authorization: `Bearer ${accessToken}` },
+    });
+
+    // THEN it's released, the Valkey key is gone, and another user can now hold it
+    expect(releaseResponse.statusCode).toBe(200);
+    expect(releaseResponse.json()).toEqual({ seatId, released: true });
+    expect(await valkey.get(`seat-hold:${sessionId}:${seatId}`)).toBeNull();
+
+    const otherHoldResponse = await app.inject({
+      method: "POST",
+      url: `/sessions/${sessionId}/seats/${seatId}/hold`,
+      headers: { authorization: `Bearer ${otherAccessToken}` },
+    });
+    expect(otherHoldResponse.statusCode).toBe(200);
+  });
+
+  it("should be a no-op when releasing a seat that isn't held", async () => {
+    // GIVEN a free seat
+
+    // WHEN a user tries to release it anyway (e.g. a stale client retrying)
+    const response = await app.inject({
+      method: "DELETE",
+      url: `/sessions/${sessionId}/seats/${seatId}/hold`,
+      headers: { authorization: `Bearer ${accessToken}` },
+    });
+
+    // THEN it succeeds without error, just reporting nothing was released
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ seatId, released: false });
+  });
+
+  it("should not let a user release a seat held by someone else", async () => {
+    // GIVEN a seat held by one user
+    await app.inject({
+      method: "POST",
+      url: `/sessions/${sessionId}/seats/${seatId}/hold`,
+      headers: { authorization: `Bearer ${accessToken}` },
+    });
+
+    // WHEN a different user tries to release it
+    const response = await app.inject({
+      method: "DELETE",
+      url: `/sessions/${sessionId}/seats/${seatId}/hold`,
+      headers: { authorization: `Bearer ${otherAccessToken}` },
+    });
+
+    // THEN it's a no-op — the original hold is untouched
+    expect(response.json()).toEqual({ seatId, released: false });
+    expect(await valkey.get(`seat-hold:${sessionId}:${seatId}`)).toBe(userId);
+  });
+
+  it("should release only the requesting user's holds via DELETE /sessions/:id/holds", async () => {
+    // GIVEN two seats held by one user and one seat held by another, all in the same session
+    const [seatB, seatC] = await db
+      .insert(schema.seats)
+      .values([
+        { roomId, rowLabel: "Y", seatNumber: 1 },
+        { roomId, rowLabel: "Y", seatNumber: 2 },
+      ])
+      .returning();
+    await app.inject({
+      method: "POST",
+      url: `/sessions/${sessionId}/seats/${seatId}/hold`,
+      headers: { authorization: `Bearer ${accessToken}` },
+    });
+    await app.inject({
+      method: "POST",
+      url: `/sessions/${sessionId}/seats/${seatB.id}/hold`,
+      headers: { authorization: `Bearer ${accessToken}` },
+    });
+    await app.inject({
+      method: "POST",
+      url: `/sessions/${sessionId}/seats/${seatC.id}/hold`,
+      headers: { authorization: `Bearer ${otherAccessToken}` },
+    });
+
+    // WHEN that user abandons the session and releases all of their holds at once
+    const response = await app.inject({
+      method: "DELETE",
+      url: `/sessions/${sessionId}/holds`,
+      headers: { authorization: `Bearer ${accessToken}` },
+    });
+
+    // THEN both of their seats are released, but the other user's hold survives
+    expect(response.statusCode).toBe(200);
+    expect(new Set(response.json().releasedSeatIds)).toEqual(new Set([seatId, seatB.id]));
+    expect(await valkey.get(`seat-hold:${sessionId}:${seatId}`)).toBeNull();
+    expect(await valkey.get(`seat-hold:${sessionId}:${seatB.id}`)).toBeNull();
+    expect(await valkey.get(`seat-hold:${sessionId}:${seatC.id}`)).toBe(otherUserId);
+
+    await db.delete(schema.seats).where(eq(schema.seats.rowLabel, "Y"));
+  });
+
+  it("should free a seat passively once its hold's TTL expires, with no manual release needed", async () => {
+    // GIVEN a seat held with a TTL forced down to a few milliseconds,
+    // simulating the real 10min TTL having run out
+    await app.inject({
+      method: "POST",
+      url: `/sessions/${sessionId}/seats/${seatId}/hold`,
+      headers: { authorization: `Bearer ${accessToken}` },
+    });
+    await valkey.pexpire(`seat-hold:${sessionId}:${seatId}`, 50);
+
+    // WHEN the TTL runs out
+    await new Promise((resolve) => setTimeout(resolve, 150));
+
+    // THEN Valkey has already dropped the key on its own, and the seat map
+    // reflects it as free again with no explicit release call
+    expect(await valkey.get(`seat-hold:${sessionId}:${seatId}`)).toBeNull();
+    const seatMapResponse = await app.inject({
+      method: "GET",
+      url: `/sessions/${sessionId}/seats`,
+      headers: { authorization: `Bearer ${accessToken}` },
+    });
+    const seat = seatMapResponse.json().seats.find((s: { id: string }) => s.id === seatId);
+    expect(seat.status).toBe("free");
+  });
 });
