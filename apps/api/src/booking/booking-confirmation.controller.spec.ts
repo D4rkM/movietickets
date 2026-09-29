@@ -3,7 +3,7 @@ import { BookingConfirmationController } from "./booking-confirmation.controller
 import { BookingService } from "./booking.service";
 
 describe("BookingConfirmationController", () => {
-  const mockBookingService = { confirmBooking: jest.fn() };
+  const mockBookingService = { confirmBooking: jest.fn(), cancelBooking: jest.fn() };
   let controller: BookingConfirmationController;
 
   beforeEach(() => {
@@ -22,5 +22,18 @@ describe("BookingConfirmationController", () => {
     // ASSERT
     expect(mockBookingService.confirmBooking).toHaveBeenCalledWith("booking-1", "user-1");
     expect(result).toEqual({ bookingId: "booking-1", status: "confirmed" });
+  });
+
+  it("should delegate cancelBooking to BookingService with the booking id and the requesting user", async () => {
+    // ARRANGE
+    const request = { user: { sub: "user-1", email: "ana@test.com", role: "customer" } } as FastifyRequest;
+    mockBookingService.cancelBooking.mockResolvedValue({ bookingId: "booking-1", status: "cancelled" });
+
+    // ACT
+    const result = await controller.cancelBooking("booking-1", request);
+
+    // ASSERT
+    expect(mockBookingService.cancelBooking).toHaveBeenCalledWith("booking-1", "user-1");
+    expect(result).toEqual({ bookingId: "booking-1", status: "cancelled" });
   });
 });

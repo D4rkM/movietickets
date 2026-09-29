@@ -158,6 +158,40 @@ export class BookingService {
     return { bookingId: updated.id, status: updated.status };
   }
 
+  /**
+   * Self-service cancellation: only a confirmed booking's owner can cancel
+   * it. Flips the booking to `cancelled` (its seats stop counting as booked,
+   * per `isSeatBooked`/`getBookedSeatIds`, which only look at `confirmed`
+   * bookings) and broadcasts each seat back to "released" so other clients
+   * watching that session's seat map see them free up in real time.
+   */
+  async cancelBooking(bookingId: string, userId: string): Promise<ConfirmBookingResult> {
+    const booking = await this.db.query.bookings.findFirst({
+      where: eq(schema.bookings.id, bookingId),
+    });
+    if (!booking || booking.userId !== userId) {
+      throw new NotFoundException("Reserva não encontrada");
+    }
+    if (booking.status !== "confirmed") {
+      throw new ConflictException(`Reserva já está com status "${booking.status}"`);
+    }
+
+    const [updated] = await this.db
+      .update(schema.bookings)
+      .set({ status: "cancelled" })
+      .where(eq(schema.bookings.id, bookingId))
+      .returning();
+
+    const cancelledSeats = await this.db.query.bookingSeats.findMany({
+      where: eq(schema.bookingSeats.bookingId, bookingId),
+    });
+    for (const seat of cancelledSeats) {
+      this.gateway.broadcastSeatUpdate(updated.sessionId, { seatId: seat.seatId, status: "released" });
+    }
+
+    return { bookingId: updated.id, status: updated.status };
+  }
+
   /** Lists the authenticated user's confirmed bookings, most recent first. */
   async getMyBookings(userId: string): Promise<MyBooking[]> {
     const bookings = await this.db.query.bookings.findMany({

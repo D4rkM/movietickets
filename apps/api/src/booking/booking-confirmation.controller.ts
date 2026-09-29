@@ -13,4 +13,10 @@ export class BookingConfirmationController {
   confirmBooking(@Param("id") bookingId: string, @Req() request: FastifyRequest) {
     return this.bookingService.confirmBooking(bookingId, request.user!.sub);
   }
+
+  @Post(":id/cancel")
+  @HttpCode(HttpStatus.OK)
+  cancelBooking(@Param("id") bookingId: string, @Req() request: FastifyRequest) {
+    return this.bookingService.cancelBooking(bookingId, request.user!.sub);
+  }
 }
