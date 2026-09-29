@@ -5,6 +5,7 @@ import type { Redis } from "ioredis";
 import { DRIZZLE } from "../db/drizzle.module";
 import * as schema from "../db/schema";
 import { VALKEY } from "../valkey/valkey.module";
+import { SeatingGateway } from "./seating.gateway";
 import { SeatMapResponse, SeatState } from "./seat-map.types";
 
 const HOLD_KEY_PREFIX = "seat-hold";
@@ -22,6 +23,7 @@ export class SeatingService {
   constructor(
     @Inject(DRIZZLE) private readonly db: PostgresJsDatabase<typeof schema>,
     @Inject(VALKEY) private readonly valkey: Redis,
+    private readonly gateway: SeatingGateway,
   ) {}
 
   async getSeatMap(sessionId: string, userId: string): Promise<SeatMapResponse> {
@@ -104,6 +106,7 @@ export class SeatingService {
       throw new ConflictException("Assento já está sendo segurado por outro usuário");
     }
 
+    this.gateway.broadcastSeatUpdate(sessionId, { seatId, status: "held", heldByUserId: userId });
     return { seatId, status: "held", expiresInSeconds: HOLD_TTL_SECONDS };
   }
 

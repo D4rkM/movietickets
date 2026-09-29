@@ -1,6 +1,7 @@
 import { ConflictException, NotFoundException } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import { DRIZZLE } from "../db/drizzle.module";
+import { SeatingGateway } from "../seating/seating.gateway";
 import { BookingService } from "./booking.service";
 import { TicketType } from "./dto/book-seat.dto";
 
@@ -9,11 +10,13 @@ describe("BookingService", () => {
     query: {
       sessions: { findFirst: jest.fn() },
       bookings: { findFirst: jest.fn(), findMany: jest.fn() },
+      bookingSeats: { findMany: jest.fn() },
     },
     insert: jest.fn(),
     update: jest.fn(),
     transaction: jest.fn(),
   };
+  const mockGateway = { broadcastSeatUpdate: jest.fn() };
 
   let service: BookingService;
 
@@ -28,9 +31,14 @@ describe("BookingService", () => {
   beforeEach(async () => {
     jest.clearAllMocks();
     stubTransaction();
+    mockDb.query.bookingSeats.findMany.mockResolvedValue([]);
 
     const moduleRef = await Test.createTestingModule({
-      providers: [BookingService, { provide: DRIZZLE, useValue: mockDb }],
+      providers: [
+        BookingService,
+        { provide: DRIZZLE, useValue: mockDb },
+        { provide: SeatingGateway, useValue: mockGateway },
+      ],
     }).compile();
 
     service = moduleRef.get(BookingService);
@@ -263,7 +271,7 @@ describe("BookingService", () => {
       status: "pending",
     });
     const where = jest.fn().mockReturnValue({
-      returning: jest.fn().mockResolvedValue([{ id: "booking-1", status: "confirmed" }]),
+      returning: jest.fn().mockResolvedValue([{ id: "booking-1", status: "confirmed", sessionId: "session-1" }]),
     });
     mockDb.update.mockReturnValue({ set: jest.fn().mockReturnValue({ where }) });
 
@@ -272,6 +280,28 @@ describe("BookingService", () => {
 
     // ASSERT
     expect(result).toEqual({ bookingId: "booking-1", status: "confirmed" });
+  });
+
+  it("should broadcast a 'booked' seat update for every seat in the confirmed booking", async () => {
+    // ARRANGE
+    mockDb.query.bookings.findFirst.mockResolvedValue({
+      id: "booking-1",
+      userId: "user-1",
+      status: "pending",
+    });
+    const where = jest.fn().mockReturnValue({
+      returning: jest.fn().mockResolvedValue([{ id: "booking-1", status: "confirmed", sessionId: "session-1" }]),
+    });
+    mockDb.update.mockReturnValue({ set: jest.fn().mockReturnValue({ where }) });
+    mockDb.query.bookingSeats.findMany.mockResolvedValue([{ seatId: "seat-1" }, { seatId: "seat-2" }]);
+
+    // ACT
+    await service.confirmBooking("booking-1", "user-1");
+
+    // ASSERT
+    expect(mockGateway.broadcastSeatUpdate).toHaveBeenCalledTimes(2);
+    expect(mockGateway.broadcastSeatUpdate).toHaveBeenCalledWith("session-1", { seatId: "seat-1", status: "booked" });
+    expect(mockGateway.broadcastSeatUpdate).toHaveBeenCalledWith("session-1", { seatId: "seat-2", status: "booked" });
   });
 
   it("should only return confirmed bookings, mapped with session and seat details", async () => {
