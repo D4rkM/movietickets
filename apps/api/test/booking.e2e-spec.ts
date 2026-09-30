@@ -367,6 +367,72 @@ describe("Booking (e2e)", () => {
     expect(response.statusCode).toBe(409);
   });
 
+  it("should reject cancelling a booking without a valid token", async () => {
+    // GIVEN no Authorization header
+
+    // WHEN the client calls POST /bookings/:id/cancel
+    const response = await app.inject({ method: "POST", url: `/bookings/${bookingId}/cancel` });
+
+    // THEN it returns 401
+    expect(response.statusCode).toBe(401);
+  });
+
+  it("should return 404 when cancelling a booking that belongs to someone else", async () => {
+    // GIVEN a token for a different user than the one who owns the booking
+    const otherToken = jwtService.sign({
+      sub: otherUserId,
+      email: "someone-else@test.com",
+      role: "customer",
+    });
+
+    // WHEN that user tries to cancel the booking
+    const response = await app.inject({
+      method: "POST",
+      url: `/bookings/${bookingId}/cancel`,
+      headers: { authorization: `Bearer ${otherToken}` },
+    });
+
+    // THEN it returns 404
+    expect(response.statusCode).toBe(404);
+  });
+
+  it("should cancel a confirmed booking and free its seat back up on the seat map", async () => {
+    // GIVEN a confirmed booking whose seat currently shows as booked
+
+    // WHEN the client cancels it
+    const cancelResponse = await app.inject({
+      method: "POST",
+      url: `/bookings/${bookingId}/cancel`,
+      headers: { authorization: `Bearer ${accessToken}` },
+    });
+
+    // THEN it returns 200 with status "cancelled", and the seat map reflects it as free again
+    expect(cancelResponse.statusCode).toBe(200);
+    expect(cancelResponse.json()).toEqual({ bookingId, status: "cancelled" });
+
+    const seatMapResponse = await app.inject({
+      method: "GET",
+      url: `/sessions/${sessionId}/seats`,
+      headers: { authorization: `Bearer ${accessToken}` },
+    });
+    const seat = seatMapResponse.json().seats.find((s: { id: string }) => s.id === seatId);
+    expect(seat.status).toBe("free");
+  });
+
+  it("should reject cancelling a booking that isn't confirmed", async () => {
+    // GIVEN a booking that was already cancelled (the previous test's)
+
+    // WHEN the client tries to cancel it again
+    const response = await app.inject({
+      method: "POST",
+      url: `/bookings/${bookingId}/cancel`,
+      headers: { authorization: `Bearer ${accessToken}` },
+    });
+
+    // THEN it returns 409
+    expect(response.statusCode).toBe(409);
+  });
+
   it("should reject GET /bookings/mine without a valid token", async () => {
     // GIVEN no Authorization header
 
