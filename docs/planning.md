@@ -14,6 +14,7 @@ Projeto novo (sem código existente). Objetivo: clone simplificado do ingresso.c
 - **Comunicação front↔back:** REST no início. Revisar pra GraphQL (ou outro) só se aparecer necessidade concreta (ex.: over-fetching no mapa de assentos, múltiplos consumidores com necessidades diferentes) — não trocar de forma especulativa.
 - **Real-time (recomendado):** WebSocket via Nest Gateway (Socket.io) — broadcast de mudanças no mapa de assentos (held/released/booked) pra todos usuários vendo a mesma sessão. Sem isso, mapa de assento fica "stale" e usuário tenta escolher assento já pego — prejudica exatamente a feature que precisa funcionar bem.
 - **E-mail:** notificação de confirmação de compra, via `nodemailer` (SMTP). Dev local usa [Mailpit](https://github.com/axllent/mailpit) (`docker run -p 1025:1025 -p 8025:8025 axllent/mailpit`) — SMTP fake + UI web em `http://localhost:8025`, e-mail nunca sai da rede local. Provedor real de produção (SES, SendGrid etc.) fica em aberto, decide quando o projeto for pra produção de verdade.
+- **Testes e2e (front):** [Playwright](https://playwright.dev/) — entra junto com o começo do código de front. Sobe o browser de verdade batendo num backend real (Postgres + Valkey, mesmo setup usado pelos testes de integração do back), validando fluxo completo (não só componente isolado). Hoje o back já tem essa camada (`*.e2e-spec.ts` em `apps/api/test/`, real Postgres/Valkey/WebSocket); o front até agora só tinha Vitest + RTL (unitário/componente), sem nada cobrindo o fluxo fim a fim pelo navegador — é essa lacuna que o Playwright fecha. Casos que só fazem sentido com browser real: duas abas vendo o mapa de assento atualizar via WebSocket, hold expirando de verdade, concorrência de clique em assento.
 
 ## Localização e escopo desta primeira execução
 
@@ -62,7 +63,7 @@ movietickets/                    (raiz do monorepo, ~/projects/movietickets)
 Cada pasta em `docs/flows/<feature>/` vai ganhar `sequence.md` e `class.md` (Mermaid) quando aquela feature for desenvolvida — não são criados todos de uma vez.
 
 ### Testes (obrigatório, sempre)
-- **Front:** testes unitários (Vitest + React Testing Library) e testes de integração de componentes/fluxos (ex.: fluxo de seleção de assento mockando API).
+- **Front:** testes unitários (Vitest + React Testing Library) por componente/hook, e testes de integração de componentes/fluxos mockando API. Fluxos críticos (seleção de assento com concorrência/WebSocket real, checkout completo) ganham também teste **e2e com Playwright**, batendo num backend real — não dá pra validar "duas abas veem a mudança em tempo real" só com API mockada.
 - **Back:** testes unitários (Jest, padrão NestJS) por service/handler, e testes de integração batendo em Postgres/Valkey reais (via docker-compose ou testcontainers) — principalmente pro fluxo de seat hold + booking, onde concorrência importa.
 - Isso vai pro `CLAUDE.md` da raiz como regra permanente do projeto, pra não deixar passar durante a implementação: **toda feature nova precisa vir com teste unitário e, quando envolver fluxo entre camadas (API+banco, API+cache), teste de integração também.**
 
