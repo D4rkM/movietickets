@@ -101,7 +101,7 @@ Definição completa de colunas, tipos, PK/FK e a tabela de junção `booking_se
 
 ### 2. Catálogo — busca/listagem de filmes e sessões
 - Lista de filmes em cartaz com sessões futuras — **implementado**
-- Filtro por cidade/cinema/data (query params em `GET /movies`) — **back em review** (PR aberto); front pendente, AC2
+- Filtro por cidade/cinema/data (query params em `GET /movies`) — **implementado no back**; front pendente, AC2
 - Detalhe do filme com horários disponíveis (sessões) — **implementado** (embutido na listagem)
 
 ### 3. Checkout / pagamento (Mercado Pago sandbox)
