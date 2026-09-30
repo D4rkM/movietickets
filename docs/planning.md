@@ -94,13 +94,13 @@ Definição completa de colunas, tipos, PK/FK e a tabela de junção `booking_se
 ### 1. Seleção de assento (core, prioridade máxima)
 - Mapa visual de assentos por sessão (livre / ocupado / segurado-por-outro-usuário / selecionado-por-mim) — **implementado**
 - Ao confirmar pagamento: transação Postgres grava assento como ocupado definitivamente (respeitando unique constraint) — **implementado**
-- Ao clicar assento: cria hold no Valkey (`SETNX` com TTL) — evita dois usuários segurando mesmo assento — **pendente, AC2**
-- WebSocket broadcast pros outros clientes na mesma sessão quando assento muda de estado — **pendente, AC2**
-- Ao expirar TTL sem confirmar checkout, ou ao cliente cancelar: hold libera (automático ou manual), assento volta a ficar livre (evento broadcast), e remove o hold do Valkey na confirmação — **pendente, AC2**
+- Ao clicar assento: cria hold no Valkey (`SETNX` com TTL) — evita dois usuários segurando mesmo assento — **implementado no back**; front pendente, AC2
+- WebSocket broadcast pros outros clientes na mesma sessão quando assento muda de estado — **implementado no back** (`SeatingGateway`, room por sessão, eventos held/released/booked); front pendente, AC2
+- Ao expirar TTL sem confirmar checkout, ou ao cliente cancelar: hold libera (automático ou manual), assento volta a ficar livre (evento broadcast), e remove o hold do Valkey na confirmação — **implementado no back** (TTL passiva do Redis + liberação manual/bulk); front pendente, AC2
 
 ### 2. Catálogo — busca/listagem de filmes e sessões
 - Lista de filmes em cartaz com sessões futuras — **implementado**
-- Filtro por cidade/cinema/data (query params em `GET /movies`) — **pendente, AC2**
+- Filtro por cidade/cinema/data (query params em `GET /movies`) — **back em review** (PR aberto); front pendente, AC2
 - Detalhe do filme com horários disponíveis (sessões) — **implementado** (embutido na listagem)
 
 ### 3. Checkout / pagamento (Mercado Pago sandbox)
@@ -113,7 +113,7 @@ Definição completa de colunas, tipos, PK/FK e a tabela de junção `booking_se
 ### 4. Conta de usuário + histórico de ingressos
 - Cadastro/login (JWT) — **implementado**
 - "Meus ingressos": lista de bookings confirmados, com detalhe — **implementado**
-- Cancelamento de ingresso pelo cliente (self-service), libera o(s) assento(s) de volta pro catálogo — **pendente, AC2**
+- Cancelamento de ingresso pelo cliente (self-service), libera o(s) assento(s) de volta pro catálogo — **implementado no back** (`POST /bookings/:id/cancel`, broadcast released); front pendente, AC2
 - QR code simples — opcional/fora do MVP
 
 ### 5. Painel admin
