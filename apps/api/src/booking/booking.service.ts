@@ -1,5 +1,5 @@
 import { ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import { DRIZZLE } from "../db/drizzle.module";
 import * as schema from "../db/schema";
@@ -156,6 +156,26 @@ export class BookingService {
     }
 
     return { bookingId: updated.id, status: updated.status };
+  }
+
+  /**
+   * Confirms a booking after Mercado Pago reports an approved payment. Idempotent:
+   * webhooks can be redelivered, so a booking that is already past `pending` is left alone.
+   */
+  async confirmPaidBooking(bookingId: string): Promise<void> {
+    const [updated] = await this.db
+      .update(schema.bookings)
+      .set({ status: "confirmed" })
+      .where(and(eq(schema.bookings.id, bookingId), eq(schema.bookings.status, "pending")))
+      .returning();
+    if (!updated) return;
+
+    const bookedSeats = await this.db.query.bookingSeats.findMany({
+      where: eq(schema.bookingSeats.bookingId, bookingId),
+    });
+    for (const seat of bookedSeats) {
+      this.gateway.broadcastSeatUpdate(updated.sessionId, { seatId: seat.seatId, status: "booked" });
+    }
   }
 
   /**

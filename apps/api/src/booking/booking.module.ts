@@ -10,5 +10,6 @@ import { MyBookingsController } from "./my-bookings.controller";
   imports: [AuthModule, SeatingModule],
   controllers: [BookingController, BookingConfirmationController, MyBookingsController],
   providers: [BookingService],
+  exports: [BookingService],
 })
 export class BookingModule {}
