@@ -200,6 +200,24 @@ describe("Payment (e2e)", () => {
       expect(booking.status).toBe("confirmed");
     });
 
+    it("should confirm the booking from the Preferences API's legacy ?topic=payment&id=... IPN, with no JSON body", async () => {
+      // GIVEN Mercado Pago reports an approved payment, notified in the legacy query-param-only IPN shape
+      mockPaymentClient.get.mockResolvedValue({
+        id: 5555,
+        status: "approved",
+        external_reference: bookingId,
+        transaction_amount: 30,
+      });
+
+      // WHEN the IPN notification arrives as query params with no body
+      const response = await app.inject({ method: "POST", url: "/payments/webhook?id=5555&topic=payment" });
+
+      // THEN the booking is confirmed just like with the v2 body shape
+      expect(response.statusCode).toBe(200);
+      const [booking] = await db.select().from(schema.bookings).where(eq(schema.bookings.id, bookingId));
+      expect(booking.status).toBe("confirmed");
+    });
+
     it("should leave the booking pending when the payment is not approved", async () => {
       // GIVEN Mercado Pago reports a rejected payment for the booking
       mockPaymentClient.get.mockResolvedValue({

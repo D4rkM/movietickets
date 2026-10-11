@@ -9,8 +9,18 @@ import * as schema from "../db/schema";
 import { PAYMENT_CLIENT, PREFERENCE_CLIENT } from "./mercadopago.providers";
 
 export interface MercadoPagoNotification {
+  // Webhooks v2 (Orders API / newer apps) shape.
   type?: string;
   data?: { id?: string | number };
+  // Preferences API IPN shape: same info, sent as `topic`/`resource` in the
+  // JSON body and/or as `?topic=...&id=...` query params with no body at all.
+  topic?: string;
+  resource?: string;
+}
+
+export interface MercadoPagoWebhookQuery {
+  topic?: string;
+  id?: string;
 }
 
 export interface CheckoutResult {
@@ -18,6 +28,16 @@ export interface CheckoutResult {
 }
 
 const CENTS_PER_UNIT = 100;
+
+function extractPaymentId(
+  body: MercadoPagoNotification = {},
+  query: MercadoPagoWebhookQuery = {},
+): string | undefined {
+  if (body.type === "payment" && body.data?.id) return String(body.data.id);
+  if (body.topic === "payment" && body.resource) return body.resource;
+  if (query.topic === "payment" && query.id) return query.id;
+  return undefined;
+}
 
 @Injectable()
 export class PaymentService {
@@ -47,6 +67,11 @@ export class PaymentService {
       throw new ConflictException(`Reserva já está com status "${booking.status}"`);
     }
 
+    const successUrl = `${this.webUrl}/checkout/retorno`;
+    // Mercado Pago requires back_urls.success to be https before it accepts auto_return,
+    // so dev's http://localhost WEB_URL has to skip it (user returns via a manual link instead).
+    const isHttps = successUrl.startsWith("https://");
+
     const preference = await this.preferenceClient.create({
       body: {
         items: booking.seats.map((bookingSeat) => ({
@@ -59,22 +84,26 @@ export class PaymentService {
         external_reference: booking.id,
         notification_url: `${this.publicApiUrl}/payments/webhook`,
         back_urls: {
-          success: `${this.webUrl}/checkout/retorno`,
+          success: successUrl,
           failure: `${this.webUrl}/checkout/retorno`,
           pending: `${this.webUrl}/checkout/retorno`,
         },
-        auto_return: "approved",
+        ...(isHttps ? { auto_return: "approved" as const } : {}),
       },
     });
 
     return { checkoutUrl: preference.init_point! };
   }
 
-  async handleWebhook(notification: MercadoPagoNotification): Promise<void> {
-    if (notification.type !== "payment" || !notification.data?.id) return;
+  async handleWebhook(
+    notification: MercadoPagoNotification = {},
+    query: MercadoPagoWebhookQuery = {},
+  ): Promise<void> {
+    const paymentId = extractPaymentId(notification, query);
+    if (!paymentId) return;
 
-    // Status comes from re-fetching the payment, never from the webhook body.
-    const payment = await this.paymentClient.get({ id: Number(notification.data.id) });
+    // Status comes from re-fetching the payment, never from the webhook notification.
+    const payment = await this.paymentClient.get({ id: Number(paymentId) });
     const bookingId = payment.external_reference;
     if (!bookingId) return;
 

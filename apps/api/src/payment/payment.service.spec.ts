@@ -81,6 +81,46 @@ describe("PaymentService", () => {
       expect(body.notification_url).toBe("http://localhost:3000/payments/webhook");
     });
 
+    it("should omit auto_return when WEB_URL is a plain http dev url, since Mercado Pago rejects it", async () => {
+      // ARRANGE
+      mockDb.query.bookings.findFirst.mockResolvedValue(pendingBooking);
+      mockPreferenceClient.create.mockResolvedValue({ init_point: "https://mp.test/checkout/abc" });
+
+      // ACT
+      await service.createCheckout("booking-1", "user-1");
+
+      // ASSERT
+      const body = mockPreferenceClient.create.mock.calls[0][0].body;
+      expect(body.auto_return).toBeUndefined();
+      expect(body.back_urls.success).toBe("http://localhost:5173/checkout/retorno");
+    });
+
+    it("should include auto_return when WEB_URL is https", async () => {
+      // ARRANGE — WEB_URL has to be https *before* construction, since the service reads it once in its constructor
+      mockDb.query.bookings.findFirst.mockResolvedValue(pendingBooking);
+      mockPreferenceClient.create.mockResolvedValue({ init_point: "https://mp.test/checkout/abc" });
+      const httpsConfig = { get: jest.fn((key: string) => (key === "WEB_URL" ? "https://movietickets.app" : "http://localhost:3000")) };
+      const moduleRef = await Test.createTestingModule({
+        providers: [
+          PaymentService,
+          { provide: DRIZZLE, useValue: mockDb },
+          { provide: PREFERENCE_CLIENT, useValue: mockPreferenceClient },
+          { provide: PAYMENT_CLIENT, useValue: mockPaymentClient },
+          { provide: BookingService, useValue: mockBookingService },
+          { provide: ConfigService, useValue: httpsConfig },
+        ],
+      }).compile();
+      const httpsService = moduleRef.get(PaymentService);
+
+      // ACT
+      await httpsService.createCheckout("booking-1", "user-1");
+
+      // ASSERT
+      const body = mockPreferenceClient.create.mock.calls[0][0].body;
+      expect(body.auto_return).toBe("approved");
+      expect(body.back_urls.success).toBe("https://movietickets.app/checkout/retorno");
+    });
+
     it("should throw NotFound when the booking belongs to another user", async () => {
       // ARRANGE
       mockDb.query.bookings.findFirst.mockResolvedValue({ ...pendingBooking, userId: "someone-else" });
@@ -117,6 +157,58 @@ describe("PaymentService", () => {
       // ASSERT
       expect(mockPaymentClient.get).not.toHaveBeenCalled();
       expect(mockBookingService.confirmPaidBooking).not.toHaveBeenCalled();
+    });
+
+    it("should handle the Preferences API's legacy IPN body shape (topic/resource)", async () => {
+      // ARRANGE — Checkout Pro via Preferences sends this instead of the v2 {type,data} shape
+      mockPaymentClient.get.mockResolvedValue({
+        id: 183574424580,
+        status: "approved",
+        external_reference: "booking-1",
+        transaction_amount: 45,
+      });
+
+      // ACT
+      await service.handleWebhook({ topic: "payment", resource: "183574424580" });
+
+      // ASSERT
+      expect(mockPaymentClient.get).toHaveBeenCalledWith({ id: 183574424580 });
+      expect(mockBookingService.confirmPaidBooking).toHaveBeenCalledWith("booking-1");
+    });
+
+    it("should handle the legacy IPN sent only as query params, with no usable body", async () => {
+      // ARRANGE — oldest Preferences API notifications carry no JSON body at all
+      mockPaymentClient.get.mockResolvedValue({
+        id: 183574424580,
+        status: "approved",
+        external_reference: "booking-1",
+        transaction_amount: 45,
+      });
+
+      // ACT
+      await service.handleWebhook({}, { topic: "payment", id: "183574424580" });
+
+      // ASSERT
+      expect(mockPaymentClient.get).toHaveBeenCalledWith({ id: 183574424580 });
+      expect(mockBookingService.confirmPaidBooking).toHaveBeenCalledWith("booking-1");
+    });
+
+    it("should not throw when Mercado Pago sends no JSON body at all", async () => {
+      // ARRANGE — a legacy IPN with no body parses to `undefined`, not `{}`
+      // ACT
+      await service.handleWebhook(undefined, { topic: "merchant_order", id: "1" });
+
+      // ASSERT
+      expect(mockPaymentClient.get).not.toHaveBeenCalled();
+    });
+
+    it("should ignore a merchant_order IPN even when it carries a resource id", async () => {
+      // ARRANGE
+      // ACT
+      await service.handleWebhook({ topic: "merchant_order", resource: "45161808137" });
+
+      // ASSERT
+      expect(mockPaymentClient.get).not.toHaveBeenCalled();
     });
 
     it("should confirm the booking when the re-fetched payment is approved", async () => {

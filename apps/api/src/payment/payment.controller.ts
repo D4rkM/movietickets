@@ -1,7 +1,7 @@
-import { Body, Controller, HttpCode, HttpStatus, Param, Post, Req, UseGuards } from "@nestjs/common";
+import { Body, Controller, HttpCode, HttpStatus, Param, Post, Query, Req, UseGuards } from "@nestjs/common";
 import { FastifyRequest } from "fastify";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
-import { MercadoPagoNotification, PaymentService } from "./payment.service";
+import { MercadoPagoNotification, MercadoPagoWebhookQuery, PaymentService } from "./payment.service";
 
 @Controller()
 export class PaymentController {
@@ -16,7 +16,10 @@ export class PaymentController {
 
   @Post("payments/webhook")
   @HttpCode(HttpStatus.OK)
-  async handleWebhook(@Body() notification: MercadoPagoNotification): Promise<void> {
-    await this.paymentService.handleWebhook(notification);
+  async handleWebhook(
+    @Body() notification: MercadoPagoNotification,
+    @Query() query: MercadoPagoWebhookQuery,
+  ): Promise<void> {
+    await this.paymentService.handleWebhook(notification, query);
   }
 }
