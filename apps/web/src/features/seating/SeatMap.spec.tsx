@@ -4,6 +4,9 @@ import * as api from "./api";
 import { SeatMap } from "./SeatMap";
 
 vi.mock("./api");
+vi.mock("socket.io-client", () => ({
+  io: vi.fn(() => ({ on: vi.fn(), emit: vi.fn(), disconnect: vi.fn() })),
+}));
 
 describe("SeatMap", () => {
   it("should render each seat with a title reflecting its status", async () => {
@@ -20,7 +23,7 @@ describe("SeatMap", () => {
     });
 
     // ACT
-    render(<SeatMap sessionId="session-1" accessToken="token" />);
+    render(<SeatMap sessionId="session-1" accessToken="token" userId="user-1" />);
 
     // ASSERT
     expect(await screen.findByTitle("A1 — Disponível")).toBeInTheDocument();
@@ -38,7 +41,7 @@ describe("SeatMap", () => {
     });
 
     // ACT
-    render(<SeatMap sessionId="session-1" accessToken="token" />);
+    render(<SeatMap sessionId="session-1" accessToken="token" userId="user-1" />);
 
     // ASSERT
     expect(await screen.findByText("Preço: R$ 30.50")).toBeInTheDocument();
@@ -53,7 +56,7 @@ describe("SeatMap", () => {
     });
 
     // ACT
-    render(<SeatMap sessionId="session-1" accessToken="token" />);
+    render(<SeatMap sessionId="session-1" accessToken="token" userId="user-1" />);
     await screen.findByTitle("A1 — Disponível");
 
     // ASSERT

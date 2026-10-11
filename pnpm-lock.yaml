@@ -150,6 +150,9 @@ importers:
       react-router-dom:
         specifier: 7.18.3
         version: 7.18.3(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
+      socket.io-client:
+        specifier: 4.8.4
+        version: 4.8.4
       tailwindcss:
         specifier: 4.3.3
         version: 4.3.3

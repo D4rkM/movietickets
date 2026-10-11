@@ -2,6 +2,10 @@ import { render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SeatMap } from "./SeatMap";
 
+vi.mock("socket.io-client", () => ({
+  io: vi.fn(() => ({ on: vi.fn(), emit: vi.fn(), disconnect: vi.fn() })),
+}));
+
 describe("SeatMap (integration)", () => {
   beforeEach(() => {
     vi.stubGlobal("fetch", vi.fn());
@@ -24,7 +28,7 @@ describe("SeatMap (integration)", () => {
     } as Response);
 
     // WHEN the component mounts
-    render(<SeatMap sessionId="session-1" accessToken="token" />);
+    render(<SeatMap sessionId="session-1" accessToken="token" userId="user-1" />);
 
     // THEN it shows a loading state first, then the seat once the fetch resolves
     expect(screen.getByText("Carregando mapa de assentos…")).toBeInTheDocument();
@@ -36,7 +40,7 @@ describe("SeatMap (integration)", () => {
     vi.mocked(fetch).mockResolvedValue({ ok: false, status: 404 } as Response);
 
     // WHEN the component mounts
-    render(<SeatMap sessionId="missing-session" accessToken="token" />);
+    render(<SeatMap sessionId="missing-session" accessToken="token" userId="user-1" />);
 
     // THEN it shows an error message instead of the seat map
     expect(await screen.findByRole("alert")).toHaveTextContent("404");
@@ -53,7 +57,7 @@ describe("SeatMap (integration)", () => {
     window.location = { ...originalLocation, href: "" };
 
     // WHEN the seat map request comes back 401
-    render(<SeatMap sessionId="session-1" accessToken="stale-token" />);
+    render(<SeatMap sessionId="session-1" accessToken="stale-token" userId="user-1" />);
     await vi.waitFor(() => expect(window.location.href).toBe("/login"));
 
     // THEN it clears the stale token and redirects to the login page
@@ -71,7 +75,7 @@ describe("SeatMap (integration)", () => {
     } as Response);
 
     // WHEN the component mounts with a given session and token
-    render(<SeatMap sessionId="session-42" accessToken="secret-token" />);
+    render(<SeatMap sessionId="session-42" accessToken="secret-token" userId="user-1" />);
     await screen.findByText(/Preço/);
 
     // THEN the request targets that session with the token as a bearer header
