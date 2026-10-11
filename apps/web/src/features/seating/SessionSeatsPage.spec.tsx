@@ -23,17 +23,30 @@ describe("SessionSeatsPage (integration)", () => {
   beforeEach(() => {
     localStorage.setItem("movietickets:accessToken", "token-123");
     vi.stubGlobal("fetch", vi.fn());
-    vi.mocked(fetch).mockResolvedValue({
-      ok: true,
-      json: async () => ({
-        room: { rows: 1, seatsPerRow: 2 },
-        priceCents: 2000,
-        seats: [
-          { id: "seat-1", rowLabel: "A", seatNumber: 1, status: "free" },
-          { id: "seat-2", rowLabel: "A", seatNumber: 2, status: "booked" },
-        ],
-      }),
-    } as Response);
+    vi.mocked(fetch).mockImplementation((url: string | URL | Request, init?: RequestInit) => {
+      const urlString = url.toString();
+      if (urlString.includes("/seats/") && urlString.endsWith("/hold")) {
+        return Promise.resolve(
+          init?.method === "DELETE"
+            ? ({ ok: true, json: async () => ({ seatId: "seat-1", released: true }) } as Response)
+            : ({ ok: true, json: async () => ({ seatId: "seat-1", status: "held", expiresInSeconds: 600 }) } as Response),
+        );
+      }
+      if (urlString.endsWith("/holds")) {
+        return Promise.resolve({ ok: true, json: async () => ({ releasedSeatIds: [] }) } as Response);
+      }
+      return Promise.resolve({
+        ok: true,
+        json: async () => ({
+          room: { rows: 1, seatsPerRow: 2 },
+          priceCents: 2000,
+          seats: [
+            { id: "seat-1", rowLabel: "A", seatNumber: 1, status: "free" },
+            { id: "seat-2", rowLabel: "A", seatNumber: 2, status: "booked" },
+          ],
+        }),
+      } as Response);
+    });
   });
 
   afterEach(() => {
@@ -104,5 +117,93 @@ describe("SessionSeatsPage (integration)", () => {
     // THEN it navigates to the catalog, with no booking request ever made
     expect(await screen.findByText("Movies page")).toBeInTheDocument();
     expect(fetch).not.toHaveBeenCalledWith(expect.stringContaining("/book"), expect.anything());
+  });
+
+  it("should hold the seat via the API when a free seat is selected", async () => {
+    // GIVEN the seat map has loaded
+    renderSessionSeatsPage();
+    const freeSeat = await screen.findByTitle("A1 — Disponível");
+
+    // WHEN the user clicks the free seat
+    await userEvent.click(freeSeat);
+
+    // THEN it calls the hold endpoint and shows the seat as selected
+    await vi.waitFor(() =>
+      expect(fetch).toHaveBeenCalledWith(
+        expect.stringContaining("/sessions/session-1/seats/seat-1/hold"),
+        expect.objectContaining({ method: "POST" }),
+      ),
+    );
+    expect(await screen.findByTitle("A1 — Selecionado")).toBeInTheDocument();
+  });
+
+  it("should release the seat via the API when a selected seat is deselected", async () => {
+    // GIVEN a seat has already been selected (held)
+    renderSessionSeatsPage();
+    const freeSeat = await screen.findByTitle("A1 — Disponível");
+    await userEvent.click(freeSeat);
+    await screen.findByTitle("A1 — Selecionado");
+
+    // WHEN the user clicks it again to deselect
+    await userEvent.click(screen.getByTitle("A1 — Selecionado"));
+
+    // THEN it calls the release endpoint and the seat goes back to free
+    await vi.waitFor(() =>
+      expect(fetch).toHaveBeenCalledWith(
+        expect.stringContaining("/sessions/session-1/seats/seat-1/hold"),
+        expect.objectContaining({ method: "DELETE" }),
+      ),
+    );
+    expect(await screen.findByTitle("A1 — Disponível")).toBeInTheDocument();
+  });
+
+  it("should show an error and not select the seat when another user already holds it", async () => {
+    // GIVEN another user grabs the seat right as this one tries to hold it (409 from the backend)
+    vi.mocked(fetch).mockImplementation((url: string | URL | Request) => {
+      const urlString = url.toString();
+      if (urlString.includes("/seats/") && urlString.endsWith("/hold")) {
+        return Promise.resolve({ ok: false, status: 409 } as Response);
+      }
+      return Promise.resolve({
+        ok: true,
+        json: async () => ({
+          room: { rows: 1, seatsPerRow: 2 },
+          priceCents: 2000,
+          seats: [
+            { id: "seat-1", rowLabel: "A", seatNumber: 1, status: "free" },
+            { id: "seat-2", rowLabel: "A", seatNumber: 2, status: "booked" },
+          ],
+        }),
+      } as Response);
+    });
+    renderSessionSeatsPage();
+    const freeSeat = await screen.findByTitle("A1 — Disponível");
+
+    // WHEN the user clicks the seat
+    await userEvent.click(freeSeat);
+
+    // THEN it shows a conflict error and the seat stays free (not added to the selection)
+    expect(await screen.findByRole("alert")).toHaveTextContent("Esse assento já foi reservado por outra pessoa.");
+    expect(screen.getByTitle("A1 — Disponível")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Pagar/ })).toBeDisabled();
+  });
+
+  it("should release all holds when the user cancels after selecting a seat", async () => {
+    // GIVEN a seat has been held
+    renderSessionSeatsPage();
+    const freeSeat = await screen.findByTitle("A1 — Disponível");
+    await userEvent.click(freeSeat);
+    await screen.findByTitle("A1 — Selecionado");
+
+    // WHEN the user backs out and confirms the cancellation
+    await userEvent.click(screen.getByRole("button", { name: "← Voltar" }));
+    await userEvent.click(screen.getByRole("button", { name: "Sim, cancelar" }));
+
+    // THEN it releases every hold for the session before leaving
+    expect(await screen.findByText("Movies page")).toBeInTheDocument();
+    expect(fetch).toHaveBeenCalledWith(
+      expect.stringContaining("/sessions/session-1/holds"),
+      expect.objectContaining({ method: "DELETE" }),
+    );
   });
 });
