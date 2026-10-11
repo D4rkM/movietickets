@@ -6,6 +6,7 @@ import {
 } from "@nestjs/platform-fastify";
 import { Logger } from "nestjs-pino";
 import { AppModule } from "./app.module";
+import { corsOptions } from "./cors-options";
 
 async function bootstrap() {
   const app = await NestFactory.create<NestFastifyApplication>(
@@ -16,9 +17,7 @@ async function bootstrap() {
 
   app.useLogger(app.get(Logger));
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
-  app.enableCors({
-    origin: process.env.CORS_ORIGIN?.split(",") ?? "http://localhost:5173",
-  });
+  app.enableCors(corsOptions());
 
   const port = process.env.PORT ?? 3000;
   await app.listen(port, "0.0.0.0");
