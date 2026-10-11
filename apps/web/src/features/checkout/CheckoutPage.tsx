@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
 import { UnauthorizedError } from "../../lib/api-client";
 import { useAuth } from "../auth/AuthContext";
-import { bookSeats, confirmBooking, getSeatMap } from "../seating/api";
+import { bookSeats, confirmBooking, getSeatMap, releaseAllHolds } from "../seating/api";
 import type { SeatMapSeat, TicketType } from "../seating/types";
 
 interface CheckoutLocationState {
@@ -83,8 +83,10 @@ export function CheckoutPage() {
   );
 
   function confirmCancel() {
-    // No seat hold exists yet (the Valkey lock is planned but not implemented),
-    // so there's nothing to release — just leave the page.
+    if (state && accessToken) {
+      // Best-effort: the hold's TTL frees the seat up anyway even if this call fails.
+      releaseAllHolds(state.sessionId, accessToken).catch(() => {});
+    }
     navigate("/movies");
   }
 

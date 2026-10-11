@@ -81,9 +81,13 @@ describe("CheckoutPage (integration)", () => {
     await userEvent.click(screen.getByRole("button", { name: "← Voltar" }));
     await userEvent.click(screen.getByRole("button", { name: "Sim, cancelar" }));
 
-    // THEN it navigates to the catalog, with no booking request ever made
+    // THEN it navigates to the catalog, with no booking request ever made, and the hold is released
     expect(await screen.findByText("Movies page")).toBeInTheDocument();
     expect(fetch).not.toHaveBeenCalledWith(expect.stringContaining("/book"), expect.anything());
+    expect(fetch).toHaveBeenCalledWith(
+      expect.stringContaining("/sessions/session-1/holds"),
+      expect.objectContaining({ method: "DELETE" }),
+    );
   });
 
   it("should show the order summary and confirm booking after a mocked payment", async () => {

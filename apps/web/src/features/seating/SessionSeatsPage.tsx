@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
+import { UnauthorizedError } from "../../lib/api-client";
 import { useAuth } from "../auth/AuthContext";
+import { holdSeat, releaseAllHolds, releaseSeat } from "./api";
 import { SeatMap } from "./SeatMap";
 import type { SeatMapSeat } from "./types";
 
@@ -10,13 +12,36 @@ export function SessionSeatsPage() {
   const navigate = useNavigate();
   const [selectedSeats, setSelectedSeats] = useState<SeatMapSeat[]>([]);
   const [showCancelModal, setShowCancelModal] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [pendingSeatIds, setPendingSeatIds] = useState<Set<string>>(new Set());
 
-  function toggleSeat(seat: SeatMapSeat) {
-    setSelectedSeats((current) =>
-      current.some((selected) => selected.id === seat.id)
-        ? current.filter((selected) => selected.id !== seat.id)
-        : [...current, seat],
-    );
+  async function toggleSeat(seat: SeatMapSeat) {
+    if (!sessionId || !accessToken || pendingSeatIds.has(seat.id)) return;
+    setError(null);
+    setPendingSeatIds((current) => new Set(current).add(seat.id));
+
+    const isSelected = selectedSeats.some((selected) => selected.id === seat.id);
+    try {
+      if (isSelected) {
+        await releaseSeat(sessionId, seat.id, accessToken);
+        setSelectedSeats((current) => current.filter((selected) => selected.id !== seat.id));
+      } else {
+        await holdSeat(sessionId, seat.id, accessToken);
+        setSelectedSeats((current) => [...current, seat]);
+      }
+    } catch (err) {
+      if (err instanceof UnauthorizedError) {
+        window.location.href = "/login";
+        return;
+      }
+      setError((err as Error).message);
+    } finally {
+      setPendingSeatIds((current) => {
+        const next = new Set(current);
+        next.delete(seat.id);
+        return next;
+      });
+    }
   }
 
   function goToCheckout() {
@@ -26,8 +51,10 @@ export function SessionSeatsPage() {
   }
 
   function confirmCancel() {
-    // No seat hold exists yet (the Valkey lock is planned but not implemented),
-    // so there's nothing to release — just leave the page.
+    if (sessionId && accessToken) {
+      // Best-effort: the hold's TTL frees the seat up anyway even if this call fails.
+      releaseAllHolds(sessionId, accessToken).catch(() => {});
+    }
     navigate("/movies");
   }
 
@@ -45,6 +72,11 @@ export function SessionSeatsPage() {
         ← Voltar
       </button>
       <h1 className="mb-4 text-2xl font-semibold">Escolha seus assentos</h1>
+      {error && (
+        <p role="alert" className="mb-4 text-red-600">
+          {error}
+        </p>
+      )}
       <SeatMap
         sessionId={sessionId}
         accessToken={accessToken}
