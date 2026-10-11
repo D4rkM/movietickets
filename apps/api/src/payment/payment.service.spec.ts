@@ -229,6 +229,22 @@ describe("PaymentService", () => {
       expect(mockBookingService.confirmPaidBooking).toHaveBeenCalledWith("booking-1");
     });
 
+    it("should guard the payments upsert so a later notification can't overwrite an approved row", async () => {
+      // ARRANGE
+      mockPaymentClient.get.mockResolvedValue({
+        id: 999,
+        status: "approved",
+        external_reference: "booking-1",
+        transaction_amount: 45,
+      });
+
+      // ACT
+      await service.handleWebhook({ type: "payment", data: { id: "999" } });
+
+      // ASSERT — onConflictDoUpdate must carry a setWhere clause, not an unconditional overwrite
+      expect(onConflictDoUpdate).toHaveBeenCalledWith(expect.objectContaining({ setWhere: expect.anything() }));
+    });
+
     it("should release the booking's seats when the payment is rejected", async () => {
       // ARRANGE
       mockPaymentClient.get.mockResolvedValue({

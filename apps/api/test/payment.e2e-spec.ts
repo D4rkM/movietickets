@@ -177,6 +177,32 @@ describe("Payment (e2e)", () => {
       expect(payment).toMatchObject({ externalPaymentId: "4242", status: "approved", amountCents: 3000 });
     });
 
+    it("should not let a late notification for an older payment attempt overwrite an already-approved payment row", async () => {
+      // GIVEN the booking was already confirmed by an approved payment
+      mockPaymentClient.get.mockResolvedValue({
+        id: 7001,
+        status: "approved",
+        external_reference: bookingId,
+        transaction_amount: 30,
+      });
+      await app.inject({ method: "POST", url: "/payments/webhook", payload: { type: "payment", data: { id: "7001" } } });
+
+      // WHEN a late notification for a different (earlier, rejected) payment attempt on the same booking arrives
+      mockPaymentClient.get.mockResolvedValue({
+        id: 7000,
+        status: "rejected",
+        external_reference: bookingId,
+        transaction_amount: 30,
+      });
+      await app.inject({ method: "POST", url: "/payments/webhook", payload: { type: "payment", data: { id: "7000" } } });
+
+      // THEN the payments row still reflects the approved payment, not the stale rejected one
+      const [payment] = await db.select().from(schema.payments).where(eq(schema.payments.bookingId, bookingId));
+      expect(payment).toMatchObject({ externalPaymentId: "7001", status: "approved" });
+      const [booking] = await db.select().from(schema.bookings).where(eq(schema.bookings.id, bookingId));
+      expect(booking.status).toBe("confirmed");
+    });
+
     it("should stay idempotent when the same approved notification is redelivered", async () => {
       // GIVEN the booking was already confirmed by a first approved notification
       mockPaymentClient.get.mockResolvedValue({

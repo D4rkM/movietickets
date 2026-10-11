@@ -1,6 +1,6 @@
 import { ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import { Payment, Preference } from "mercadopago";
 import { BookingService } from "../booking/booking.service";
@@ -122,6 +122,9 @@ export class PaymentService {
       .onConflictDoUpdate({
         target: schema.payments.bookingId,
         set: { externalPaymentId: String(payment.id), status: payment.status ?? "unknown", amountCents },
+        // A late/redelivered notification for an older payment attempt on the same booking must
+        // never clobber a row that already recorded an approved payment.
+        setWhere: sql`${schema.payments.status} <> 'approved'`,
       });
 
     if (payment.status === "approved") {
