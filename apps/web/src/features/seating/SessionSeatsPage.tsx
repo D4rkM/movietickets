@@ -8,7 +8,7 @@ import type { SeatMapSeat } from "./types";
 
 export function SessionSeatsPage() {
   const { id: sessionId } = useParams<{ id: string }>();
-  const { accessToken } = useAuth();
+  const { accessToken, user } = useAuth();
   const navigate = useNavigate();
   const [selectedSeats, setSelectedSeats] = useState<SeatMapSeat[]>([]);
   const [showCancelModal, setShowCancelModal] = useState(false);
@@ -58,7 +58,7 @@ export function SessionSeatsPage() {
     navigate("/movies");
   }
 
-  if (!sessionId || !accessToken) {
+  if (!sessionId || !accessToken || !user) {
     return null;
   }
 
@@ -80,6 +80,7 @@ export function SessionSeatsPage() {
       <SeatMap
         sessionId={sessionId}
         accessToken={accessToken}
+        userId={user.id}
         selectedSeatIds={selectedSeats.map((seat) => seat.id)}
         onToggleSeat={toggleSeat}
       />

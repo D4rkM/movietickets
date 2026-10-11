@@ -2,10 +2,12 @@ import { useEffect, useState } from "react";
 import { UnauthorizedError } from "../../lib/api-client";
 import { getSeatMap } from "./api";
 import type { SeatMapResponse, SeatMapSeat, SeatState } from "./types";
+import { toSeatState, useSeatingSocket } from "./useSeatingSocket";
 
 interface SeatMapProps {
   sessionId: string;
   accessToken: string;
+  userId: string;
   selectedSeatIds?: string[];
   onToggleSeat?: (seat: SeatMapSeat) => void;
 }
@@ -82,7 +84,7 @@ export function buildRowSegments(seats: SeatMapSeat[], isBackRow: boolean): RowS
   );
 }
 
-export function SeatMap({ sessionId, accessToken, selectedSeatIds, onToggleSeat }: SeatMapProps) {
+export function SeatMap({ sessionId, accessToken, userId, selectedSeatIds, onToggleSeat }: SeatMapProps) {
   const [seatMap, setSeatMap] = useState<SeatMapResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -108,6 +110,19 @@ export function SeatMap({ sessionId, accessToken, selectedSeatIds, onToggleSeat 
       cancelled = true;
     };
   }, [sessionId, accessToken]);
+
+  useSeatingSocket(sessionId, accessToken, (event) => {
+    setSeatMap((current) => {
+      if (!current) return current;
+      const nextStatus = toSeatState(event, userId);
+      return {
+        ...current,
+        seats: current.seats.map((seat) =>
+          seat.id === event.seatId ? { ...seat, status: nextStatus } : seat,
+        ),
+      };
+    });
+  });
 
   if (error) {
     return (

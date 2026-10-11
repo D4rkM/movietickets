@@ -5,6 +5,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AuthProvider } from "../auth/AuthContext";
 import { SessionSeatsPage } from "./SessionSeatsPage";
 
+vi.mock("socket.io-client", () => ({
+  io: vi.fn(() => ({ on: vi.fn(), emit: vi.fn(), disconnect: vi.fn() })),
+}));
+
 function renderSessionSeatsPage() {
   return render(
     <MemoryRouter initialEntries={["/sessions/session-1/seats"]}>
@@ -22,6 +26,10 @@ function renderSessionSeatsPage() {
 describe("SessionSeatsPage (integration)", () => {
   beforeEach(() => {
     localStorage.setItem("movietickets:accessToken", "token-123");
+    localStorage.setItem(
+      "movietickets:user",
+      JSON.stringify({ id: "user-1", name: "Ana", email: "ana@test.com", role: "customer" }),
+    );
     vi.stubGlobal("fetch", vi.fn());
     vi.mocked(fetch).mockImplementation((url: string | URL | Request, init?: RequestInit) => {
       const urlString = url.toString();
