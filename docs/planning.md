@@ -107,8 +107,8 @@ Definição completa de colunas, tipos, PK/FK e a tabela de junção `booking_se
 ### 3. Checkout / pagamento (Mercado Pago sandbox)
 - Resumo do pedido (filme, sessão, assentos, valor) — **implementado**
 - Pagamento mockado (sem gateway real), reserva atômica multi-assento numa transação só — **implementado**
-- Integração Mercado Pago sandbox de verdade (checkout transparente ou redirect, a definir na implementação) — **pendente, AC2**
-- Webhook de confirmação de pagamento → atualiza `Booking` pra `confirmed`, grava assento definitivo — **pendente, AC2**
+- Checkout Pro via Preferences API (redirect pro `init_point`) — **implementado no back (sandbox), front pendente**. Migração futura pra Orders API / Checkout Transparente fica em aberto
+- Webhook de confirmação de pagamento → re-busca o pagamento na API do MP, atualiza `Booking` pra `confirmed` (idempotente) e grava `payments` — **implementado no back (sandbox)**. Ambiente local precisa de URL pública (tunnel) pra o MP conseguir chamar o webhook
 - Falha/timeout de pagamento → libera hold do assento — depende do hold existir (feature #1)
 
 ### 4. Conta de usuário + histórico de ingressos

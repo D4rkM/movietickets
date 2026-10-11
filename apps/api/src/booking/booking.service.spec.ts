@@ -14,6 +14,7 @@ describe("BookingService", () => {
     },
     insert: jest.fn(),
     update: jest.fn(),
+    delete: jest.fn(),
     transaction: jest.fn(),
   };
   const mockGateway = { broadcastSeatUpdate: jest.fn() };
@@ -372,6 +373,63 @@ describe("BookingService", () => {
       seatId: "seat-2",
       status: "released",
     });
+  });
+
+  it("should flip a pending booking to confirmed and broadcast its seats as booked when the payment is approved", async () => {
+    // ARRANGE
+    const where = jest.fn().mockReturnValue({
+      returning: jest.fn().mockResolvedValue([{ id: "booking-1", status: "confirmed", sessionId: "session-1" }]),
+    });
+    mockDb.update.mockReturnValue({ set: jest.fn().mockReturnValue({ where }) });
+    mockDb.query.bookingSeats.findMany.mockResolvedValue([{ seatId: "seat-1" }]);
+
+    // ACT
+    await service.confirmPaidBooking("booking-1");
+
+    // ASSERT
+    expect(mockGateway.broadcastSeatUpdate).toHaveBeenCalledWith("session-1", { seatId: "seat-1", status: "booked" });
+  });
+
+  it("should do nothing when confirmPaidBooking is redelivered for a booking that's already past pending", async () => {
+    // ARRANGE
+    const where = jest.fn().mockReturnValue({ returning: jest.fn().mockResolvedValue([]) });
+    mockDb.update.mockReturnValue({ set: jest.fn().mockReturnValue({ where }) });
+
+    // ACT
+    await service.confirmPaidBooking("booking-1");
+
+    // ASSERT
+    expect(mockDb.query.bookingSeats.findMany).not.toHaveBeenCalled();
+    expect(mockGateway.broadcastSeatUpdate).not.toHaveBeenCalled();
+  });
+
+  it("should cancel a pending booking and delete its seat rows when the payment fails", async () => {
+    // ARRANGE
+    const updateWhere = jest.fn().mockReturnValue({
+      returning: jest.fn().mockResolvedValue([{ id: "booking-1", status: "cancelled", sessionId: "session-1" }]),
+    });
+    mockDb.update.mockReturnValue({ set: jest.fn().mockReturnValue({ where: updateWhere }) });
+    const deleteWhere = jest.fn().mockResolvedValue(undefined);
+    mockDb.delete.mockReturnValue({ where: deleteWhere });
+
+    // ACT
+    await service.releaseFailedPaymentBooking("booking-1");
+
+    // ASSERT
+    expect(mockDb.delete).toHaveBeenCalled();
+    expect(deleteWhere).toHaveBeenCalled();
+  });
+
+  it("should do nothing when releaseFailedPaymentBooking is redelivered for a booking that's already past pending", async () => {
+    // ARRANGE
+    const updateWhere = jest.fn().mockReturnValue({ returning: jest.fn().mockResolvedValue([]) });
+    mockDb.update.mockReturnValue({ set: jest.fn().mockReturnValue({ where: updateWhere }) });
+
+    // ACT
+    await service.releaseFailedPaymentBooking("booking-1");
+
+    // ASSERT
+    expect(mockDb.delete).not.toHaveBeenCalled();
   });
 
   it("should only return confirmed bookings, mapped with session and seat details", async () => {
