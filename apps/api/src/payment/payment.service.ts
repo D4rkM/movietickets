@@ -28,6 +28,9 @@ export interface CheckoutResult {
 }
 
 const CENTS_PER_UNIT = 100;
+// MP uses "cancelled" for payments whose deadline passed before completion
+// (what the product calls "expirado"); "rejected" covers a declined payment.
+const FAILED_PAYMENT_STATUSES = new Set(["rejected", "cancelled"]);
 
 function extractPaymentId(
   body: MercadoPagoNotification = {},
@@ -123,6 +126,8 @@ export class PaymentService {
 
     if (payment.status === "approved") {
       await this.bookingService.confirmPaidBooking(bookingId);
+    } else if (payment.status && FAILED_PAYMENT_STATUSES.has(payment.status)) {
+      await this.bookingService.releaseFailedPaymentBooking(bookingId);
     }
   }
 }

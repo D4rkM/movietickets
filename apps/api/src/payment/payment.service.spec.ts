@@ -13,7 +13,7 @@ describe("PaymentService", () => {
   };
   const mockPreferenceClient = { create: jest.fn() };
   const mockPaymentClient = { get: jest.fn() };
-  const mockBookingService = { confirmPaidBooking: jest.fn() };
+  const mockBookingService = { confirmPaidBooking: jest.fn(), releaseFailedPaymentBooking: jest.fn() };
   const mockConfig = { get: jest.fn((_key: string, fallback: string) => fallback) };
 
   let service: PaymentService;
@@ -229,7 +229,7 @@ describe("PaymentService", () => {
       expect(mockBookingService.confirmPaidBooking).toHaveBeenCalledWith("booking-1");
     });
 
-    it("should record a non-approved payment without confirming the booking", async () => {
+    it("should release the booking's seats when the payment is rejected", async () => {
       // ARRANGE
       mockPaymentClient.get.mockResolvedValue({
         id: 1000,
@@ -244,6 +244,40 @@ describe("PaymentService", () => {
       // ASSERT
       expect(onConflictDoUpdate).toHaveBeenCalled();
       expect(mockBookingService.confirmPaidBooking).not.toHaveBeenCalled();
+      expect(mockBookingService.releaseFailedPaymentBooking).toHaveBeenCalledWith("booking-1");
+    });
+
+    it("should release the booking's seats when the payment is cancelled (expired)", async () => {
+      // ARRANGE
+      mockPaymentClient.get.mockResolvedValue({
+        id: 1001,
+        status: "cancelled",
+        external_reference: "booking-1",
+        transaction_amount: 45,
+      });
+
+      // ACT
+      await service.handleWebhook({ type: "payment", data: { id: "1001" } });
+
+      // ASSERT
+      expect(mockBookingService.releaseFailedPaymentBooking).toHaveBeenCalledWith("booking-1");
+    });
+
+    it("should neither confirm nor release the booking while the payment is still pending/in_process", async () => {
+      // ARRANGE
+      mockPaymentClient.get.mockResolvedValue({
+        id: 1002,
+        status: "in_process",
+        external_reference: "booking-1",
+        transaction_amount: 45,
+      });
+
+      // ACT
+      await service.handleWebhook({ type: "payment", data: { id: "1002" } });
+
+      // ASSERT
+      expect(mockBookingService.confirmPaidBooking).not.toHaveBeenCalled();
+      expect(mockBookingService.releaseFailedPaymentBooking).not.toHaveBeenCalled();
     });
 
     it("should skip payments without an external reference", async () => {

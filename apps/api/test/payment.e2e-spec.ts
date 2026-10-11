@@ -218,7 +218,7 @@ describe("Payment (e2e)", () => {
       expect(booking.status).toBe("confirmed");
     });
 
-    it("should leave the booking pending when the payment is not approved", async () => {
+    it("should cancel the booking and free the seat for rebooking when the payment is rejected", async () => {
       // GIVEN Mercado Pago reports a rejected payment for the booking
       mockPaymentClient.get.mockResolvedValue({
         id: 4244,
@@ -230,9 +230,19 @@ describe("Payment (e2e)", () => {
       // WHEN the webhook notification arrives
       await app.inject({ method: "POST", url: "/payments/webhook", payload: { type: "payment", data: { id: "4244" } } });
 
-      // THEN the booking stays pending
+      // THEN the booking is cancelled, its seat row is gone, and the seat can be booked again
       const [booking] = await db.select().from(schema.bookings).where(eq(schema.bookings.id, bookingId));
-      expect(booking.status).toBe("pending");
+      expect(booking.status).toBe("cancelled");
+      const seats = await db.select().from(schema.bookingSeats).where(eq(schema.bookingSeats.bookingId, bookingId));
+      expect(seats).toHaveLength(0);
+
+      const [retry] = await db
+        .insert(schema.bookings)
+        .values({ userId, sessionId, status: "pending" })
+        .returning({ id: schema.bookings.id });
+      await expect(
+        db.insert(schema.bookingSeats).values({ bookingId: retry.id, sessionId, seatId, ticketType: "full", priceCents: 3000 }),
+      ).resolves.not.toThrow();
     });
 
     it("should ignore notifications that are not payment events", async () => {

@@ -159,6 +159,27 @@ export class BookingService {
   }
 
   /**
+   * Releases a booking after Mercado Pago reports the payment failed (rejected/cancelled/expired).
+   * `booking_seats` has an unconditional unique `(session_id, seat_id)` constraint, so a pending
+   * booking that's never cleaned up blocks that exact seat from ever being booked again — even
+   * though it doesn't show as "booked" on the seat map (that only counts confirmed bookings).
+   * Deleting the seat rows is what actually frees the seat up for a retry; idempotent like
+   * {@link confirmPaidBooking} for the same redelivery reason.
+   */
+  async releaseFailedPaymentBooking(bookingId: string): Promise<void> {
+    await this.db.transaction(async (tx) => {
+      const [updated] = await tx
+        .update(schema.bookings)
+        .set({ status: "cancelled" })
+        .where(and(eq(schema.bookings.id, bookingId), eq(schema.bookings.status, "pending")))
+        .returning();
+      if (!updated) return;
+
+      await tx.delete(schema.bookingSeats).where(eq(schema.bookingSeats.bookingId, bookingId));
+    });
+  }
+
+  /**
    * Confirms a booking after Mercado Pago reports an approved payment. Idempotent:
    * webhooks can be redelivered, so a booking that is already past `pending` is left alone.
    */
