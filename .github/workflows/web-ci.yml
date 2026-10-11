@@ -25,3 +25,57 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter web lint
       - run: pnpm --filter web test
+
+  e2e:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: movietickets
+          POSTGRES_PASSWORD: movietickets
+          POSTGRES_DB: movietickets
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U movietickets"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+      valkey:
+        image: valkey/valkey:8-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "valkey-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgres://movietickets:movietickets@localhost:5432/movietickets
+      VALKEY_URL: redis://localhost:6379
+      JWT_SECRET: ci-test-secret
+      # No real Mercado Pago call happens in the smoke test; the app just needs
+      # this to be set to boot (PaymentModule reads it eagerly on startup).
+      MERCADOPAGO_ACCESS_TOKEN: TEST-ci-placeholder
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter api db:migrate
+      - run: pnpm --filter api db:seed
+      - run: pnpm --filter api start &
+      - name: Wait for the API to come up
+        run: |
+          for i in $(seq 1 30); do
+            curl -sf http://localhost:3000/movies > /dev/null && exit 0
+            sleep 1
+          done
+          echo "API never came up" >&2
+          exit 1
+      - run: pnpm --filter web exec playwright install --with-deps chromium
+      - run: pnpm --filter web test:e2e
