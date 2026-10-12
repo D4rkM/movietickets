@@ -13,6 +13,7 @@ import * as schema from "../src/db/schema";
 import { SeatingModule } from "../src/seating/seating.module";
 import { ValkeyModule } from "../src/valkey/valkey.module";
 import { buildFastifyApp } from "./helpers/build-app";
+import { findMailpitMessage } from "./helpers/mailpit";
 
 describe("Booking (e2e)", () => {
   let app: NestFastifyApplication;
@@ -351,6 +352,18 @@ describe("Booking (e2e)", () => {
     });
     const seat = seatMapResponse.json().seats.find((s: { id: string }) => s.id === seatId);
     expect(seat.status).toBe("booked");
+  });
+
+  it("should send a purchase-confirmation email to Mailpit when the booking is confirmed", async () => {
+    // GIVEN the booking confirmed in the previous test already triggered BookingService's
+    // best-effort email dispatch, synchronously awaited before the HTTP response above
+
+    // WHEN Mailpit's inbox is searched for that booking's confirmation email
+    const message = await findMailpitMessage(bookingId);
+
+    // THEN it was delivered to the booking owner with the movie title in the subject
+    expect(message.To[0].Address).toBe("booking-e2e@test.com");
+    expect(message.Subject).toContain("Booking E2E Movie");
   });
 
   it("should reject confirming a booking that is already confirmed", async () => {
