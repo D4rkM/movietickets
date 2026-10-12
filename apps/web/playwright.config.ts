@@ -5,7 +5,13 @@ import { defineConfig, devices } from "@playwright/test";
 // this config only starts the web dev server itself, not its dependencies.
 export default defineConfig({
   testDir: "./e2e",
-  fullyParallel: true,
+  // Every spec shares the one seeded session/room from `pnpm --filter api db:seed`
+  // (no dedicated-fixture-per-test setup, unlike the back's e2e specs) — each
+  // picks "the first free seat" independently, so running files in parallel lets
+  // two of them grab the same seat at once and makes one lose the real race.
+  // The suite is still small enough that running serially costs little.
+  fullyParallel: false,
+  workers: 1,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
   reporter: "list",
