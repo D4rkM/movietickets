@@ -5,6 +5,7 @@ import { AuthModule } from "./auth/auth.module";
 import { BookingModule } from "./booking/booking.module";
 import { CatalogModule } from "./catalog/catalog.module";
 import { DrizzleModule } from "./db/drizzle.module";
+import { NotificationModule } from "./notification/notification.module";
 import { PaymentModule } from "./payment/payment.module";
 import { SeatingModule } from "./seating/seating.module";
 import { ValkeyModule } from "./valkey/valkey.module";
@@ -32,6 +33,7 @@ import { ValkeyModule } from "./valkey/valkey.module";
     BookingModule,
     CatalogModule,
     PaymentModule,
+    NotificationModule,
   ],
 })
 export class AppModule {}
