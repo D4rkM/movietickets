@@ -2,6 +2,7 @@ import { ConflictException, NotFoundException } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import { DRIZZLE } from "../db/drizzle.module";
 import { SeatingGateway } from "../seating/seating.gateway";
+import { SeatingService } from "../seating/seating.service";
 import { BookingService } from "./booking.service";
 import { TicketType } from "./dto/book-seat.dto";
 
@@ -18,6 +19,7 @@ describe("BookingService", () => {
     transaction: jest.fn(),
   };
   const mockGateway = { broadcastSeatUpdate: jest.fn() };
+  const mockSeatingService = { releaseHoldsForBookedSeats: jest.fn() };
 
   let service: BookingService;
 
@@ -39,6 +41,7 @@ describe("BookingService", () => {
         BookingService,
         { provide: DRIZZLE, useValue: mockDb },
         { provide: SeatingGateway, useValue: mockGateway },
+        { provide: SeatingService, useValue: mockSeatingService },
       ],
     }).compile();
 
@@ -172,6 +175,53 @@ describe("BookingService", () => {
         priceCents: 1000,
       },
     ]);
+  });
+
+  it("should release the Valkey hold for every booked seat once the transaction commits", async () => {
+    // ARRANGE
+    mockDb.query.sessions.findFirst.mockResolvedValue({ id: "session-1", priceCents: 2000 });
+    const bookingValues = jest.fn().mockReturnValue({
+      returning: jest.fn().mockResolvedValue([{ id: "booking-1", status: "pending" }]),
+    });
+    const bookingSeatValues = jest.fn().mockResolvedValue(undefined);
+    mockDb.insert
+      .mockReturnValueOnce({ values: bookingValues })
+      .mockReturnValueOnce({ values: bookingSeatValues })
+      .mockReturnValueOnce({ values: bookingSeatValues });
+
+    // ACT
+    await service.createBookingForSeats(
+      "session-1",
+      [
+        { seatId: "seat-1", ticketType: TicketType.FULL },
+        { seatId: "seat-2", ticketType: TicketType.HALF, halfPriceDocument: "1234567890" },
+      ],
+      "user-1",
+    );
+
+    // ASSERT — the stale hold must not outlive the real Postgres row, or a later
+    // cancellation would show the seat as still held instead of free
+    expect(mockSeatingService.releaseHoldsForBookedSeats).toHaveBeenCalledWith("session-1", [
+      "seat-1",
+      "seat-2",
+    ]);
+  });
+
+  it("should not release any hold when the booking transaction fails", async () => {
+    // ARRANGE
+    mockDb.query.sessions.findFirst.mockResolvedValue({ id: "session-1", priceCents: 2000 });
+    mockDb.transaction.mockRejectedValue(Object.assign(new Error("duplicate key"), { code: "23505" }));
+
+    // ACT
+    const result = service.createBookingForSeats(
+      "session-1",
+      [{ seatId: "seat-1", ticketType: TicketType.FULL }],
+      "user-1",
+    );
+
+    // ASSERT
+    await expect(result).rejects.toThrow(ConflictException);
+    expect(mockSeatingService.releaseHoldsForBookedSeats).not.toHaveBeenCalled();
   });
 
   it("should throw ConflictException, not a raw database error, when a seat is already booked", async () => {

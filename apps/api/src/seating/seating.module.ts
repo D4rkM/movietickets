@@ -9,6 +9,6 @@ import { SeatingService } from "./seating.service";
   imports: [AuthModule],
   controllers: [SeatingController],
   providers: [SeatingService, SeatingGateway, HoldExpiryListener],
-  exports: [SeatingGateway],
+  exports: [SeatingGateway, SeatingService],
 })
 export class SeatingModule {}
