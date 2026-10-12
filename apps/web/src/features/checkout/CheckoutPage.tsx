@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
-import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
+import { Navigate, useLocation, useNavigate } from "react-router-dom";
 import { UnauthorizedError } from "../../lib/api-client";
 import { useAuth } from "../auth/AuthContext";
-import { bookSeats, confirmBooking, getSeatMap, releaseAllHolds } from "../seating/api";
+import { bookSeats, getSeatMap, releaseAllHolds } from "../seating/api";
 import type { SeatMapSeat, TicketType } from "../seating/types";
+import { createCheckout } from "./api";
 
 interface CheckoutLocationState {
   sessionId: string;
@@ -41,7 +42,6 @@ export function CheckoutPage() {
   const [choices, setChoices] = useState<Record<string, TicketChoice>>({});
   const [error, setError] = useState<string | null>(null);
   const [paying, setPaying] = useState(false);
-  const [confirmed, setConfirmed] = useState(false);
   const [showCancelModal, setShowCancelModal] = useState(false);
 
   useEffect(() => {
@@ -95,10 +95,11 @@ export function CheckoutPage() {
     setError(null);
     setPaying(true);
     try {
-      // Mocked payment: skip any real gateway. All seats are booked in a single
-      // atomic request (one booking, one DB transaction on the backend), then
-      // one confirm call marks that booking as paid so the seat map reflects
-      // it as booked — see "[Back] Definitive seat confirmation on payment".
+      // All seats are booked in a single atomic request (one booking, one DB
+      // transaction on the backend), then a Mercado Pago checkout preference is
+      // created for it and the browser is sent to Mercado Pago's hosted payment
+      // page. The booking only gets confirmed once Mercado Pago calls the
+      // backend's webhook — see "[Back] NotificationModule"/payment.service.ts.
       const seats = state.seatIds.map((seatId) => {
         const choice = choices[seatId];
         return {
@@ -108,33 +109,20 @@ export function CheckoutPage() {
         };
       });
       const { bookingId } = await bookSeats(state.sessionId, seats, accessToken);
-      await confirmBooking(bookingId, accessToken);
-      setConfirmed(true);
+      const { checkoutUrl } = await createCheckout(bookingId, accessToken);
+      window.location.href = checkoutUrl;
     } catch (err) {
       if (err instanceof UnauthorizedError) {
         window.location.href = "/login";
         return;
       }
       setError((err as Error).message);
-    } finally {
       setPaying(false);
     }
   }
 
   if (!state) {
     return <Navigate to="/movies" replace />;
-  }
-
-  if (confirmed) {
-    return (
-      <main className="mx-auto max-w-md px-4 py-8 text-center">
-        <h1 className="text-2xl font-semibold">Ingresso confirmado!</h1>
-        <p className="mt-2 text-gray-600">{state.seatIds.length} assento(s) reservado(s) com sucesso.</p>
-        <Link to="/movies" className="mt-6 inline-block text-sm underline">
-          Voltar ao catálogo
-        </Link>
-      </main>
-    );
   }
 
   const totalCents = seats?.reduce((sum, seat) => sum + priceForChoice(priceCents, choices[seat.id]), 0) ?? 0;

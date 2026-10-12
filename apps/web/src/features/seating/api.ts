@@ -100,15 +100,3 @@ export async function releaseAllHolds(sessionId: string, accessToken: string): P
     throw new Error(`Falha ao liberar os assentos (status ${response.status})`);
   }
 }
-
-export async function confirmBooking(bookingId: string, accessToken: string): Promise<void> {
-  const response = await fetch(`${API_URL}/bookings/${bookingId}/confirm`, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${accessToken}` },
-  });
-  assertAuthorized(response);
-
-  if (!response.ok) {
-    throw new Error(`Falha ao confirmar a reserva ${bookingId} (status ${response.status})`);
-  }
-}
