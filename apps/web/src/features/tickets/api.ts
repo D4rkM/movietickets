@@ -13,3 +13,15 @@ export async function getMyTickets(accessToken: string): Promise<Ticket[]> {
 
   return response.json();
 }
+
+export async function cancelBooking(bookingId: string, accessToken: string): Promise<void> {
+  const response = await fetch(`${API_URL}/bookings/${bookingId}/cancel`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  assertAuthorized(response);
+
+  if (!response.ok) {
+    throw new Error(`Falha ao cancelar o ingresso (status ${response.status})`);
+  }
+}
