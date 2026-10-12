@@ -27,6 +27,17 @@ services:
       timeout: 5s
       retries: 5
 
+  # Fake SMTP server for local dev: NotificationModule sends purchase-confirmation
+  # emails here via nodemailer instead of a real provider. Web UI at
+  # http://localhost:8025 shows every message caught — nothing leaves the
+  # local network. See docs/planning.md's "Stack" section.
+  mailpit:
+    image: axllent/mailpit:latest
+    restart: unless-stopped
+    ports:
+      - "1025:1025"
+      - "8025:8025"
+
   # Containerized app (api + web), for testing the whole stack without
   # installing Node/pnpm locally (e.g. on Windows, or just to try it out
   # quickly). Not started by default — `docker compose up -d` alone only
