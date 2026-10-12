@@ -1,6 +1,7 @@
 import { ConflictException, NotFoundException } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import { DRIZZLE } from "../db/drizzle.module";
+import { NotificationService } from "../notification/notification.service";
 import { SeatingGateway } from "../seating/seating.gateway";
 import { SeatingService } from "../seating/seating.service";
 import { BookingService } from "./booking.service";
@@ -20,6 +21,7 @@ describe("BookingService", () => {
   };
   const mockGateway = { broadcastSeatUpdate: jest.fn() };
   const mockSeatingService = { releaseHoldsForBookedSeats: jest.fn() };
+  const mockNotificationService = { sendBookingConfirmationEmail: jest.fn() };
 
   let service: BookingService;
 
@@ -35,6 +37,7 @@ describe("BookingService", () => {
     jest.clearAllMocks();
     stubTransaction();
     mockDb.query.bookingSeats.findMany.mockResolvedValue([]);
+    mockNotificationService.sendBookingConfirmationEmail.mockResolvedValue(undefined);
 
     const moduleRef = await Test.createTestingModule({
       providers: [
@@ -42,6 +45,7 @@ describe("BookingService", () => {
         { provide: DRIZZLE, useValue: mockDb },
         { provide: SeatingGateway, useValue: mockGateway },
         { provide: SeatingService, useValue: mockSeatingService },
+        { provide: NotificationService, useValue: mockNotificationService },
       ],
     }).compile();
 
@@ -355,6 +359,61 @@ describe("BookingService", () => {
     expect(mockGateway.broadcastSeatUpdate).toHaveBeenCalledWith("session-1", { seatId: "seat-2", status: "booked" });
   });
 
+  it("should send a confirmation email with the booking's details when confirmed", async () => {
+    // ARRANGE
+    mockDb.query.bookings.findFirst
+      .mockResolvedValueOnce({ id: "booking-1", userId: "user-1", status: "pending" })
+      .mockResolvedValueOnce({
+        id: "booking-1",
+        user: { email: "user@example.com" },
+        session: {
+          startsAt: new Date("2026-11-01T22:00:00Z"),
+          movie: { title: "Dune" },
+          room: { name: "Sala 1", cinema: { name: "Cine Centro" } },
+        },
+        seats: [{ priceCents: 2500, seat: { rowLabel: "A", seatNumber: 1 } }],
+      });
+    const where = jest.fn().mockReturnValue({
+      returning: jest.fn().mockResolvedValue([{ id: "booking-1", status: "confirmed", sessionId: "session-1" }]),
+    });
+    mockDb.update.mockReturnValue({ set: jest.fn().mockReturnValue({ where }) });
+
+    // ACT
+    await service.confirmBooking("booking-1", "user-1");
+
+    // ASSERT
+    expect(mockNotificationService.sendBookingConfirmationEmail).toHaveBeenCalledWith({
+      to: "user@example.com",
+      bookingId: "booking-1",
+      movieTitle: "Dune",
+      cinemaName: "Cine Centro",
+      roomName: "Sala 1",
+      startsAt: new Date("2026-11-01T22:00:00Z"),
+      seats: [{ rowLabel: "A", seatNumber: 1 }],
+      totalCents: 2500,
+    });
+  });
+
+  it("should still confirm the booking when sending the confirmation email fails", async () => {
+    // ARRANGE
+    mockDb.query.bookings.findFirst.mockResolvedValue({
+      id: "booking-1",
+      userId: "user-1",
+      status: "pending",
+    });
+    const where = jest.fn().mockReturnValue({
+      returning: jest.fn().mockResolvedValue([{ id: "booking-1", status: "confirmed", sessionId: "session-1" }]),
+    });
+    mockDb.update.mockReturnValue({ set: jest.fn().mockReturnValue({ where }) });
+    mockNotificationService.sendBookingConfirmationEmail.mockRejectedValue(new Error("SMTP down"));
+
+    // ACT
+    const result = await service.confirmBooking("booking-1", "user-1");
+
+    // ASSERT
+    expect(result).toEqual({ bookingId: "booking-1", status: "confirmed" });
+  });
+
   it("should throw NotFoundException when cancelling a booking that doesn't exist", async () => {
     // ARRANGE
     mockDb.query.bookings.findFirst.mockResolvedValue(undefined);
@@ -438,6 +497,33 @@ describe("BookingService", () => {
 
     // ASSERT
     expect(mockGateway.broadcastSeatUpdate).toHaveBeenCalledWith("session-1", { seatId: "seat-1", status: "booked" });
+  });
+
+  it("should send a confirmation email when the Mercado Pago payment is approved", async () => {
+    // ARRANGE
+    const where = jest.fn().mockReturnValue({
+      returning: jest.fn().mockResolvedValue([{ id: "booking-1", status: "confirmed", sessionId: "session-1" }]),
+    });
+    mockDb.update.mockReturnValue({ set: jest.fn().mockReturnValue({ where }) });
+    mockDb.query.bookingSeats.findMany.mockResolvedValue([{ seatId: "seat-1" }]);
+    mockDb.query.bookings.findFirst.mockResolvedValue({
+      id: "booking-1",
+      user: { email: "user@example.com" },
+      session: {
+        startsAt: new Date("2026-11-01T22:00:00Z"),
+        movie: { title: "Dune" },
+        room: { name: "Sala 1", cinema: { name: "Cine Centro" } },
+      },
+      seats: [{ priceCents: 2500, seat: { rowLabel: "A", seatNumber: 1 } }],
+    });
+
+    // ACT
+    await service.confirmPaidBooking("booking-1");
+
+    // ASSERT
+    expect(mockNotificationService.sendBookingConfirmationEmail).toHaveBeenCalledWith(
+      expect.objectContaining({ to: "user@example.com", bookingId: "booking-1" }),
+    );
   });
 
   it("should do nothing when confirmPaidBooking is redelivered for a booking that's already past pending", async () => {

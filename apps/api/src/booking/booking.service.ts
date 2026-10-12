@@ -1,8 +1,9 @@
-import { ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { ConflictException, Inject, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { and, desc, eq } from "drizzle-orm";
 import { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import { DRIZZLE } from "../db/drizzle.module";
 import * as schema from "../db/schema";
+import { NotificationService } from "../notification/notification.service";
 import { SeatingGateway } from "../seating/seating.gateway";
 import { SeatingService } from "../seating/seating.service";
 import { TicketType } from "./dto/book-seat.dto";
@@ -45,10 +46,13 @@ export interface ConfirmBookingResult {
 
 @Injectable()
 export class BookingService {
+  private readonly logger = new Logger(BookingService.name);
+
   constructor(
     @Inject(DRIZZLE) private readonly db: PostgresJsDatabase<typeof schema>,
     private readonly gateway: SeatingGateway,
     private readonly seatingService: SeatingService,
+    private readonly notificationService: NotificationService,
   ) {}
 
   /** Single-seat convenience wrapper around {@link createBookingForSeats}. */
@@ -170,6 +174,7 @@ export class BookingService {
     for (const seat of bookedSeats) {
       this.gateway.broadcastSeatUpdate(updated.sessionId, { seatId: seat.seatId, status: "booked" });
     }
+    await this.sendConfirmationEmail(bookingId);
 
     return { bookingId: updated.id, status: updated.status };
   }
@@ -213,6 +218,7 @@ export class BookingService {
     for (const seat of bookedSeats) {
       this.gateway.broadcastSeatUpdate(updated.sessionId, { seatId: seat.seatId, status: "booked" });
     }
+    await this.sendConfirmationEmail(bookingId);
   }
 
   /**
@@ -247,6 +253,42 @@ export class BookingService {
     }
 
     return { bookingId: updated.id, status: updated.status };
+  }
+
+  /**
+   * Best-effort purchase-confirmation email, fired from both confirmation paths
+   * (mocked self-service confirm and the real Mercado Pago webhook). Swallows
+   * failures so a flaky SMTP connection never blocks the booking itself from
+   * being confirmed — the seat is already booked by this point regardless.
+   */
+  private async sendConfirmationEmail(bookingId: string): Promise<void> {
+    const booking = await this.db.query.bookings.findFirst({
+      where: eq(schema.bookings.id, bookingId),
+      with: {
+        user: true,
+        session: { with: { movie: true, room: { with: { cinema: true } } } },
+        seats: { with: { seat: true } },
+      },
+    });
+    if (!booking) return;
+
+    try {
+      await this.notificationService.sendBookingConfirmationEmail({
+        to: booking.user.email,
+        bookingId: booking.id,
+        movieTitle: booking.session.movie.title,
+        cinemaName: booking.session.room.cinema.name,
+        roomName: booking.session.room.name,
+        startsAt: booking.session.startsAt,
+        seats: booking.seats.map((bookingSeat) => ({
+          rowLabel: bookingSeat.seat.rowLabel,
+          seatNumber: bookingSeat.seat.seatNumber,
+        })),
+        totalCents: booking.seats.reduce((sum, bookingSeat) => sum + bookingSeat.priceCents, 0),
+      });
+    } catch (err) {
+      this.logger.warn(`Failed to send booking confirmation email for ${bookingId}: ${err}`);
+    }
   }
 
   /** Lists the authenticated user's confirmed bookings, most recent first. */
