@@ -6,13 +6,15 @@ import { Test } from "@nestjs/testing";
 import { eq } from "drizzle-orm";
 import { drizzle, PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
+import type { Redis } from "ioredis";
 import { io, Socket as ClientSocket } from "socket.io-client";
 import { AuthModule } from "../src/auth/auth.module";
 import { BookingModule } from "../src/booking/booking.module";
 import { DrizzleModule } from "../src/db/drizzle.module";
 import * as schema from "../src/db/schema";
 import { SeatingModule } from "../src/seating/seating.module";
-import { ValkeyModule } from "../src/valkey/valkey.module";
+import { HOLD_KEY_PREFIX } from "../src/seating/seating.service";
+import { ValkeyModule, VALKEY } from "../src/valkey/valkey.module";
 import { buildFastifyApp } from "./helpers/build-app";
 
 function waitForEvent<T>(socket: ClientSocket, event: string, timeoutMs = 2000): Promise<T> {
@@ -30,6 +32,7 @@ describe("Seating WebSocket gateway (e2e)", () => {
   let db: PostgresJsDatabase<typeof schema>;
   let cleanupClient: ReturnType<typeof postgres>;
   let baseUrl: string;
+  let valkey: Redis;
   let accessToken: string;
   let otherAccessToken: string;
 
@@ -65,6 +68,7 @@ describe("Seating WebSocket gateway (e2e)", () => {
     baseUrl = `http://127.0.0.1:${port}`;
 
     const jwtService = moduleRef.get(JwtService);
+    valkey = moduleRef.get(VALKEY);
 
     [{ id: userId }] = await db
       .insert(schema.users)
@@ -229,6 +233,28 @@ describe("Seating WebSocket gateway (e2e)", () => {
     // THEN the room receives a "booked" broadcast for that seat
     const update = await nextUpdate;
     expect(update).toEqual({ seatId: seat.id, status: "booked" });
+
+    viewerSocket.disconnect();
+  });
+
+  it("should broadcast a 'released' event when a hold expires passively via TTL, with no explicit release call", async () => {
+    // GIVEN a client watching the session, and a hold key about to expire on its own
+    // (set directly in Valkey, bypassing the hold endpoint entirely — the real TTL is
+    // 10 minutes, far too slow for a test, and this test is specifically about the
+    // passive-expiry path, not about how a hold normally gets created)
+    const [seat] = await db.insert(schema.seats).values({ roomId, rowLabel: "D", seatNumber: 1 }).returning();
+    const viewerSocket = await connect(otherAccessToken);
+    viewerSocket.emit("join", sessionId);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    const nextUpdate = waitForEvent<{ seatId: string; status: string }>(viewerSocket, "seat:update", 3000);
+
+    // WHEN the key expires on its own, with nobody ever calling the release endpoint
+    await valkey.set(`${HOLD_KEY_PREFIX}:${sessionId}:${seat.id}`, accessToken, "PX", 200);
+
+    // THEN the room still gets notified the seat is free again
+    const update = await nextUpdate;
+    expect(update).toEqual({ seatId: seat.id, status: "released" });
 
     viewerSocket.disconnect();
   });

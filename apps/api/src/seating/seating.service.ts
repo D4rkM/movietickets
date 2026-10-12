@@ -8,7 +8,7 @@ import { VALKEY } from "../valkey/valkey.module";
 import { SeatingGateway } from "./seating.gateway";
 import { SeatMapResponse, SeatState } from "./seat-map.types";
 
-const HOLD_KEY_PREFIX = "seat-hold";
+export const HOLD_KEY_PREFIX = "seat-hold";
 const HOLD_TTL_SECONDS = 600;
 const MAX_HELD_SEATS_PER_USER = 6;
 
