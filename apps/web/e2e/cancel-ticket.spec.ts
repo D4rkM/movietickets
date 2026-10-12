@@ -3,7 +3,27 @@ import { expect, test } from "@playwright/test";
 // Real cancellation against the real backend — not mocked, unlike the
 // Vitest/RTL coverage for this component.
 test("should cancel a confirmed ticket and free its seat back up", async ({ page }) => {
-  // GIVEN a user who just completed a (mocked-payment) booking
+  // Paying for real means landing on Mercado Pago's hosted sandbox page, which
+  // isn't something e2e can drive (card entry on an external site). Instead,
+  // the checkout-creation request is intercepted: the real backend still
+  // confirms the booking (standing in for the payment-approved webhook MP
+  // would call in production), and the response sends the browser straight to
+  // this app's own return page, skipping the external hop.
+  await page.route("**/bookings/*/checkout", async (route) => {
+    const bookingId = new URL(route.request().url()).pathname.split("/")[2];
+    const accessToken = await page.evaluate(() => localStorage.getItem("movietickets:accessToken"));
+    await fetch(`http://localhost:3000/bookings/${bookingId}/confirm`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ checkoutUrl: "http://localhost:5173/checkout/retorno?status=approved" }),
+    });
+  });
+
+  // GIVEN a user who just completed a booking (checkout creation intercepted, see above)
   const email = `cancel-ticket-${Date.now()}@test.com`;
   await page.goto("/register");
   await page.getByLabel("Nome").fill("Cancel Ticket Test");
@@ -30,7 +50,11 @@ test("should cancel a confirmed ticket and free its seat back up", async ({ page
   await page.getByRole("button", { name: /^Pagar/ }).click();
   await expect(page).toHaveURL(/\/checkout$/);
   await page.getByRole("button", { name: /^Pagar$/ }).click();
-  await expect(page.getByText("Ingresso confirmado!")).toBeVisible();
+  // Generous timeout: the intercepted route makes a real round-trip to the
+  // backend's confirm endpoint before redirecting, on top of Vite's own
+  // first-navigation compile cost (see playwright.config.ts).
+  await expect(page).toHaveURL(/\/checkout\/retorno\?status=approved$/, { timeout: 20_000 });
+  await expect(page.getByText("Pagamento aprovado!")).toBeVisible();
 
   // WHEN the user cancels it from "Meus ingressos"
   await page.getByRole("link", { name: "Voltar ao catálogo" }).click();

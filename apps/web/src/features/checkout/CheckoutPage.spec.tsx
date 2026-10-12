@@ -90,8 +90,14 @@ describe("CheckoutPage (integration)", () => {
     );
   });
 
-  it("should show the order summary and confirm booking after a mocked payment", async () => {
+  it("should book the seat and redirect to the Mercado Pago checkout page", async () => {
     // GIVEN a session with one selected seat
+    const originalLocation = window.location;
+    // @ts-expect-error -- replacing location with a mock to observe the redirect
+    delete window.location;
+    // @ts-expect-error -- partial Location mock is enough to observe href
+    window.location = { ...originalLocation, href: "" };
+
     vi.mocked(fetch).mockImplementation((url: string | URL | Request) => {
       const urlString = url.toString();
       if (urlString.endsWith("/sessions/session-1/book")) {
@@ -100,8 +106,11 @@ describe("CheckoutPage (integration)", () => {
           json: async () => [{ bookingId: "booking-1", seatId: "seat-1", priceCents: 2500 }],
         } as Response);
       }
-      if (urlString.includes("/bookings/") && urlString.includes("/confirm")) {
-        return Promise.resolve({ ok: true } as Response);
+      if (urlString.endsWith("/bookings/booking-1/checkout")) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ checkoutUrl: "https://mp.test/checkout/abc" }),
+        } as Response);
       }
       return Promise.resolve({
         ok: true,
@@ -114,13 +123,14 @@ describe("CheckoutPage (integration)", () => {
     });
     renderCheckoutPage({ sessionId: "session-1", seatIds: ["seat-1"] });
 
-    // WHEN the summary loads and the user confirms the mocked payment (default: full price)
+    // WHEN the summary loads and the user pays (default: full price)
     expect(await screen.findByText("Assento A1")).toBeInTheDocument();
     expect(screen.getByText("Total: R$ 25.00")).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: /^Pagar$/ }));
 
-    // THEN it books the seat with a full ticket in one request, confirms payment once, and shows the confirmation
-    expect(await screen.findByText("Ingresso confirmado!")).toBeInTheDocument();
+    // THEN it books the seat with a full ticket, creates a checkout preference for that booking,
+    // and sends the browser to Mercado Pago's hosted payment page
+    await vi.waitFor(() => expect(window.location.href).toBe("https://mp.test/checkout/abc"));
     expect(fetch).toHaveBeenCalledWith(
       expect.stringContaining("/sessions/session-1/book"),
       expect.objectContaining({
@@ -129,14 +139,23 @@ describe("CheckoutPage (integration)", () => {
       }),
     );
     expect(fetch).toHaveBeenCalledWith(
-      expect.stringContaining("/bookings/booking-1/confirm"),
+      expect.stringContaining("/bookings/booking-1/checkout"),
       expect.objectContaining({ method: "POST" }),
     );
-    expect(fetch).toHaveBeenCalledTimes(3); // seat map + book + confirm, no per-seat looping
+    expect(fetch).toHaveBeenCalledTimes(3); // seat map + book + checkout, no per-seat looping
+
+    // @ts-expect-error -- restoring the original Location object
+    window.location = originalLocation;
   });
 
   it("should halve the price and require a document when the user picks 'Meia'", async () => {
     // GIVEN a session with one selected seat
+    const originalLocation = window.location;
+    // @ts-expect-error -- replacing location with a mock to observe the redirect
+    delete window.location;
+    // @ts-expect-error -- partial Location mock is enough to observe href
+    window.location = { ...originalLocation, href: "" };
+
     vi.mocked(fetch).mockImplementation((url: string | URL | Request) => {
       const urlString = url.toString();
       if (urlString.endsWith("/sessions/session-1/book")) {
@@ -145,8 +164,11 @@ describe("CheckoutPage (integration)", () => {
           json: async () => [{ bookingId: "booking-1", seatId: "seat-1", priceCents: 1250 }],
         } as Response);
       }
-      if (urlString.includes("/bookings/") && urlString.includes("/confirm")) {
-        return Promise.resolve({ ok: true } as Response);
+      if (urlString.endsWith("/bookings/booking-1/checkout")) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ checkoutUrl: "https://mp.test/checkout/abc" }),
+        } as Response);
       }
       return Promise.resolve({
         ok: true,
@@ -172,7 +194,7 @@ describe("CheckoutPage (integration)", () => {
     await userEvent.click(screen.getByRole("button", { name: /^Pagar$/ }));
 
     // THEN it books the seat as a half ticket with the document, in the single batch request
-    expect(await screen.findByText("Ingresso confirmado!")).toBeInTheDocument();
+    await vi.waitFor(() => expect(window.location.href).toBe("https://mp.test/checkout/abc"));
     expect(fetch).toHaveBeenCalledWith(
       expect.stringContaining("/sessions/session-1/book"),
       expect.objectContaining({
@@ -180,6 +202,9 @@ describe("CheckoutPage (integration)", () => {
         body: JSON.stringify({ seats: [{ seatId: "seat-1", ticketType: "half", halfPriceDocument: "1234567890" }] }),
       }),
     );
+
+    // @ts-expect-error -- restoring the original Location object
+    window.location = originalLocation;
   });
 
   it("should redirect to /login when the payment gets a 401 (expired token)", async () => {
@@ -217,16 +242,16 @@ describe("CheckoutPage (integration)", () => {
     window.location = originalLocation;
   });
 
-  it("should show an error and never call confirm when the atomic booking request fails", async () => {
+  it("should show an error and never create a checkout when the atomic booking request fails", async () => {
     // GIVEN a seat that's already taken (backend rolls back and returns 409)
-    const confirmCalls: string[] = [];
+    const checkoutCalls: string[] = [];
     vi.mocked(fetch).mockImplementation((url: string | URL | Request) => {
       const urlString = url.toString();
       if (urlString.endsWith("/sessions/session-1/book")) {
         return Promise.resolve({ ok: false, status: 409 } as Response);
       }
-      if (urlString.includes("/confirm")) {
-        confirmCalls.push(urlString);
+      if (urlString.includes("/checkout")) {
+        checkoutCalls.push(urlString);
         return Promise.resolve({ ok: true } as Response);
       }
       return Promise.resolve({
@@ -244,9 +269,9 @@ describe("CheckoutPage (integration)", () => {
     // WHEN the user tries to pay
     await userEvent.click(screen.getByRole("button", { name: /^Pagar$/ }));
 
-    // THEN it shows the error, never reaches the confirm step, and the pay button is usable again
+    // THEN it shows the error, never reaches the checkout step, and the pay button is usable again
     expect(await screen.findByRole("alert")).toHaveTextContent(/status 409/);
-    expect(confirmCalls).toHaveLength(0);
+    expect(checkoutCalls).toHaveLength(0);
     expect(screen.getByRole("button", { name: /^Pagar$/ })).toBeEnabled();
   });
 });
