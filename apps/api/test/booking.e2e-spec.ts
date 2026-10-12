@@ -419,6 +419,49 @@ describe("Booking (e2e)", () => {
     expect(seat.status).toBe("free");
   });
 
+  it("should show a cancelled booking's seat as free, not still held, even inside the original hold's TTL window", async () => {
+    // GIVEN the user held the seat first (as the real front-end flow always does),
+    // then booked and confirmed it without ever explicitly releasing the hold
+    const [heldSeat] = await db.insert(schema.seats).values({ roomId, rowLabel: "A", seatNumber: 4 }).returning();
+
+    const holdResponse = await app.inject({
+      method: "POST",
+      url: `/sessions/${sessionId}/seats/${heldSeat.id}/hold`,
+      headers: { authorization: `Bearer ${accessToken}` },
+    });
+    expect(holdResponse.statusCode).toBe(200);
+
+    const bookResponse = await app.inject({
+      method: "POST",
+      url: `/sessions/${sessionId}/seats/${heldSeat.id}/book`,
+      headers: { authorization: `Bearer ${accessToken}` },
+      payload: { ticketType: "full" },
+    });
+    const heldSeatBookingId = bookResponse.json().bookingId;
+    await app.inject({
+      method: "POST",
+      url: `/bookings/${heldSeatBookingId}/confirm`,
+      headers: { authorization: `Bearer ${accessToken}` },
+    });
+
+    // WHEN the booking is cancelled — well within the hold's 10-minute TTL
+    const cancelResponse = await app.inject({
+      method: "POST",
+      url: `/bookings/${heldSeatBookingId}/cancel`,
+      headers: { authorization: `Bearer ${accessToken}` },
+    });
+    expect(cancelResponse.statusCode).toBe(200);
+
+    // THEN the seat map shows it free, not still held by the user who originally held it
+    const seatMapResponse = await app.inject({
+      method: "GET",
+      url: `/sessions/${sessionId}/seats`,
+      headers: { authorization: `Bearer ${accessToken}` },
+    });
+    const seat = seatMapResponse.json().seats.find((s: { id: string }) => s.id === heldSeat.id);
+    expect(seat.status).toBe("free");
+  });
+
   it("should reject cancelling a booking that isn't confirmed", async () => {
     // GIVEN a booking that was already cancelled (the previous test's)
 

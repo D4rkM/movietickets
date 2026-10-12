@@ -171,6 +171,21 @@ export class SeatingService {
     return { releasedSeatIds };
   }
 
+  /**
+   * Clears the Valkey hold(s) for seats that just became a real `booking_seats`
+   * row — called by BookingService right after creating a booking. From that
+   * point on the Postgres unique `(session_id, seat_id)` constraint is what
+   * guarantees exclusivity; a leftover hold is redundant and, if the booking
+   * later gets cancelled within the hold's TTL, actively wrong: the seat would
+   * read back as still held instead of free. No broadcast here — the booking
+   * flow already emits its own "booked"/"released" events for this seat.
+   */
+  async releaseHoldsForBookedSeats(sessionId: string, seatIds: string[]): Promise<void> {
+    if (seatIds.length === 0) return;
+    const keys = seatIds.map((seatId) => this.holdKey(sessionId, seatId));
+    await this.valkey.del(...keys);
+  }
+
   private async isSeatBooked(sessionId: string, seatId: string): Promise<boolean> {
     const rows = await this.db.query.bookingSeats.findMany({
       where: and(eq(schema.bookingSeats.sessionId, sessionId), eq(schema.bookingSeats.seatId, seatId)),

@@ -387,4 +387,25 @@ describe("SeatingService", () => {
       expect(result).toEqual({ releasedSeatIds: [] });
     });
   });
+
+  describe("releaseHoldsForBookedSeats", () => {
+    it("should delete the hold key for every given seat, without broadcasting anything", async () => {
+      // ARRANGE — BookingService calls this right after inserting the booking_seats rows
+
+      // ACT
+      await service.releaseHoldsForBookedSeats("session-1", ["seat-1", "seat-2"]);
+
+      // ASSERT — no broadcast: BookingService already emits its own booked/released events
+      expect(mockValkey.del).toHaveBeenCalledWith("seat-hold:session-1:seat-1", "seat-hold:session-1:seat-2");
+      expect(mockGateway.broadcastSeatUpdate).not.toHaveBeenCalled();
+    });
+
+    it("should do nothing when given no seats", async () => {
+      // ARRANGE / ACT
+      await service.releaseHoldsForBookedSeats("session-1", []);
+
+      // ASSERT
+      expect(mockValkey.del).not.toHaveBeenCalled();
+    });
+  });
 });

@@ -4,6 +4,7 @@ import { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import { DRIZZLE } from "../db/drizzle.module";
 import * as schema from "../db/schema";
 import { SeatingGateway } from "../seating/seating.gateway";
+import { SeatingService } from "../seating/seating.service";
 import { TicketType } from "./dto/book-seat.dto";
 import { MyBooking } from "./my-booking.types";
 
@@ -47,6 +48,7 @@ export class BookingService {
   constructor(
     @Inject(DRIZZLE) private readonly db: PostgresJsDatabase<typeof schema>,
     private readonly gateway: SeatingGateway,
+    private readonly seatingService: SeatingService,
   ) {}
 
   /** Single-seat convenience wrapper around {@link createBookingForSeats}. */
@@ -85,14 +87,15 @@ export class BookingService {
       throw new NotFoundException("Sessão não encontrada");
     }
 
+    let results: CreateBookingResult[];
     try {
-      return await this.db.transaction(async (tx) => {
+      results = await this.db.transaction(async (tx) => {
         const [booking] = await tx
           .insert(schema.bookings)
           .values({ userId, sessionId, status: "pending" })
           .returning();
 
-        const results: CreateBookingResult[] = [];
+        const txResults: CreateBookingResult[] = [];
         for (const seat of seats) {
           const priceCents =
             seat.ticketType === TicketType.HALF
@@ -108,7 +111,7 @@ export class BookingService {
             priceCents,
           });
 
-          results.push({
+          txResults.push({
             bookingId: booking.id,
             seatId: seat.seatId,
             status: booking.status,
@@ -116,7 +119,7 @@ export class BookingService {
             priceCents,
           });
         }
-        return results;
+        return txResults;
       });
     } catch (err) {
       if (isUniqueViolation(err)) {
@@ -124,6 +127,19 @@ export class BookingService {
       }
       throw err;
     }
+
+    // The Postgres unique (session_id, seat_id) constraint is what guarantees
+    // exclusivity from here on — any Valkey hold on these seats is now
+    // redundant, and if left in place would make a later cancellation show
+    // the seat as still held instead of free (see hold-expiry.listener.ts's
+    // sibling bug: orphaned holds lying around after the fact they were meant
+    // to protect no longer matters).
+    await this.seatingService.releaseHoldsForBookedSeats(
+      sessionId,
+      seats.map((seat) => seat.seatId),
+    );
+
+    return results;
   }
 
   /**
