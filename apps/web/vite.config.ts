@@ -15,6 +15,13 @@ export default defineConfig({
     port: 5173,
     strictPort: true,
   },
+  // Lets an ngrok tunnel (any random free-tier subdomain) reach the dev server
+  // for manually testing Mercado Pago's back_urls redirect, which requires
+  // https. Vite blocks unrecognized Host headers by default (DNS-rebinding
+  // protection) — local-only testing convenience, not meant for production.
+  server: {
+    allowedHosts: [".ngrok-free.app"],
+  },
   test: {
     environment: "jsdom",
     setupFiles: ["./src/test/setup.ts"],
