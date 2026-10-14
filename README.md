@@ -16,7 +16,7 @@ Pré-requisitos:
 - **pnpm** — via Corepack, já vem com o Node (`corepack enable`).
 - **[Docker](https://www.docker.com/) ou [Podman](https://podman.io/)** — o Makefile detecta automaticamente qual tá instalado (prioriza `docker`, cai pro `podman` se não achar).
 - `make` — opcional, comandos diretos equivalentes em [Windows](#windows) logo abaixo (útil sem `make` em qualquer SO).
-- **[ngrok](https://ngrok.com/)** — só necessário pra testar o checkout do Mercado Pago localmente (ver seção abaixo). Precisa de conta (free tier serve) com authtoken configurado uma vez: `ngrok config add-authtoken <seu-token>`.
+- **[ngrok](https://ngrok.com/)** — só necessário pra testar o checkout do Mercado Pago localmente (ver seção abaixo). Precisa de conta (free tier serve); exporte o authtoken como `NGROK_AUTHTOKEN` no shell (pega em https://dashboard.ngrok.com/get-started/your-authtoken) — **não** `ngrok config add-authtoken`, que salva na config default do ngrok e é ignorado quando `make expose` passa `--config ngrok.yml` (o ngrok não faz merge dos dois arquivos).
 
 ## Subir o ambiente local
 
