@@ -31,7 +31,7 @@ make install    # pnpm install
 make up-full     # infra + api + web + Drizzle Studio, containerizado
 ```
 
-A `api` (buildada de `apps/api/Dockerfile`) já aplica as migrations e popula o banco com dados de teste sozinha no boot (idempotente — seguro rodar de novo a cada restart do container). O `web` (buildado de `apps/web/Dockerfile`) é servido via `vite preview`. Front em `http://localhost:5173`, API em `http://localhost:3000`, [Drizzle Studio](https://orm.drizzle.team/drizzle-studio/overview) (interface pra ver/editar o banco) em `http://localhost:4983`, login de teste: `cliente@movietickets.dev` / `password123` (ou `admin@movietickets.dev` pro papel de admin). Pra derrubar: `make down-full`.
+A `api` (buildada de `apps/api/Dockerfile`) já aplica as migrations e popula o banco com dados de teste sozinha no boot (idempotente — seguro rodar de novo a cada restart do container). O `web` (buildado de `apps/web/Dockerfile`) é servido via `vite preview`. Front em `http://localhost:5173`, API em `http://localhost:3000`, [Drizzle Studio](https://orm.drizzle.team/drizzle-studio/overview) (interface pra ver/editar o banco) em `http://localhost:4983`, login de teste: `cliente@movietickets.dev` / `password123` (ou `admin@movietickets.dev` pro papel de admin, ou `cliente2@movietickets.dev` pra testar com dois usuários ao mesmo tempo — ver `apps/api/README.md`). Pra derrubar: `make down-full`.
 
 Ou por partes, rodando cada app localmente com hot reload em vez de containerizado:
 
@@ -64,7 +64,7 @@ pnpm install
 docker compose --profile full up -d --build
 ```
 
-A `api` já aplica as migrations e popula o banco sozinha no boot (idempotente), o `web` é servido via `vite preview`. Front em `http://localhost:5173`, API em `http://localhost:3000`, [Drizzle Studio](https://orm.drizzle.team/drizzle-studio/overview) em `http://localhost:4983`, login de teste: `cliente@movietickets.dev` / `password123`. Pra derrubar: `docker compose --profile full down`.
+A `api` já aplica as migrations e popula o banco sozinha no boot (idempotente), o `web` é servido via `vite preview`. Front em `http://localhost:5173`, API em `http://localhost:3000`, [Drizzle Studio](https://orm.drizzle.team/drizzle-studio/overview) em `http://localhost:4983`, login de teste: `cliente@movietickets.dev` / `password123` (usuários de teste completos em `apps/api/README.md`). Pra derrubar: `docker compose --profile full down`.
 
 Todo `make <alvo>` do [`Makefile`](./Makefile) tem um comando direto equivalente:
 
