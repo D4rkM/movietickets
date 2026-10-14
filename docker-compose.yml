@@ -56,28 +56,30 @@ services:
         condition: service_healthy
       mailpit:
         condition: service_started
+    # Loads apps/api/.env (same file `pnpm dev:api` uses) into the container's
+    # runtime environment — this is a compose-level, runtime-only mechanism
+    # (unlike build ARGs, it never touches the image itself, so it doesn't
+    # conflict with .dockerignore excluding .env from the build context).
+    # CORS_ORIGIN/WEB_URL/PUBLIC_API_URL deliberately come from here, not a
+    # hardcoded `environment` entry below: they need to be the ngrok tunnel
+    # URLs while testing the Mercado Pago flow (see README), and a hardcoded
+    # `environment` value always wins over env_file for the same key — which
+    # silently broke that exact flow once (the webhook's notification_url was
+    # always "http://localhost:3000", unreachable from Mercado Pago, no
+    # matter what apps/api/.env said).
+    env_file:
+      - apps/api/.env
     environment:
+      # DATABASE_URL/VALKEY_URL/SMTP_HOST genuinely must differ from
+      # apps/api/.env's host-oriented values (this container doesn't share
+      # the host's network namespace), so these three stay hardcoded and
+      # always override env_file.
       DATABASE_URL: postgres://movietickets:movietickets@postgres:5432/movietickets
       VALKEY_URL: redis://valkey:6379
       JWT_SECRET: dev-secret
       JWT_EXPIRES_IN: 1h
       PORT: 3000
       LOG_LEVEL: info
-      CORS_ORIGIN: http://localhost:5173
-      WEB_URL: http://localhost:5173
-      PUBLIC_API_URL: http://localhost:3000
-      # No `:?required` default here on purpose: compose interpolates every
-      # service's environment up front regardless of profile, so a required
-      # var on this (full-profile-only) service used to block even `docker
-      # compose up -d` with no profile flag at all (infra-only, day-to-day
-      # dev). The api image's entrypoint checks for it instead — see
-      # apps/api/Dockerfile — so only starting this service actually needs
-      # it set. Export it in your shell (or a root .env, gitignored) before
-      # `docker compose --profile full up`; get a sandbox value from the
-      # Mercado Pago developer dashboard.
-      MERCADOPAGO_ACCESS_TOKEN: ${MERCADOPAGO_ACCESS_TOKEN:-}
-      # "mailpit", not "localhost" — this container doesn't share the host's
-      # network namespace, so it reaches Mailpit through compose's own DNS.
       SMTP_HOST: mailpit
       SMTP_PORT: 1025
       MAIL_FROM: MovieTickets <no-reply@movietickets.local>
