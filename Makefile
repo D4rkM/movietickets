@@ -41,7 +41,7 @@ dev-api: ## Run apps/api in watch mode
 dev-web: ## Run apps/web in dev mode
 	pnpm dev:web
 
-expose: ## Expose local web (5173) + api (3000) via one ngrok agent, for testing the Mercado Pago checkout (needs `ngrok` installed + authenticated — see README)
+expose: ## Expose local web (5173) + api (3000) via one ngrok agent, for testing the Mercado Pago checkout (needs `ngrok` installed and NGROK_AUTHTOKEN exported — see README)
 	ngrok start --all --config ngrok.yml
 
 build: ## Build all workspace packages
