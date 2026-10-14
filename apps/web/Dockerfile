@@ -13,6 +13,11 @@ RUN pnpm install --frozen-lockfile
 
 FROM deps AS build
 COPY apps/web apps/web
+# `.env` is dockerignored (never bake env files into images), so this is how
+# VITE_API_URL reaches the build — Vite inlines it at build time, there's no
+# runtime env to set later. See docker-compose.yml's `web` service.
+ARG VITE_API_URL
+ENV VITE_API_URL=$VITE_API_URL
 RUN pnpm --filter web build
 
 # `vite preview` (the static server used below) needs `vite` itself, which is
