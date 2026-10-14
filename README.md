@@ -16,6 +16,7 @@ Pré-requisitos:
 - **pnpm** — via Corepack, já vem com o Node (`corepack enable`).
 - **[Docker](https://www.docker.com/) ou [Podman](https://podman.io/)** — o Makefile detecta automaticamente qual tá instalado (prioriza `docker`, cai pro `podman` se não achar).
 - `make` — opcional, comandos diretos equivalentes em [Windows](#windows) logo abaixo (útil sem `make` em qualquer SO).
+- **[ngrok](https://ngrok.com/)** — só necessário pra testar o checkout do Mercado Pago localmente (ver seção abaixo). Precisa de conta (free tier serve) com authtoken configurado uma vez: `ngrok config add-authtoken <seu-token>`.
 
 ## Subir o ambiente local
 
@@ -129,6 +130,12 @@ Hooks configurados (`.husky/`):
 ### Testando o checkout do Mercado Pago localmente (ngrok)
 
 O fluxo de pagamento (`PaymentModule`) chama a Preferences API do Mercado Pago, que precisa de uma URL pública (https) tanto pro webhook de confirmação quanto pro `back_url` de retorno do checkout — por isso `PUBLIC_API_URL`/`WEB_URL` apontam pra um túnel [ngrok](https://ngrok.com/) em vez de `localhost` (ver `apps/web/vite.config.ts`, que libera `allowedHosts: [".ngrok-free.app"]` pra isso).
+
+```bash
+make expose   # ngrok start --all --config ngrok.yml
+```
+
+Sobe um único agente ngrok (o free tier só permite uma sessão simultânea) expondo os dois túneis definidos em [`ngrok.yml`](./ngrok.yml): `web` (porta 5173) e `api` (porta 3000). O terminal do ngrok mostra as duas URLs públicas geradas — copia cada uma pro `.env` da `apps/api` (`WEB_URL` e `PUBLIC_API_URL`) antes de subir a API, e deixa o `make expose` rodando na janela. Muda a cada restart do ngrok no free tier, então é preciso atualizar o `.env` de novo quando reiniciar.
 
 **Abra o front pela própria URL do ngrok, não por `localhost`, durante esse teste.** Se você comprar o ingresso acessando `http://localhost:5173`, o Mercado Pago redireciona de volta pra rota de retorno através do domínio do ngrok (`WEB_URL`) — um domínio diferente do `localhost` onde você estava logado. Esse é exatamente o motivo da rota `/checkout/retorno` ser pública (ver `apps/web/src/App.tsx`): o browser não leva o `localStorage`/sessão de um domínio pro outro, então abrir a compra a partir do `localhost` faz parecer que "perdeu o login" ao voltar do pagamento. Começando a sessão já pela URL do ngrok, front e back_url ficam no mesmo domínio o tempo todo e o login não some.
 

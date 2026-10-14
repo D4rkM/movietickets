@@ -6,7 +6,7 @@
 # Fall back to a real `podman` binary when a real `docker` binary isn't found.
 DOCKER := $(shell command -v docker 2>/dev/null || command -v podman 2>/dev/null || echo docker)
 
-.PHONY: help up down up-full down-full install migrate seed studio dev-api dev-web build lint test test-integration
+.PHONY: help up down up-full down-full install migrate seed studio dev-api dev-web expose build lint test test-integration
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-18s\033[0m %s\n", $$1, $$2}'
@@ -40,6 +40,9 @@ dev-api: ## Run apps/api in watch mode
 
 dev-web: ## Run apps/web in dev mode
 	pnpm dev:web
+
+expose: ## Expose local web (5173) + api (3000) via one ngrok agent, for testing the Mercado Pago checkout (needs `ngrok` installed + authenticated — see README)
+	ngrok start --all --config ngrok.yml
 
 build: ## Build all workspace packages
 	pnpm build
