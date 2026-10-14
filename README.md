@@ -126,6 +126,12 @@ Hooks configurados (`.husky/`):
 - **pre-commit**: `gitleaks protect --staged` — só roda se o commit tocar `apps/web/**` ou `apps/api/**`
 - **commit-msg**: `commitlint` — exige [Conventional Commits](https://www.conventionalcommits.org/), título até 73 caracteres
 
+### Testando o checkout do Mercado Pago localmente (ngrok)
+
+O fluxo de pagamento (`PaymentModule`) chama a Preferences API do Mercado Pago, que precisa de uma URL pública (https) tanto pro webhook de confirmação quanto pro `back_url` de retorno do checkout — por isso `PUBLIC_API_URL`/`WEB_URL` apontam pra um túnel [ngrok](https://ngrok.com/) em vez de `localhost` (ver `apps/web/vite.config.ts`, que libera `allowedHosts: [".ngrok-free.app"]` pra isso).
+
+**Abra o front pela própria URL do ngrok, não por `localhost`, durante esse teste.** Se você comprar o ingresso acessando `http://localhost:5173`, o Mercado Pago redireciona de volta pra rota de retorno através do domínio do ngrok (`WEB_URL`) — um domínio diferente do `localhost` onde você estava logado. Esse é exatamente o motivo da rota `/checkout/retorno` ser pública (ver `apps/web/src/App.tsx`): o browser não leva o `localStorage`/sessão de um domínio pro outro, então abrir a compra a partir do `localhost` faz parecer que "perdeu o login" ao voltar do pagamento. Começando a sessão já pela URL do ngrok, front e back_url ficam no mesmo domínio o tempo todo e o login não some.
+
 ## Análise de código (CI)
 
 - **CodeQL** (`.github/workflows/codeql.yml`): SAST, analisa o código do repo (javascript-typescript) atrás de padrão vulnerável. Roda em push/PR pra `main` e semanalmente.

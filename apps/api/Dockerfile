@@ -36,4 +36,12 @@ EXPOSE 3000
 # concurrent instances racing on it, and seed.ts is idempotent — safe to run
 # again on every restart). Don't do this for a multi-instance production
 # deploy — run migrations/seeding as a separate release step instead.
-CMD ["sh", "-c", "node dist/db/migrate.js && node dist/db/seed.js && node dist/main.js"]
+#
+# MERCADOPAGO_ACCESS_TOKEN is checked here, not via compose's `:?required`
+# interpolation: that would've required the var for every `docker compose`
+# invocation touching this file, including infra-only `up -d` with no
+# `--profile full`. ConfigService.getOrThrow (used by mercadopago.providers.ts)
+# only guards against the var being unset, not empty, and compose's `:-`
+# default means it's always set (possibly to ""), so that check alone
+# wouldn't catch a missing token either.
+CMD ["sh", "-c", "if [ -z \"$MERCADOPAGO_ACCESS_TOKEN\" ]; then echo 'MERCADOPAGO_ACCESS_TOKEN not set — export it before starting the api/full profile' >&2; exit 1; fi; node dist/db/migrate.js && node dist/db/seed.js && node dist/main.js"]
