@@ -11,12 +11,70 @@ export const SAMPLE_MOVIE_TITLE = "Vingadores Ultimato";
 const MIN_SESSION_DAYS_AHEAD = 3;
 const MAX_SESSION_DAYS_AHEAD = 7;
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
+const MS_PER_HOUR = 60 * 60 * 1000;
 
 /** Random date 3-7 days out, so the sample session never ages into the past. */
 export function randomFutureSessionDate(): Date {
   const daysAhead =
     MIN_SESSION_DAYS_AHEAD + Math.floor(Math.random() * (MAX_SESSION_DAYS_AHEAD - MIN_SESSION_DAYS_AHEAD + 1));
   return new Date(Date.now() + daysAhead * MS_PER_DAY);
+}
+
+const MIN_CATALOG_SESSION_MS = MS_PER_HOUR;
+const MAX_CATALOG_SESSION_MS = 7 * MS_PER_DAY;
+
+/** Random date 1 hour to 7 days out — wider/closer window than the sample session's, so the catalog demo has some sessions starting soon. */
+export function randomCatalogSessionDate(): Date {
+  const offsetMs = MIN_CATALOG_SESSION_MS + Math.random() * (MAX_CATALOG_SESSION_MS - MIN_CATALOG_SESSION_MS);
+  return new Date(Date.now() + offsetMs);
+}
+
+export const CATALOG_MOVIE_TITLES = [
+  "It: A Coisa",
+  "Ainda Estou Aqui",
+  "Da Magia à Sedução",
+  "Interestelar",
+  "Star Wars: A Vingança dos Sith",
+  "Star Wars: A Ameaça Fantasma",
+  "Verity",
+  "A Empregada",
+  "A Hipótese do Amor",
+  "Caçadores de Estrelas",
+  "Beetlejuice",
+];
+
+const CATALOG_MOVIE_DURATION_MINUTES = 120;
+const CATALOG_ROOM_ROWS = 8;
+const CATALOG_ROOM_SEATS_PER_ROW = 10;
+const CATALOG_SESSION_PRICE_CENTS = 3000;
+
+const CATALOG_STREET_NAMES = [
+  "Rua das Flores",
+  "Av. Paulista",
+  "Rua XV de Novembro",
+  "Av. Brasil",
+  "Rua Sete de Setembro",
+  "Av. Rio Branco",
+  "Rua da Praia",
+  "Av. Atlântica",
+];
+const CATALOG_CITIES = [
+  "São Paulo",
+  "Rio de Janeiro",
+  "Belo Horizonte",
+  "Curitiba",
+  "Porto Alegre",
+  "Recife",
+  "Salvador",
+  "Fortaleza",
+];
+
+/** Random (fake) street address + city, for cinemas created around the catalog demo movies. */
+export function randomCinemaAddress(): { address: string; city: string } {
+  const street = CATALOG_STREET_NAMES[Math.floor(Math.random() * CATALOG_STREET_NAMES.length)];
+  const number = 1 + Math.floor(Math.random() * 2000);
+  const city = CATALOG_CITIES[Math.floor(Math.random() * CATALOG_CITIES.length)];
+  return { address: `${street}, ${number}`, city };
 }
 
 async function main() {
@@ -39,13 +97,71 @@ async function main() {
     .onConflictDoNothing({ target: schema.users.email });
 
   const sessionId = await seedSampleSession(db);
+  await seedCatalogMovies(db);
 
   console.log(`Seed ok. Usuários de teste (senha: "${DEV_PASSWORD}"):`);
   console.log("  admin@movietickets.dev (role: admin)");
   console.log("  cliente@movietickets.dev (role: customer)");
   console.log(`Sessão de teste pra GET /sessions/:id/seats: ${sessionId}`);
+  console.log(`Filmes de catálogo: ${CATALOG_MOVIE_TITLES.length}`);
 
   await client.end();
+}
+
+/**
+ * Creates (or reuses, if already seeded) one movie/cinema/room/session per
+ * title in CATALOG_MOVIE_TITLES, each with its own random address and a
+ * session starting 1 hour to 7 days out — gives the catalog page (and its
+ * city/cinema/date filters) more than the single sample movie to show.
+ */
+export async function seedCatalogMovies(db: PostgresJsDatabase<typeof schema>): Promise<void> {
+  for (const title of CATALOG_MOVIE_TITLES) {
+    const existingMovie = await db.query.movies.findFirst({ where: eq(schema.movies.title, title) });
+    if (existingMovie) {
+      const existingSession = await db.query.sessions.findFirst({
+        where: eq(schema.sessions.movieId, existingMovie.id),
+      });
+      if (existingSession) {
+        // Re-rolled on every run, same reasoning as seedSampleSession: otherwise
+        // the session ages out of the catalog's "future sessions only" filter.
+        await db
+          .update(schema.sessions)
+          .set({ startsAt: randomCatalogSessionDate() })
+          .where(eq(schema.sessions.id, existingSession.id));
+      }
+      continue;
+    }
+
+    const [movie] = await db
+      .insert(schema.movies)
+      .values({ title, durationMinutes: CATALOG_MOVIE_DURATION_MINUTES })
+      .returning();
+
+    const { address, city } = randomCinemaAddress();
+    const [cinema] = await db.insert(schema.cinemas).values({ name: `Cine ${city}`, address, city }).returning();
+
+    const [room] = await db
+      .insert(schema.rooms)
+      .values({ cinemaId: cinema.id, name: "Sala 1", rows: CATALOG_ROOM_ROWS, seatsPerRow: CATALOG_ROOM_SEATS_PER_ROW })
+      .returning();
+
+    await db.insert(schema.seats).values(
+      Array.from({ length: CATALOG_ROOM_ROWS }, (_, rowIndex) =>
+        Array.from({ length: CATALOG_ROOM_SEATS_PER_ROW }, (_, seatIndex) => ({
+          roomId: room.id,
+          rowLabel: String.fromCharCode(65 + rowIndex),
+          seatNumber: seatIndex + 1,
+        })),
+      ).flat(),
+    );
+
+    await db.insert(schema.sessions).values({
+      movieId: movie.id,
+      roomId: room.id,
+      startsAt: randomCatalogSessionDate(),
+      priceCents: CATALOG_SESSION_PRICE_CENTS,
+    });
+  }
 }
 
 /** Creates (or reuses, if already seeded) a movie/cinema/room/seats/session fixture for manual testing. */
