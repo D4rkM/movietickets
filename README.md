@@ -142,6 +142,11 @@ A URL do túnel `api` também precisa chegar no front — senão ele, já servid
 - **`pnpm dev:web` (nativo)**: `apps/web/.env` → `VITE_API_URL=<url-do-túnel-api>`, depois reinicia o `pnpm dev:web`.
 - **`make up-full` (containerizado)**: editar o `.env` não funciona — é dockerignored, invisível dentro da imagem. `export VITE_API_URL=<url-do-túnel-api>` no shell antes de `make up-full` em vez disso (vai como build arg).
 
+O front também precisa saber a URL do túnel `api`, senão continua chamando `http://localhost:3000` direto e o Chrome bloqueia (Private Network Access: origem pública não acessa endereço loopback). `VITE_API_URL` é lida em build-time pelo Vite, então onde ela entra depende de como você sobe o front:
+
+- **`pnpm dev:web` (nativo)**: `apps/web/.env` → `VITE_API_URL=<url-do-túnel-api>`, depois reinicia o `pnpm dev:web` (não tem hot-reload pra env var).
+- **`make up-full` (containerizado)**: `apps/web/.env` é ignorado no build (`.dockerignore` exclui `.env` de todas as imagens, de propósito). Em vez disso: `export VITE_API_URL=<url-do-túnel-api>` no shell antes de `make up-full` — vai como build arg pro `vite build` dentro do container (ver `docker-compose.yml`'s `web.build.args` e `apps/web/Dockerfile`).
+
 **Abra o front pela própria URL do ngrok, não por `localhost`, durante esse teste.** Se você comprar o ingresso acessando `http://localhost:5173`, o Mercado Pago redireciona de volta pra rota de retorno através do domínio do ngrok (`WEB_URL`) — um domínio diferente do `localhost` onde você estava logado. Esse é exatamente o motivo da rota `/checkout/retorno` ser pública (ver `apps/web/src/App.tsx`): o browser não leva o `localStorage`/sessão de um domínio pro outro, então abrir a compra a partir do `localhost` faz parecer que "perdeu o login" ao voltar do pagamento. Começando a sessão já pela URL do ngrok, front e back_url ficam no mesmo domínio o tempo todo e o login não some.
 
 O free tier do ngrok mostra uma página intermediária ("Visit Site") na primeira navegação pra cada túnel — isso é esperado, só clicar pra seguir. As chamadas que o front faz pra API (fetch/WebSocket) já mandam o header `ngrok-skip-browser-warning` automaticamente (`apiFetch` em `apps/web/src/lib/api-client.ts`), então essas não ficam travadas atrás dessa página.

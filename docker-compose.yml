@@ -105,16 +105,21 @@ services:
 
   # Published on host port 5173 (same as `pnpm dev:web`'s Vite default) so it
   # lines up with the API's CORS_ORIGIN default (http://localhost:5173) with
-  # no extra config. `VITE_API_URL` isn't set here on purpose: it's a
-  # build-time-only Vite env var, and the app's built-in default
-  # (http://localhost:3000) already matches the api service's published port
-  # — the browser (on the host) talks to both containers via their published
-  # ports, not the compose-internal network.
+  # no extra config — the browser (on the host) talks to both containers via
+  # their published ports, not the compose-internal network.
   web:
     profiles: ["full"]
     build:
       context: .
       dockerfile: apps/web/Dockerfile
+      args:
+        # VITE_API_URL is a build-time-only Vite env var — `.env` files are
+        # dockerignored on purpose (don't bake env files into images), so
+        # `apps/web/.env` is invisible in here and must come in as a build
+        # arg instead. Defaults to the api service's published port for
+        # plain `make up-full`; export VITE_API_URL (e.g. to the api's ngrok
+        # tunnel URL) before `--build` to test through ngrok.
+        VITE_API_URL: ${VITE_API_URL:-http://localhost:3000}
     restart: unless-stopped
     depends_on:
       - api
