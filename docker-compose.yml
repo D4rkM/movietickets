@@ -56,6 +56,16 @@ services:
         condition: service_healthy
       mailpit:
         condition: service_started
+    # Loads apps/api/.env (same file `pnpm dev:api` uses) into the container's
+    # runtime environment — this is a compose-level, runtime-only mechanism
+    # (unlike build ARGs, it never touches the image itself, so it doesn't
+    # conflict with .dockerignore excluding .env from the build context). Only
+    # fills in keys not already set below: MERCADOPAGO_ACCESS_TOKEN comes from
+    # here, while every explicit `environment` entry (DATABASE_URL, WEB_URL,
+    # etc.) keeps overriding apps/api/.env's host-oriented values (localhost,
+    # ngrok URLs meant for the browser) with the container-correct ones.
+    env_file:
+      - apps/api/.env
     environment:
       DATABASE_URL: postgres://movietickets:movietickets@postgres:5432/movietickets
       VALKEY_URL: redis://valkey:6379
@@ -66,16 +76,6 @@ services:
       CORS_ORIGIN: http://localhost:5173
       WEB_URL: http://localhost:5173
       PUBLIC_API_URL: http://localhost:3000
-      # No `:?required` default here on purpose: compose interpolates every
-      # service's environment up front regardless of profile, so a required
-      # var on this (full-profile-only) service used to block even `docker
-      # compose up -d` with no profile flag at all (infra-only, day-to-day
-      # dev). The api image's entrypoint checks for it instead — see
-      # apps/api/Dockerfile — so only starting this service actually needs
-      # it set. Export it in your shell (or a root .env, gitignored) before
-      # `docker compose --profile full up`; get a sandbox value from the
-      # Mercado Pago developer dashboard.
-      MERCADOPAGO_ACCESS_TOKEN: ${MERCADOPAGO_ACCESS_TOKEN:-}
       # "mailpit", not "localhost" — this container doesn't share the host's
       # network namespace, so it reaches Mailpit through compose's own DNS.
       SMTP_HOST: mailpit
