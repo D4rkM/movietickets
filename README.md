@@ -129,29 +129,37 @@ Hooks configurados (`.husky/`):
 
 ### Testando o checkout do Mercado Pago localmente (ngrok)
 
-O fluxo de pagamento (`PaymentModule`) chama a Preferences API do Mercado Pago, que precisa de uma URL pública (https) tanto pro webhook de confirmação quanto pro `back_url` de retorno do checkout — por isso `PUBLIC_API_URL`/`WEB_URL` apontam pra um túnel [ngrok](https://ngrok.com/) em vez de `localhost` (ver `apps/web/vite.config.ts`, que libera `allowedHosts: [".ngrok-free.app"]` pra isso).
+O fluxo de pagamento (`PaymentModule`) chama a Preferences API do Mercado Pago, que precisa de uma URL pública (https) tanto pro webhook de confirmação (`notification_url`) quanto pro `back_url` de retorno do checkout — por isso essa seção usa um túnel [ngrok](https://ngrok.com/) em vez de `localhost`. O webhook é server-to-server: o Mercado Pago chama direto o `PUBLIC_API_URL` que estava configurado **no momento em que o checkout foi criado** — se o túnel cair/mudar depois disso, aquele checkout específico nunca recebe o callback, precisa criar um novo.
 
-```bash
-make expose   # ngrok start --all --config ngrok.yml
-```
+Ordem pra testar (repete a partir do passo 2 toda vez que reiniciar o `make expose`, já que o free tier gera URLs novas a cada sessão):
 
-Sobe um único agente ngrok (o free tier só permite uma sessão simultânea) expondo os dois túneis definidos em [`ngrok.yml`](./ngrok.yml): `web` (porta 5173) e `api` (porta 3000). O terminal do ngrok mostra as duas URLs públicas geradas — copia cada uma pro `.env` da `apps/api` (`WEB_URL` e `PUBLIC_API_URL`) antes de subir a API, e deixa o `make expose` rodando na janela. Muda a cada restart do ngrok no free tier, então é preciso atualizar os `.env` de novo quando reiniciar.
+1. **Sobe o túnel**, numa janela que você deixa aberta:
+   ```bash
+   make expose   # ngrok start --all --config ngrok.yml
+   ```
+   Um único agente ngrok (free tier só permite uma sessão simultânea) expondo os dois túneis de [`ngrok.yml`](./ngrok.yml): `web` (porta 5173) e `api` (porta 3000). Copia as duas URLs que aparecem no terminal.
 
-A URL do túnel `api` também precisa chegar no front — senão ele, já servido pela URL pública do `web`, continua chamando `http://localhost:3000` direto, e o Chrome bloqueia isso (Private Network Access: uma origem pública não pode acessar um endereço loopback). `VITE_API_URL` é lida em build-time pelo Vite, não tem hot-reload, e **onde** ela entra depende de como você sobe o front:
+2. **Atualiza `apps/api/.env`** com a URL do túnel `api`:
+   ```
+   WEB_URL=<url-do-túnel-web>
+   PUBLIC_API_URL=<url-do-túnel-api>
+   CORS_ORIGIN=http://localhost:5173,<url-do-túnel-web>
+   ```
+   `CORS_ORIGIN` precisa incluir a URL do `web` explicitamente — sem isso a API rejeita as chamadas cross-origin do front hospedado no ngrok (ver `apps/api/src/cors-options.ts`).
 
-- **`pnpm dev:web` (nativo)**: `apps/web/.env` → `VITE_API_URL=<url-do-túnel-api>`, depois reinicia o `pnpm dev:web`.
-- **`make up-full` (containerizado)**: editar o `.env` não funciona — é dockerignored, invisível dentro da imagem. `export VITE_API_URL=<url-do-túnel-api>` no shell antes de `make up-full` em vez disso (vai como build arg).
+3. **Manda a URL do túnel `api` pro front também** — senão ele, já servido pela URL pública do `web`, continua chamando `http://localhost:3000` direto, e o Chrome bloqueia isso (Private Network Access: origem pública não acessa endereço loopback). `VITE_API_URL` é lida em build-time pelo Vite (não tem hot-reload), e **onde** ela entra depende de como você sobe o front:
+   - **`pnpm dev:web` (nativo)**: `apps/web/.env` → `VITE_API_URL=<url-do-túnel-api>`.
+   - **`make up-full` (containerizado)**: `apps/web/.env` é ignorado no build (`.dockerignore` exclui `.env` de todas as imagens, de propósito) — `export VITE_API_URL=<url-do-túnel-api>` no shell antes do próximo passo em vez disso (vai como build arg pro `vite build` dentro do container; ver `docker-compose.yml`'s `web.build.args` e `apps/web/Dockerfile`).
 
-O front também precisa saber a URL do túnel `api`, senão continua chamando `http://localhost:3000` direto e o Chrome bloqueia (Private Network Access: origem pública não acessa endereço loopback). `VITE_API_URL` é lida em build-time pelo Vite, então onde ela entra depende de como você sobe o front:
+4. **Reinicia/rebuilda pra aplicar**:
+   - **nativo**: reinicia `pnpm dev:api` e `pnpm dev:web` (nenhum dos dois tem hot-reload pra essas env vars).
+   - **containerizado**: `docker compose --profile full up -d --build` (o `--build` é essencial pro `web` pegar o `VITE_API_URL` novo; o `api` só precisa recriar, mas rebuildar os dois junto não tem custo real).
 
-- **`pnpm dev:web` (nativo)**: `apps/web/.env` → `VITE_API_URL=<url-do-túnel-api>`, depois reinicia o `pnpm dev:web` (não tem hot-reload pra env var).
-- **`make up-full` (containerizado)**: `apps/web/.env` é ignorado no build (`.dockerignore` exclui `.env` de todas as imagens, de propósito). Em vez disso: `export VITE_API_URL=<url-do-túnel-api>` no shell antes de `make up-full` — vai como build arg pro `vite build` dentro do container (ver `docker-compose.yml`'s `web.build.args` e `apps/web/Dockerfile`).
+5. **Abre o front pela própria URL do ngrok do `web`, não por `localhost`.** Se você comprar o ingresso acessando `http://localhost:5173`, o Mercado Pago redireciona de volta através do domínio do ngrok (`WEB_URL`) — um domínio diferente do `localhost` onde você estava logado. Esse é exatamente o motivo da rota `/checkout/retorno` ser pública (ver `apps/web/src/App.tsx`): o browser não leva `localStorage`/sessão de um domínio pro outro. Começando a sessão já pela URL do ngrok, front e back_url ficam no mesmo domínio o tempo todo e o login não some.
 
-**Abra o front pela própria URL do ngrok, não por `localhost`, durante esse teste.** Se você comprar o ingresso acessando `http://localhost:5173`, o Mercado Pago redireciona de volta pra rota de retorno através do domínio do ngrok (`WEB_URL`) — um domínio diferente do `localhost` onde você estava logado. Esse é exatamente o motivo da rota `/checkout/retorno` ser pública (ver `apps/web/src/App.tsx`): o browser não leva o `localStorage`/sessão de um domínio pro outro, então abrir a compra a partir do `localhost` faz parecer que "perdeu o login" ao voltar do pagamento. Começando a sessão já pela URL do ngrok, front e back_url ficam no mesmo domínio o tempo todo e o login não some.
+6. **Faz uma compra nova** — não reusa um booking/checkout criado antes do passo 2, porque o webhook URL dele já ficou fixado com a URL antiga.
 
-O free tier do ngrok mostra uma página intermediária ("Visit Site") na primeira navegação pra cada túnel — isso é esperado, só clicar pra seguir. As chamadas que o front faz pra API (fetch/WebSocket) já mandam o header `ngrok-skip-browser-warning` automaticamente (`apiFetch` em `apps/web/src/lib/api-client.ts`), então essas não ficam travadas atrás dessa página.
-
-Pra não precisar clicar em "Visit Site" a cada navegação manual no browser (a página intermediária só some com o header `ngrok-skip-browser-warning`, um User-Agent não padrão, ou conta paga do ngrok — nenhum dos quais a address bar manda sozinha):
+O free tier do ngrok mostra uma página intermediária ("Visit Site") na primeira navegação pra cada túnel — isso é esperado, só clicar pra seguir. As chamadas que o front faz pra API (fetch/WebSocket) já mandam o header `ngrok-skip-browser-warning` automaticamente (`apiFetch` em `apps/web/src/lib/api-client.ts`), então essas não ficam travadas atrás dessa página. Pra não precisar clicar em "Visit Site" a cada navegação manual no browser também (a página intermediária só some com esse mesmo header, um User-Agent não padrão, ou conta paga do ngrok — nenhum dos quais a address bar manda sozinha):
 
 - **DevTools (sem extensão)**: F12 → menu ⋮ → More tools → **Network conditions** → desmarca "Use browser default" em User agent → digita qualquer string (ex: `movietickets-dev`). Vale só pra aba com o DevTools aberto.
 - **Extensão de header** (ex: [ModHeader](https://chromewebstore.google.com/detail/modheader/idgpnmonknjnojddfkpgkljpfnnfcklj)): configura pra mandar `ngrok-skip-browser-warning: true` em toda requisição — mais prático testando em várias abas sem reabrir o DevTools.
