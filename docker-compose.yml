@@ -59,25 +59,27 @@ services:
     # Loads apps/api/.env (same file `pnpm dev:api` uses) into the container's
     # runtime environment — this is a compose-level, runtime-only mechanism
     # (unlike build ARGs, it never touches the image itself, so it doesn't
-    # conflict with .dockerignore excluding .env from the build context). Only
-    # fills in keys not already set below: MERCADOPAGO_ACCESS_TOKEN comes from
-    # here, while every explicit `environment` entry (DATABASE_URL, WEB_URL,
-    # etc.) keeps overriding apps/api/.env's host-oriented values (localhost,
-    # ngrok URLs meant for the browser) with the container-correct ones.
+    # conflict with .dockerignore excluding .env from the build context).
+    # CORS_ORIGIN/WEB_URL/PUBLIC_API_URL deliberately come from here, not a
+    # hardcoded `environment` entry below: they need to be the ngrok tunnel
+    # URLs while testing the Mercado Pago flow (see README), and a hardcoded
+    # `environment` value always wins over env_file for the same key — which
+    # silently broke that exact flow once (the webhook's notification_url was
+    # always "http://localhost:3000", unreachable from Mercado Pago, no
+    # matter what apps/api/.env said).
     env_file:
       - apps/api/.env
     environment:
+      # DATABASE_URL/VALKEY_URL/SMTP_HOST genuinely must differ from
+      # apps/api/.env's host-oriented values (this container doesn't share
+      # the host's network namespace), so these three stay hardcoded and
+      # always override env_file.
       DATABASE_URL: postgres://movietickets:movietickets@postgres:5432/movietickets
       VALKEY_URL: redis://valkey:6379
       JWT_SECRET: dev-secret
       JWT_EXPIRES_IN: 1h
       PORT: 3000
       LOG_LEVEL: info
-      CORS_ORIGIN: http://localhost:5173
-      WEB_URL: http://localhost:5173
-      PUBLIC_API_URL: http://localhost:3000
-      # "mailpit", not "localhost" — this container doesn't share the host's
-      # network namespace, so it reaches Mailpit through compose's own DNS.
       SMTP_HOST: mailpit
       SMTP_PORT: 1025
       MAIL_FROM: MovieTickets <no-reply@movietickets.local>
