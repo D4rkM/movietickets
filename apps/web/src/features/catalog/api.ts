@@ -1,4 +1,4 @@
-import { API_URL } from "../../lib/api-client";
+import { API_URL, apiFetch } from "../../lib/api-client";
 import type { CatalogMovie } from "./types";
 
 export interface CatalogFilters {
@@ -14,7 +14,7 @@ export async function listMovies(filters: CatalogFilters = {}): Promise<CatalogM
   if (filters.date) params.set("date", filters.date);
   const query = params.toString();
 
-  const response = await fetch(`${API_URL}/movies${query ? `?${query}` : ""}`);
+  const response = await apiFetch(`${API_URL}/movies${query ? `?${query}` : ""}`);
 
   if (!response.ok) {
     throw new Error(`Falha ao carregar o catálogo (status ${response.status})`);

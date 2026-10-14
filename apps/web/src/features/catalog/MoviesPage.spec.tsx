@@ -142,7 +142,7 @@ describe("MoviesPage (integration)", () => {
       // THEN only the movie with a Recife session remains
       await screen.findByText("Dune");
       expect(screen.queryByText("Oppenheimer")).not.toBeInTheDocument();
-      expect(fetch).toHaveBeenCalledWith(expect.stringContaining("city=Recife"));
+      expect(fetch).toHaveBeenCalledWith(expect.stringContaining("city=Recife"), expect.anything());
     });
 
     it("should reset the cinema selection when the city changes", async () => {

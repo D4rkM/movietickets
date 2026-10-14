@@ -1,5 +1,19 @@
 export const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:3000";
 
+/**
+ * ngrok's free tier serves an HTML interstitial ("Visit Site") instead of the
+ * real response on every request without this header — including fetch/XHR,
+ * not just browser navigation — which breaks response.json() whenever API_URL
+ * points at an ngrok tunnel (see README's ngrok section). No-op against a
+ * direct backend: NestJS/Fastify ignore headers they don't recognize.
+ */
+export function apiFetch(url: string, init: RequestInit = {}): Promise<Response> {
+  return fetch(url, {
+    ...init,
+    headers: { "ngrok-skip-browser-warning": "true", ...init.headers },
+  });
+}
+
 export const ACCESS_TOKEN_STORAGE_KEY = "movietickets:accessToken";
 export const USER_STORAGE_KEY = "movietickets:user";
 

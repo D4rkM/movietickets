@@ -1,8 +1,8 @@
-import { API_URL } from "../../lib/api-client";
+import { API_URL, apiFetch } from "../../lib/api-client";
 import type { AuthUser, LoginResponse } from "./types";
 
 export async function login(email: string, password: string): Promise<LoginResponse> {
-  const response = await fetch(`${API_URL}/auth/login`, {
+  const response = await apiFetch(`${API_URL}/auth/login`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ email, password }),
@@ -19,7 +19,7 @@ export async function login(email: string, password: string): Promise<LoginRespo
 
 /** Only creates the account — no token here, register and login are separate steps. */
 export async function register(name: string, email: string, password: string): Promise<AuthUser> {
-  const response = await fetch(`${API_URL}/auth/register`, {
+  const response = await apiFetch(`${API_URL}/auth/register`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ name, email, password }),
