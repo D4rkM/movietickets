@@ -81,7 +81,7 @@ describe("SeatMap (integration)", () => {
     // THEN the request targets that session with the token as a bearer header
     expect(fetch).toHaveBeenCalledWith(
       expect.stringContaining("/sessions/session-42/seats"),
-      expect.objectContaining({ headers: { Authorization: "Bearer secret-token" } }),
+      expect.objectContaining({ headers: expect.objectContaining({ Authorization: "Bearer secret-token" }) }),
     );
   });
 });

@@ -34,7 +34,13 @@ export function useSeatingSocket(
   }, [onUpdate]);
 
   useEffect(() => {
-    const socket = io(`${API_URL}/seating`, { auth: { token: accessToken } });
+    // extraHeaders only reaches the initial polling handshake (browsers don't
+    // let WebSocket set custom headers), but that's enough — ngrok's free-tier
+    // interstitial would otherwise reject the handshake before it can upgrade.
+    const socket = io(`${API_URL}/seating`, {
+      auth: { token: accessToken },
+      extraHeaders: { "ngrok-skip-browser-warning": "true" },
+    });
 
     socket.on("connect", () => {
       socket.emit("join", sessionId);

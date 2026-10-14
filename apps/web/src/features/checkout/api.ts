@@ -1,4 +1,4 @@
-import { API_URL, assertAuthorized } from "../../lib/api-client";
+import { API_URL, apiFetch, assertAuthorized } from "../../lib/api-client";
 
 export interface CheckoutResult {
   checkoutUrl: string;
@@ -6,7 +6,7 @@ export interface CheckoutResult {
 
 /** Creates a Mercado Pago checkout preference for a pending booking and returns its hosted payment URL. */
 export async function createCheckout(bookingId: string, accessToken: string): Promise<CheckoutResult> {
-  const response = await fetch(`${API_URL}/bookings/${bookingId}/checkout`, {
+  const response = await apiFetch(`${API_URL}/bookings/${bookingId}/checkout`, {
     method: "POST",
     headers: { Authorization: `Bearer ${accessToken}` },
   });

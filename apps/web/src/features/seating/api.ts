@@ -1,8 +1,8 @@
-import { API_URL, assertAuthorized } from "../../lib/api-client";
+import { API_URL, apiFetch, assertAuthorized } from "../../lib/api-client";
 import type { SeatMapResponse, TicketType } from "./types";
 
 export async function getSeatMap(sessionId: string, accessToken: string): Promise<SeatMapResponse> {
-  const response = await fetch(`${API_URL}/sessions/${sessionId}/seats`, {
+  const response = await apiFetch(`${API_URL}/sessions/${sessionId}/seats`, {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
   assertAuthorized(response);
@@ -31,7 +31,7 @@ export async function bookSeats(
   seats: SeatBookingChoice[],
   accessToken: string,
 ): Promise<{ bookingId: string }> {
-  const response = await fetch(`${API_URL}/sessions/${sessionId}/book`, {
+  const response = await apiFetch(`${API_URL}/sessions/${sessionId}/book`, {
     method: "POST",
     headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
     body: JSON.stringify({ seats }),
@@ -60,7 +60,7 @@ export interface HoldSeatResult {
 }
 
 export async function holdSeat(sessionId: string, seatId: string, accessToken: string): Promise<HoldSeatResult> {
-  const response = await fetch(`${API_URL}/sessions/${sessionId}/seats/${seatId}/hold`, {
+  const response = await apiFetch(`${API_URL}/sessions/${sessionId}/seats/${seatId}/hold`, {
     method: "POST",
     headers: { Authorization: `Bearer ${accessToken}` },
   });
@@ -77,7 +77,7 @@ export async function holdSeat(sessionId: string, seatId: string, accessToken: s
 }
 
 export async function releaseSeat(sessionId: string, seatId: string, accessToken: string): Promise<void> {
-  const response = await fetch(`${API_URL}/sessions/${sessionId}/seats/${seatId}/hold`, {
+  const response = await apiFetch(`${API_URL}/sessions/${sessionId}/seats/${seatId}/hold`, {
     method: "DELETE",
     headers: { Authorization: `Bearer ${accessToken}` },
   });
@@ -90,7 +90,7 @@ export async function releaseSeat(sessionId: string, seatId: string, accessToken
 
 /** Releases every seat the user is currently holding in this session — used when they back out of checkout. */
 export async function releaseAllHolds(sessionId: string, accessToken: string): Promise<void> {
-  const response = await fetch(`${API_URL}/sessions/${sessionId}/holds`, {
+  const response = await apiFetch(`${API_URL}/sessions/${sessionId}/holds`, {
     method: "DELETE",
     headers: { Authorization: `Bearer ${accessToken}` },
   });

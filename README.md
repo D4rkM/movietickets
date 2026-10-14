@@ -139,6 +139,8 @@ Sobe um único agente ngrok (o free tier só permite uma sessão simultânea) ex
 
 **Abra o front pela própria URL do ngrok, não por `localhost`, durante esse teste.** Se você comprar o ingresso acessando `http://localhost:5173`, o Mercado Pago redireciona de volta pra rota de retorno através do domínio do ngrok (`WEB_URL`) — um domínio diferente do `localhost` onde você estava logado. Esse é exatamente o motivo da rota `/checkout/retorno` ser pública (ver `apps/web/src/App.tsx`): o browser não leva o `localStorage`/sessão de um domínio pro outro, então abrir a compra a partir do `localhost` faz parecer que "perdeu o login" ao voltar do pagamento. Começando a sessão já pela URL do ngrok, front e back_url ficam no mesmo domínio o tempo todo e o login não some.
 
+O free tier do ngrok mostra uma página intermediária ("Visit Site") na primeira navegação pra cada túnel — isso é esperado, só clicar pra seguir. As chamadas que o front faz pra API (fetch/WebSocket) já mandam o header `ngrok-skip-browser-warning` automaticamente (`apiFetch` em `apps/web/src/lib/api-client.ts`), então essas não ficam travadas atrás dessa página.
+
 ## Análise de código (CI)
 
 - **CodeQL** (`.github/workflows/codeql.yml`): SAST, analisa o código do repo (javascript-typescript) atrás de padrão vulnerável. Roda em push/PR pra `main` e semanalmente.
