@@ -93,6 +93,9 @@ async function main() {
     .values([
       { name: "Admin", email: "admin@movietickets.dev", passwordHash, role: "admin" },
       { name: "Cliente", email: "cliente@movietickets.dev", passwordHash, role: "customer" },
+      // Second customer, for manually testing WebSocket seat-map broadcasts
+      // and concurrent seat holds — needs two different logged-in users.
+      { name: "Cliente 2", email: "cliente2@movietickets.dev", passwordHash, role: "customer" },
     ])
     .onConflictDoNothing({ target: schema.users.email });
 
@@ -102,6 +105,7 @@ async function main() {
   console.log(`Seed ok. Usuários de teste (senha: "${DEV_PASSWORD}"):`);
   console.log("  admin@movietickets.dev (role: admin)");
   console.log("  cliente@movietickets.dev (role: customer)");
+  console.log("  cliente2@movietickets.dev (role: customer)");
   console.log(`Sessão de teste pra GET /sessions/:id/seats: ${sessionId}`);
   console.log(`Filmes de catálogo: ${CATALOG_MOVIE_TITLES.length}`);
 
