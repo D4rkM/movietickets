@@ -122,10 +122,12 @@ Definição completa de colunas, tipos, PK/FK e a tabela de junção `booking_se
 - Sem necessidade de UI sofisticada — formulários simples, protegido por role admin
 - **Status: não iniciado**, sem entrega planejada ainda
 
-### 6. Notificação por e-mail
+### 6. Notificação por e-mail (milestone AC3)
 - Confirmação de compra por e-mail quando o `Booking` é confirmado
+- Envio assíncrono por worker no back: a confirmação grava uma linha em `notifications` na mesma transação; o worker reivindica com `FOR UPDATE SKIP LOCKED`, envia via SMTP e registra `sent` / `failed` com retry e backoff. Garantia at-least-once, com dedup por `(type, booking_id)`
 - Dev local via Mailpit (ver seção Stack) — sem depender de provedor real
-- **Status: não iniciado, AC2**
+- Spec: `docs/flows/notification/spec.md`
+- **Status: back em progresso (envio síncrono existente será substituído pelo worker); front não aplica**
 
 ## Arquitetura de módulos (NestJS)
 
@@ -135,7 +137,7 @@ Definição completa de colunas, tipos, PK/FK e a tabela de junção `booking_se
 - `PaymentModule` — integração Mercado Pago sandbox, webhook handler
 - `AuthModule` — login/cadastro, JWT
 - `AdminModule` — CRUD filmes/salas/sessões (reusa services do CatalogModule onde fizer sentido)
-- `NotificationModule` — envio de e-mail de confirmação de compra (`nodemailer`, Mailpit em dev), disparado pelo `BookingModule` na confirmação
+- `NotificationModule` — enfileira (tabela `notifications`, mesma transação da confirmação) e envia de forma assíncrona via worker (`nodemailer`, Mailpit em dev), com registro de status, retry e backoff
 
 ## Verificação end-to-end
 
