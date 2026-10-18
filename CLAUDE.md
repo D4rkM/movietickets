@@ -6,6 +6,13 @@ Referência de decisões de arquitetura e stack: `docs/planning.md`. Diagramas m
 
 Esse arquivo é a referência única de regras pra qualquer agente de IA no repo. `AGENTS.md` aponta pra cá — existe só pra ferramentas (Codex, Cursor, Aider etc.) que procuram esse nome por padrão em vez de `CLAUDE.md`.
 
+## Regra permanente: spec-driven development (SDD manual)
+
+Toda feature nova começa com uma spec escrita antes do código: `docs/flows/<feature>/spec.md`, com critérios de aceitação numerados (`AC1`, `AC2`, ...). Sem framework dedicado (spec-kit etc.) — segue a convenção manual já existente em `docs/flows/<feature>/` (mesma pasta de `sequence.md`/`class.md`).
+
+- Mapeamento é só por feature/spec — spec não referencia card de board (Notion/Jira/etc.) por nome ou ID. O card aponta pra spec, nunca o contrário.
+- Teste de integração/e2e que valida uma AC referencia o número dela no título do `it` (ex: `AC2`), pra regressão na esteira apontar direto pra regra de negócio quebrada.
+
 ## Regra permanente: testes
 
 Toda feature nova precisa vir com teste unitário. Se envolver fluxo entre camadas (API+banco, API+cache/Valkey, seat hold/booking), precisa também de teste de integração. Não considerar uma feature pronta sem isso — sem exceção, mesmo pra mudanças pequenas.
@@ -15,9 +22,10 @@ Toda feature nova precisa vir com teste unitário. Se envolver fluxo entre camad
 
 ### Padrão de escrita dos testes
 
-- Nome do `it`: sempre `it("should ...")`, descrevendo o comportamento esperado.
-- **Teste unitário**: comentários 3A dentro do corpo — `// ARRANGE`, `// ACT`, `// ASSERT`. Testa uma função/classe isolada, faz sentido pensar em passos.
-- **Teste de integração/e2e**: comentários Given/When/Then — `// GIVEN`, `// WHEN`, `// THEN`. Testa um comportamento fim a fim (dado um estado, quando uma ação ocorre, então tal resultado), mais natural que 3A pra esse tipo de teste.
+- **Teste unitário**: nome do `it` sempre em inglês, `it("should ...")`, descrevendo o comportamento esperado. Comentários 3A dentro do corpo — `// ARRANGE`, `// ACT`, `// ASSERT`. Testa uma função/classe isolada, faz sentido pensar em passos. `it.each` é bem-vindo aqui pra variações de input/output da mesma função.
+- **Teste de integração/e2e**: nome do `it` em português, descrevendo a regra de negócio da spec (ex: `it("AC2: deve bloquear o segundo usuário de segurar um assento já ocupado")`) — não `"should ..."` em inglês. Objetivo é o teste servir de documentação viva, legível por quem não lê código (PO, time de produto). Comentários Given/When/Then — `// GIVEN`, `// WHEN`, `// THEN`. Testa um comportamento fim a fim (dado um estado, quando uma ação ocorre, então tal resultado), mais natural que 3A pra esse tipo de teste.
+  - **Sem `it.each`** nesse nível, mesmo que fique repetitivo — parametrizar esconde qual regra especificamente quebrou quando a esteira falha, e complica o helper de suporte com condicionais pra cada variação. Um `it` declarativo por cenário.
+  - Lógica repetitiva de setup/chamada/asserção (ex: montar request, bater no Supertest, checar shape de resposta) fica isolada em helpers (`test/helpers/*.ts`) — o corpo do `it` só orquestra chamadas de helper com nomes que leem como a spec, não `supertest` cru.
 
 ## Regra permanente: comentários em código
 
