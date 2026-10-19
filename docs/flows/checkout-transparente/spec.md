@@ -30,6 +30,7 @@ Hoje o pagamento usa Checkout Pro: o back cria uma Preference, o front redirecio
 - **AC7**: o webhook continua re-buscando o pagamento na API e confirma o booking de forma idempotente. Um webhook atrasado de tentativa rejeitada não libera o hold de uma tentativa aprovada.
 - **AC8**: o fluxo de Preference deixa de ser usado no cartão: sem `back_urls`, `auto_return` nem `init_point`. A rota `/checkout/retorno` não é mais o destino do cartão.
 - **AC9**: booking de outro usuário retorna 404; booking que não está `pending` retorna 409 (mesmo comportamento atual).
+- **AC10**: toda mudança de estado do fluxo de pagamento grava uma linha em `payment_events` na mesma transação da mudança. Reconstituir a sequência de uma tentativa a partir de `payment_events` mostra o histórico completo, incluindo o webhook recebido e o `status_detail` do MP.
 
 ## Decisões desta spec (pra revisar)
 
@@ -39,7 +40,21 @@ Hoje o pagamento usa Checkout Pro: o back cria uma Preference, o front redirecio
 
 ## Modelo de dados (impacto)
 
-- Tabela `payments`: sem mudança de schema nesta spec. Continua com upsert por `bookingId` e guarda `externalPaymentId`, `status`, `amountCents`.
+- Tabela `payments`: sem mudança de schema nesta spec. Continua com upsert por `bookingId` e guarda `externalPaymentId`, `status`, `amountCents`. Estado atual; não é reconstruído por replay.
+- Tabela nova `payment_events` (append-only, sem update nem delete):
+
+| Coluna | Tipo | Notas |
+|---|---|---|
+| `id` | uuid, PK | |
+| `booking_id` | uuid, FK `bookings.id` | |
+| `attempt_id` | uuid | identifica a tentativa; é a chave de idempotência enviada ao MP |
+| `type` | text | `attempt_created`, `mp_request_sent`, `mp_response`, `webhook_received`, `booking_confirmed`, `hold_released` |
+| `payload` | jsonb | dados do evento (ex.: `status`, `status_detail`, `payment_id` do MP). Sem dados de cartão |
+| `created_at` | timestamptz | |
+
+- Regra: cada evento é gravado na mesma transação que muda o estado correspondente (`payments`, `bookings`, hold). Se a transação der rollback, o evento também some.
+- Índice em `(booking_id, created_at)` pra leitura do histórico.
+- Não é event sourcing: estado atual continua nas tabelas; `payment_events` é o histórico/auditoria. Está dentro da regra "CQRS light, sem event store" do `CLAUDE.md`.
 - Configuração: nova variável de front com a public key do Mercado Pago (`VITE_MP_PUBLIC_KEY`). Access token continua só no back.
 
 ## Rastreabilidade com testes
@@ -54,3 +69,4 @@ Cada AC vira pelo menos um teste com o número da AC no título do `it`, em port
 - AC7 → teste de integração do webhook: `rejected` atrasado não libera hold de booking aprovado; redelivery é idempotente.
 - AC8 → teste de integração: nenhuma chamada a `preferences` no fluxo de cartão.
 - AC9 → testes de integração de ownership e status.
+- AC10 → teste de integração: após aprovação com webhook, a sequência de `payment_events` da tentativa contém `attempt_created`, `mp_request_sent`, `mp_response`, `webhook_received` e `booking_confirmed` nessa ordem; falha no meio da transação não deixa evento órfão.

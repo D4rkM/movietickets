@@ -109,6 +109,7 @@ Definição completa de colunas, tipos, PK/FK e a tabela de junção `booking_se
 - Pagamento mockado (sem gateway real), reserva atômica multi-assento numa transação só — **implementado**
 - Checkout Transparente (Card Payment Brick no front, `POST /bookings/:id/payments` no back, Payments API direta com `X-Idempotency-Key`) — **migração em andamento, milestone AC3**. Spec: `docs/flows/checkout-transparente/spec.md`. Substitui o Checkout Pro (Preferences API / `init_point`), que sai junto com `back_urls`/`auto_return`/`/checkout/retorno` pro cartão. Pix fica fora desta etapa
 - Decisão registrada na spec: rejeição não libera hold (usuário pode tentar outro cartão); liberação fica com timeout do hold ou cancelamento
+- Histórico do pagamento: tabela append-only `payment_events` gravada na mesma transação de cada mudança de estado (auditoria, sem event sourcing). Dentro da regra "CQRS light, sem event store"
 - Webhook de confirmação de pagamento → re-busca o pagamento na API do MP, atualiza `Booking` pra `confirmed` (idempotente) e grava `payments` — **implementado no back (sandbox)**. Ambiente local precisa de URL pública (tunnel) pra o MP conseguir chamar o webhook
 - Falha/timeout de pagamento → libera hold do assento — depende do hold existir (feature #1)
 
