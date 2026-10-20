@@ -96,6 +96,7 @@ Definição completa de colunas, tipos, PK/FK e a tabela de junção `booking_se
 - Mapa visual de assentos por sessão (livre / ocupado / segurado-por-outro-usuário / selecionado-por-mim) — **implementado**
 - Ao confirmar pagamento: transação Postgres grava assento como ocupado definitivamente (respeitando unique constraint) — **implementado**
 - Ao clicar assento: cria hold no Valkey (`SETNX` com TTL) — evita dois usuários segurando mesmo assento — **implementado no back**; front pendente, AC2
+- Visitante deslogado também segura assento: hold com identidade de convidado (token curto), mesma regra do usuário logado. No login, os holds são transferidos pro usuário — **milestone AC3** (spec `public-catalog-login-gate`)
 - WebSocket broadcast pros outros clientes na mesma sessão quando assento muda de estado — **implementado no back** (`SeatingGateway`, room por sessão, eventos held/released/booked); front pendente, AC2
 - Ao expirar TTL sem confirmar checkout, ou ao cliente cancelar: hold libera (automático ou manual), assento volta a ficar livre (evento broadcast), e remove o hold do Valkey na confirmação — **implementado no back** (TTL passiva do Redis + liberação manual/bulk); front pendente, AC2
 
@@ -103,6 +104,7 @@ Definição completa de colunas, tipos, PK/FK e a tabela de junção `booking_se
 - Lista de filmes em cartaz com sessões futuras — **implementado**
 - Filtro por cidade/cinema/data (query params em `GET /movies`) — **implementado no back**; front pendente, AC2
 - Detalhe do filme com horários disponíveis (sessões) — **implementado** (embutido na listagem)
+- Catálogo e mapa de assentos públicos (sem login), como página de apresentação do site — **milestone AC3**. Spec: `docs/flows/public-catalog-login-gate/spec.md`
 
 ### 3. Checkout / pagamento (Mercado Pago sandbox)
 - Resumo do pedido (filme, sessão, assentos, valor) — **implementado**
@@ -113,6 +115,7 @@ Definição completa de colunas, tipos, PK/FK e a tabela de junção `booking_se
 
 ### 4. Conta de usuário + histórico de ingressos
 - Cadastro/login (JWT) — **implementado**
+- Login exigido só ao avançar pro pagamento (catálogo e assentos são públicos) — **milestone AC3** (spec `public-catalog-login-gate`)
 - "Meus ingressos": lista de bookings confirmados, com detalhe — **implementado**
 - Cancelamento de ingresso pelo cliente (self-service), libera o(s) assento(s) de volta pro catálogo — **implementado no back** (`POST /bookings/:id/cancel`, broadcast released); front pendente, AC2
 - QR code simples — opcional/fora do MVP
