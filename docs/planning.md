@@ -96,7 +96,7 @@ Definição completa de colunas, tipos, PK/FK e a tabela de junção `booking_se
 - Mapa visual de assentos por sessão (livre / ocupado / segurado-por-outro-usuário / selecionado-por-mim) — **implementado**
 - Ao confirmar pagamento: transação Postgres grava assento como ocupado definitivamente (respeitando unique constraint) — **implementado**
 - Ao clicar assento: cria hold no Valkey (`SETNX` com TTL) — evita dois usuários segurando mesmo assento — **implementado no back**; front pendente, AC2
-- Visitante deslogado seleciona assento só na UI (sem hold); hold é criado após login, ao continuar — **milestone AC3** (spec `public-catalog-login-gate`)
+- Visitante deslogado também segura assento: hold com identidade de convidado (token curto), mesma regra do usuário logado. No login, os holds são transferidos pro usuário — **milestone AC3** (spec `public-catalog-login-gate`)
 - WebSocket broadcast pros outros clientes na mesma sessão quando assento muda de estado — **implementado no back** (`SeatingGateway`, room por sessão, eventos held/released/booked); front pendente, AC2
 - Ao expirar TTL sem confirmar checkout, ou ao cliente cancelar: hold libera (automático ou manual), assento volta a ficar livre (evento broadcast), e remove o hold do Valkey na confirmação — **implementado no back** (TTL passiva do Redis + liberação manual/bulk); front pendente, AC2
 
