@@ -463,16 +463,25 @@ export async function insertBooking(
   ctx: AdminTestContext,
   sessionId: string,
   roomId: string,
-  status: "pending" | "confirmed" | "cancelled",
+  status: "pending" | "confirmed" | "cancelled" | "expired",
   priceCents = 3000,
+  expiresAt?: Date,
 ): Promise<{ bookingId: string; seatId: string }> {
   const [seatId] = await seatIdsOfRoom(ctx, roomId);
   const [booking] = await ctx.db
     .insert(schema.bookings)
-    .values({ userId: ctx.customer.id, sessionId, status })
+    .values({ userId: ctx.customer.id, sessionId, status, ...(expiresAt ? { expiresAt } : {}) })
     .returning({ id: schema.bookings.id });
   await ctx.db.insert(schema.bookingSeats).values({ bookingId: booking.id, sessionId, seatId, priceCents });
   return { bookingId: booking.id, seatId };
+}
+
+/**
+ * A checkout abandoned before paying: still `pending` (the sweeper hasn't
+ * flipped it to `expired` yet), past its deadline, with no payment row.
+ */
+export function insertAbandonedPendingBooking(ctx: AdminTestContext, sessionId: string, roomId: string) {
+  return insertBooking(ctx, sessionId, roomId, "pending", 3000, plusMinutes(new Date(), -1));
 }
 
 export async function bookedSeatPrices(ctx: AdminTestContext, bookingId: string): Promise<number[]> {

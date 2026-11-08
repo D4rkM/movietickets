@@ -303,14 +303,21 @@ describe("Session services", () => {
     it.each([
       ["no bookings and no holds", [], [], idle],
       [
-        "a pending and a cancelled booking",
-        [{ status: "pending" }, { status: "cancelled" }],
+        "a pending booking still locking its seats and a cancelled one",
+        [{ status: "pending", locksSeats: true }, { status: "cancelled", locksSeats: false }],
         [],
         { ...idle, hasPendingBooking: true, hasAnyBooking: true },
       ],
       [
+        "a pending booking past its deadline with no payment in flight",
+        [{ status: "pending", locksSeats: false }],
+        [],
+        { ...idle, hasAnyBooking: true },
+      ],
+      ["an expired booking", [{ status: "expired", locksSeats: false }], [], { ...idle, hasAnyBooking: true }],
+      [
         "a confirmed booking",
-        [{ status: "confirmed" }],
+        [{ status: "confirmed", locksSeats: true }],
         [],
         { ...idle, hasConfirmedBooking: true, hasAnyBooking: true },
       ],

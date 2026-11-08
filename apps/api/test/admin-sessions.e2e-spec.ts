@@ -14,6 +14,7 @@ import {
   deleteSessionAsAdmin,
   findSessionInDb,
   holdFirstSeatAsCustomer,
+  insertAbandonedPendingBooking,
   insertBooking,
   insertSessionDirectly,
   plusMinutes,
@@ -341,6 +342,32 @@ describe("Painel admin: sessões (e2e)", () => {
     expect((await findSessionInDb(ctx, session.id))?.startsAt).toEqual(daysFromNow(10, 19));
   });
 
+  it("AC16: deve permitir mudar o horário de sessão cuja reserva pendente já passou do prazo sem pagamento em andamento", async () => {
+    // GIVEN a future session whose only booking is pending, past its deadline, with no payment in flight
+    const { room, session } = await createScheduledSession(ctx, daysFromNow(10, 19));
+    await insertAbandonedPendingBooking(ctx, session.id, room.id);
+
+    // WHEN the admin moves it one hour later
+    const response = await updateSessionAsAdmin(ctx, session.id, { startsAt: daysFromNow(10, 20).toISOString() });
+
+    // THEN the new time is saved, since that booking no longer locks any seat
+    expect(response.statusCode).toBe(200);
+    expect((await findSessionInDb(ctx, session.id))?.startsAt).toEqual(daysFromNow(10, 20));
+  });
+
+  it("AC16: deve permitir mudar o horário de sessão que só tem reserva expirada", async () => {
+    // GIVEN a future session whose only booking is expired
+    const { room, session } = await createScheduledSession(ctx, daysFromNow(10, 19));
+    await insertBooking(ctx, session.id, room.id, "expired");
+
+    // WHEN the admin moves it one hour later
+    const response = await updateSessionAsAdmin(ctx, session.id, { startsAt: daysFromNow(10, 20).toISOString() });
+
+    // THEN the new time is saved
+    expect(response.statusCode).toBe(200);
+    expect((await findSessionInDb(ctx, session.id))?.startsAt).toEqual(daysFromNow(10, 20));
+  });
+
   it("AC16: deve recusar com 409 mudar o preço de sessão com reserva pendente", async () => {
     // GIVEN a future session priced at 3000 with a pending booking
     const { room, session } = await createScheduledSession(ctx);
@@ -440,6 +467,20 @@ describe("Painel admin: sessões (e2e)", () => {
     // GIVEN a future session with a cancelled booking (kept as payment history)
     const { room, session } = await createScheduledSession(ctx);
     await insertBooking(ctx, session.id, room.id, "cancelled");
+
+    // WHEN the admin deletes it
+    const response = await deleteSessionAsAdmin(ctx, session.id);
+
+    // THEN it is refused with 409 and nothing is deleted
+    expect(response.statusCode).toBe(409);
+    expect(await findSessionInDb(ctx, session.id)).toBeDefined();
+    expect(await countBookingsOfSession(ctx, session.id)).toBe(1);
+  });
+
+  it("AC17: deve recusar com 409 excluir sessão com reserva expirada", async () => {
+    // GIVEN a future session with an expired booking (kept as history)
+    const { room, session } = await createScheduledSession(ctx);
+    await insertBooking(ctx, session.id, room.id, "expired");
 
     // WHEN the admin deletes it
     const response = await deleteSessionAsAdmin(ctx, session.id);

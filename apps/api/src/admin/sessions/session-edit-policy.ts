@@ -1,8 +1,9 @@
 /** What a session currently has going on in the purchase flow. */
 export interface SessionActivity {
+  /** A pending booking that still locks its seats (within its deadline or with a payment in flight). */
   hasPendingBooking: boolean;
   hasConfirmedBooking: boolean;
-  /** Any booking at all, `cancelled` included (it keeps payment history). */
+  /** Any booking at all, `cancelled`/`expired` included (they keep payment history). */
   hasAnyBooking: boolean;
   hasActiveHold: boolean;
 }
