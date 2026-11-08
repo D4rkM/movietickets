@@ -7,7 +7,11 @@ import * as schema from "../db/schema";
 import { NotificationService } from "../notification/notification.service";
 import { SeatingGateway } from "../seating/seating.gateway";
 import { SeatingService } from "../seating/seating.service";
-import { assertBookingNotExpired, BookingExpiredException } from "./booking-expired.exception";
+import {
+  assertBookingNotExpired,
+  BookingAlreadyPendingException,
+  BookingExpiredException,
+} from "./booking-expired.exception";
 import {
   expirableBookingCondition,
   groupSeatsByBooking,
@@ -39,10 +43,17 @@ export interface ApprovedPayment {
   amountCents: number;
 }
 
+export interface PaidBookingConfirmation {
+  confirmed: boolean;
+  notify: () => Promise<void>;
+}
+
 export interface ConfirmBookingResult {
   bookingId: string;
   status: string;
 }
+
+type DbExecutor = Pick<PostgresJsDatabase<typeof schema>, "update">;
 
 @Injectable()
 export class BookingService {
@@ -169,6 +180,14 @@ export class BookingService {
       });
     } catch (err) {
       if (isUniqueViolation(err)) {
+        const existingBookingId = await this.findOwnPendingBookingForExactSeats(
+          sessionId,
+          userId,
+          requestedSeatIds,
+        );
+        if (existingBookingId) {
+          throw new BookingAlreadyPendingException(existingBookingId);
+        }
         throw new ConflictException("Um ou mais assentos já foram reservados para esta sessão");
       }
       throw err;
@@ -235,61 +254,47 @@ export class BookingService {
   }
 
   /**
-   * Releases a booking after Mercado Pago reports the payment failed (rejected/cancelled).
-   * `booking_seats` has an unconditional unique `(session_id, seat_id)` constraint, so a pending
-   * booking that's never cleaned up blocks that exact seat from ever being booked again.
-   * Deleting the seat rows is what actually frees the seat up for a retry, and since a pending
-   * booking shows as "booked" on the seat map, each freed seat is broadcast as "released".
-   * Idempotent like {@link confirmPaidBooking} for the same redelivery reason.
-   */
-  async releaseFailedPaymentBooking(bookingId: string): Promise<void> {
-    const released = await this.db.transaction(async (tx) => {
-      const [updated] = await tx
-        .update(schema.bookings)
-        .set({ status: "cancelled" })
-        .where(and(eq(schema.bookings.id, bookingId), eq(schema.bookings.status, "pending")))
-        .returning();
-      if (!updated) return undefined;
-
-      const seats = await tx
-        .delete(schema.bookingSeats)
-        .where(eq(schema.bookingSeats.bookingId, bookingId))
-        .returning({ seatId: schema.bookingSeats.seatId });
-      return { sessionId: updated.sessionId, seatIds: seats.map((seat) => seat.seatId) };
-    });
-    if (!released) return;
-
-    for (const seatId of released.seatIds) {
-      this.gateway.broadcastSeatUpdate(released.sessionId, { seatId, status: "released" });
-    }
-  }
-
-  /**
    * Confirms a booking after Mercado Pago reports an approved payment. Idempotent:
    * webhooks can be redelivered, so a booking that is already past `pending` is left alone.
    * A pending booking is confirmed even past its deadline: it was only kept alive
    * because this payment was in flight. An `expired` booking is never revived (its
    * seats may belong to someone else by now): it's flagged for manual refund review
    * instead, once.
+   *
+   * When `tx` is provided, the database state change runs inside `tx` and the returned
+   * `notify` callback must be awaited by the caller after `tx` commits so WebSocket
+   * broadcasts and confirmation emails are never sent for a rolled-back transaction.
    */
-  async confirmPaidBooking(bookingId: string, payment?: ApprovedPayment): Promise<void> {
-    const [updated] = await this.db
+  async confirmPaidBooking(
+    bookingId: string,
+    payment?: ApprovedPayment,
+    tx?: DbExecutor,
+  ): Promise<PaidBookingConfirmation> {
+    const executor = tx ?? this.db;
+    const [updated] = await executor
       .update(schema.bookings)
       .set({ status: "confirmed" })
       .where(and(eq(schema.bookings.id, bookingId), eq(schema.bookings.status, "pending")))
       .returning();
     if (!updated) {
-      await this.flagExpiredBookingForRefundReview(bookingId, payment);
-      return;
+      await this.flagExpiredBookingForRefundReview(bookingId, payment, executor);
+      return { confirmed: false, notify: async () => undefined };
     }
 
-    const bookedSeats = await this.db.query.bookingSeats.findMany({
-      where: eq(schema.bookingSeats.bookingId, bookingId),
-    });
-    for (const seat of bookedSeats) {
-      this.gateway.broadcastSeatUpdate(updated.sessionId, { seatId: seat.seatId, status: "booked" });
+    const notify = async () => {
+      const bookedSeats = await this.db.query.bookingSeats.findMany({
+        where: eq(schema.bookingSeats.bookingId, bookingId),
+      });
+      for (const seat of bookedSeats) {
+        this.gateway.broadcastSeatUpdate(updated.sessionId, { seatId: seat.seatId, status: "booked" });
+      }
+      await this.sendConfirmationEmail(bookingId);
+    };
+
+    if (!tx) {
+      await notify();
     }
-    await this.sendConfirmationEmail(bookingId);
+    return { confirmed: true, notify };
   }
 
   /**
@@ -340,12 +345,45 @@ export class BookingService {
   }
 
   /**
+   * Finds the user's own active `pending` booking for `sessionId` when its seat
+   * set matches `requestedSeatIds` one-for-one. Returns `undefined` when the
+   * conflict comes from another user, a confirmed booking, or a partial seat overlap.
+   */
+  private async findOwnPendingBookingForExactSeats(
+    sessionId: string,
+    userId: string,
+    requestedSeatIds: string[],
+  ): Promise<string | undefined> {
+    const pendingBookings = await this.db.query.bookings.findMany({
+      where: and(
+        eq(schema.bookings.sessionId, sessionId),
+        eq(schema.bookings.userId, userId),
+        eq(schema.bookings.status, "pending"),
+        notPastDeadline(),
+      ),
+      with: { seats: true },
+    });
+    if (!Array.isArray(pendingBookings)) return undefined;
+
+    const requestedSet = new Set(requestedSeatIds);
+    const matches = pendingBookings.filter((booking) => {
+      if (booking.seats.length !== requestedSet.size) return false;
+      return booking.seats.every((seat) => requestedSet.has(seat.seatId));
+    });
+    return matches.length === 1 ? matches[0].id : undefined;
+  }
+
+  /**
    * Flags an `expired` booking that received an approved payment for manual
    * refund review. The conditional update only matches the first time, so a
    * redelivered webhook neither changes anything nor repeats the warning.
    */
-  private async flagExpiredBookingForRefundReview(bookingId: string, payment?: ApprovedPayment): Promise<void> {
-    const [flagged] = await this.db
+  private async flagExpiredBookingForRefundReview(
+    bookingId: string,
+    payment?: ApprovedPayment,
+    executor: DbExecutor = this.db,
+  ): Promise<void> {
+    const [flagged] = await executor
       .update(schema.bookings)
       .set({ needsRefundReview: true })
       .where(

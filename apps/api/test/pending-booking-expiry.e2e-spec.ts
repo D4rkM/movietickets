@@ -53,7 +53,7 @@ describe("Expiração de reserva pendente (e2e)", () => {
   });
 
   beforeEach(() => {
-    mp.preference.create.mockReset();
+    mp.payment.create.mockReset();
     mp.payment.get.mockReset();
   });
 
@@ -282,42 +282,36 @@ describe("Expiração de reserva pendente (e2e)", () => {
     watcher.close();
   });
 
-  it("AC13: deve liberar a reserva e avisar o mapa quando o pagamento em andamento é rejeitado", async () => {
-    // GIVEN uma reserva pendente com pagamento in_process e alguém olhando o mapa
-    const seatIds = await fixture.addSeats(2);
-    const bookingId = await insertBooking(ctx.db, { userId: owner.id, sessionId, seatIds });
-    await recordPayment(ctx.db, bookingId, "in_process");
-    const watcher = await watchSessionAs(ctx.baseUrl, buyerToken, sessionId);
+  it("AC13: deve manter a reserva pendente e permitir a expiração quando o pagamento em andamento é rejeitado", async () => {
+    // GIVEN uma reserva pendente vencida que estava travada apenas por um pagamento in_process
+    const [seatId] = await fixture.addSeats(1);
+    const bookingId = await insertBooking(ctx.db, { userId: owner.id, sessionId, seatIds: [seatId] });
+    await recordPayment(ctx.db, bookingId, "in_process", { externalPaymentId: "910001" });
+    await expireDeadlineOf(ctx.db, bookingId);
 
     // WHEN o Mercado Pago avisa que o pagamento foi rejeitado
-    await deliverPaymentWebhook(ctx.app, mp, bookingId, "rejected");
+    await deliverPaymentWebhook(ctx.app, mp, bookingId, "rejected", 910001);
 
-    // THEN a reserva é cancelada, perde os assentos e cada assento é anunciado como liberado
-    expect((await readBooking(ctx.db, bookingId)).status).toBe("cancelled");
-    expect(await seatIdsOf(ctx.db, bookingId)).toEqual([]);
-    for (const seatId of seatIds) {
-      await watcher.waitFor((update) => update.seatId === seatId && update.status === "released");
-    }
-    watcher.close();
+    // THEN a tentativa vira rejected, a reserva continua pending e o assento passa a ficar livre pela expiração
+    expect((await readBooking(ctx.db, bookingId)).status).toBe("pending");
+    expect((await readPayment(ctx.db, bookingId))?.status).toBe("rejected");
+    expect(await seatStatusSeenBy(ctx.app, buyerToken, sessionId, seatId)).toBe("free");
   });
 
-  it("AC13: deve liberar a reserva e avisar o mapa quando o pagamento em andamento é cancelado", async () => {
-    // GIVEN uma reserva pendente com pagamento pending e alguém olhando o mapa
-    const seatIds = await fixture.addSeats(2);
-    const bookingId = await insertBooking(ctx.db, { userId: owner.id, sessionId, seatIds });
-    await recordPayment(ctx.db, bookingId, "pending");
-    const watcher = await watchSessionAs(ctx.baseUrl, buyerToken, sessionId);
+  it("AC13: deve manter a reserva pendente e permitir a expiração quando o pagamento em andamento é cancelado", async () => {
+    // GIVEN uma reserva pendente vencida que estava travada apenas por um pagamento pending
+    const [seatId] = await fixture.addSeats(1);
+    const bookingId = await insertBooking(ctx.db, { userId: owner.id, sessionId, seatIds: [seatId] });
+    await recordPayment(ctx.db, bookingId, "pending", { externalPaymentId: "910002" });
+    await expireDeadlineOf(ctx.db, bookingId);
 
     // WHEN o Mercado Pago avisa que o pagamento foi cancelado
-    await deliverPaymentWebhook(ctx.app, mp, bookingId, "cancelled");
+    await deliverPaymentWebhook(ctx.app, mp, bookingId, "cancelled", 910002);
 
-    // THEN a reserva é cancelada, perde os assentos e cada assento é anunciado como liberado
-    expect((await readBooking(ctx.db, bookingId)).status).toBe("cancelled");
-    expect(await seatIdsOf(ctx.db, bookingId)).toEqual([]);
-    for (const seatId of seatIds) {
-      await watcher.waitFor((update) => update.seatId === seatId && update.status === "released");
-    }
-    watcher.close();
+    // THEN a tentativa vira cancelled, a reserva continua pending e o assento passa a ficar livre pela expiração
+    expect((await readBooking(ctx.db, bookingId)).status).toBe("pending");
+    expect((await readPayment(ctx.db, bookingId))?.status).toBe("cancelled");
+    expect(await seatStatusSeenBy(ctx.app, buyerToken, sessionId, seatId)).toBe("free");
   });
 
   it("AC14: deve registrar o pagamento aprovado e marcar a reserva expirada para revisão de estorno", async () => {
@@ -363,10 +357,10 @@ describe("Expiração de reserva pendente (e2e)", () => {
     // WHEN ele tenta pagar
     const response = await checkoutAs(ctx.app, ownerToken, bookingId);
 
-    // THEN recebe 409 com o código de reserva expirada e nenhuma preferência é criada
+    // THEN recebe 409 com o código de reserva expirada e nenhum pagamento é criado no Mercado Pago
     expect(response.statusCode).toBe(409);
     expect(response.json()).toMatchObject({ statusCode: 409, code: "BOOKING_EXPIRED" });
-    expect(mp.preference.create).not.toHaveBeenCalled();
+    expect(mp.payment.create).not.toHaveBeenCalled();
   });
 
   it("AC15: deve recusar a confirmação de reserva expirada com BOOKING_EXPIRED", async () => {
@@ -389,14 +383,14 @@ describe("Expiração de reserva pendente (e2e)", () => {
     // WHEN ele tenta pagar
     const response = await checkoutAs(ctx.app, ownerToken, bookingId);
 
-    // THEN recebe 409 com o código de reserva expirada e nenhuma preferência é criada
+    // THEN recebe 409 com o código de reserva expirada e nenhum pagamento é criado no Mercado Pago
     expect(response.statusCode).toBe(409);
     expect(response.json()).toMatchObject({
       statusCode: 409,
       code: "BOOKING_EXPIRED",
       message: "Reserva expirada. Escolha os assentos novamente.",
     });
-    expect(mp.preference.create).not.toHaveBeenCalled();
+    expect(mp.payment.create).not.toHaveBeenCalled();
   });
 
   it("AC15: deve recusar a confirmação de reserva pendente com prazo vencido com BOOKING_EXPIRED", async () => {
@@ -443,22 +437,5 @@ describe("Expiração de reserva pendente (e2e)", () => {
     expect(booking.needsRefundReview).toBe(false);
     expect(booking.stalePaymentAlertedAt).toBeNull();
     expect(await seatStatusSeenBy(ctx.app, buyerToken, sessionId, seatId)).toBe("free");
-  });
-
-  it("AC19: deve criar a preferência do Mercado Pago com validade igual ao prazo da reserva", async () => {
-    // GIVEN uma reserva recém-criada pelo cliente
-    const [seatId] = await fixture.addSeats(1);
-    const bookingId = await bookSeatsAsOrFail(ctx.app, buyerToken, sessionId, [seatId]);
-    mp.preference.create.mockResolvedValue({ init_point: "https://mp.test/checkout/expiry" });
-
-    // WHEN ele vai pro pagamento
-    const response = await checkoutAs(ctx.app, buyerToken, bookingId);
-
-    // THEN a preferência expira junto com a reserva
-    expect(response.statusCode).toBe(200);
-    const body = mp.preference.create.mock.calls[0][0].body;
-    expect(body.expires).toBe(true);
-    const { expiresAt } = await readBooking(ctx.db, bookingId);
-    expect(new Date(body.expiration_date_to).getTime()).toBe(expiresAt.getTime());
   });
 });

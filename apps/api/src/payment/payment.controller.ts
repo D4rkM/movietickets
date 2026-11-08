@@ -1,17 +1,43 @@
-import { Body, Controller, HttpCode, HttpStatus, Param, Post, Query, Req, UseGuards } from "@nestjs/common";
+import {
+  Body,
+  Controller,
+  Get,
+  HttpCode,
+  HttpStatus,
+  Param,
+  Post,
+  Query,
+  Req,
+  UseGuards,
+} from "@nestjs/common";
 import { FastifyRequest } from "fastify";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
-import { MercadoPagoNotification, MercadoPagoWebhookQuery, PaymentService } from "./payment.service";
+import { CreatePaymentDto } from "./dto/create-payment.dto";
+import {
+  MercadoPagoNotification,
+  MercadoPagoWebhookQuery,
+  PaymentService,
+} from "./payment.service";
 
 @Controller()
 export class PaymentController {
   constructor(private readonly paymentService: PaymentService) {}
 
-  @Post("bookings/:id/checkout")
+  @Get("bookings/:id/payment-summary")
+  @UseGuards(JwtAuthGuard)
+  getPaymentSummary(@Param("id") bookingId: string, @Req() request: FastifyRequest) {
+    return this.paymentService.getPaymentSummary(bookingId, request.user!.sub);
+  }
+
+  @Post("bookings/:id/payments")
   @UseGuards(JwtAuthGuard)
   @HttpCode(HttpStatus.OK)
-  createCheckout(@Param("id") bookingId: string, @Req() request: FastifyRequest) {
-    return this.paymentService.createCheckout(bookingId, request.user!.sub);
+  createPayment(
+    @Param("id") bookingId: string,
+    @Body() dto: CreatePaymentDto,
+    @Req() request: FastifyRequest,
+  ) {
+    return this.paymentService.createPayment(bookingId, request.user!.sub, dto);
   }
 
   @Post("payments/webhook")
