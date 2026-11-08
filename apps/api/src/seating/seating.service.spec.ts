@@ -10,9 +10,11 @@ describe("SeatingService", () => {
     query: {
       sessions: { findFirst: jest.fn() },
       seats: { findFirst: jest.fn() },
-      bookingSeats: { findMany: jest.fn() },
     },
+    select: jest.fn(),
   };
+  // Rows returned by the "seats locked by an active booking" query (select → from → innerJoin → where).
+  const lockedSeatsWhere = jest.fn();
   const mockValkey = {
     scan: jest.fn(),
     mget: jest.fn(),
@@ -45,7 +47,10 @@ describe("SeatingService", () => {
 
   beforeEach(async () => {
     jest.clearAllMocks();
-    mockDb.query.bookingSeats.findMany.mockResolvedValue([]);
+    lockedSeatsWhere.mockResolvedValue([]);
+    mockDb.select.mockReturnValue({
+      from: jest.fn().mockReturnValue({ innerJoin: jest.fn().mockReturnValue({ where: lockedSeatsWhere }) }),
+    });
     mockValkey.scan.mockResolvedValue(["0", []]);
     mockValkey.mget.mockResolvedValue([]);
     mockValkey.get.mockResolvedValue(null);
@@ -102,13 +107,10 @@ describe("SeatingService", () => {
     expect(result.seats.find((seat) => seat.id === "seat-A1")?.status).toBe("free");
   });
 
-  it("should mark a seat as booked only when its booking is confirmed", async () => {
-    // ARRANGE
+  it("should mark as booked only the seats returned by the active-booking query", async () => {
+    // ARRANGE — the DB applies activeBookingCondition, so only locked seats come back
     mockDb.query.sessions.findFirst.mockResolvedValue(session);
-    mockDb.query.bookingSeats.findMany.mockResolvedValue([
-      { seatId: "seat-A1", booking: { status: "confirmed" } },
-      { seatId: "seat-A2", booking: { status: "pending" } },
-    ]);
+    lockedSeatsWhere.mockResolvedValue([{ seatId: "seat-A1" }]);
 
     // ACT
     const result = await service.getSeatMap("session-1", "user-1");
@@ -192,9 +194,7 @@ describe("SeatingService", () => {
 
     it("should throw ConflictException when the seat is already booked", async () => {
       // ARRANGE
-      mockDb.query.bookingSeats.findMany.mockResolvedValue([
-        { seatId: "seat-A1", booking: { status: "confirmed" } },
-      ]);
+      lockedSeatsWhere.mockResolvedValue([{ seatId: "seat-A1" }]);
 
       // ACT
       const result = service.holdSeat("session-1", "seat-A1", "user-1");

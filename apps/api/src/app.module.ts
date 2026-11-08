@@ -1,5 +1,6 @@
 import { Module } from "@nestjs/common";
 import { ConfigModule, ConfigService } from "@nestjs/config";
+import { ScheduleModule } from "@nestjs/schedule";
 import { LoggerModule } from "nestjs-pino";
 import { AdminModule } from "./admin/admin.module";
 import { AuthModule } from "./auth/auth.module";
@@ -27,6 +28,7 @@ import { ValkeyModule } from "./valkey/valkey.module";
         },
       }),
     }),
+    ScheduleModule.forRoot(),
     DrizzleModule,
     ValkeyModule,
     AuthModule,

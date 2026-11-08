@@ -3,6 +3,8 @@ import { ConfigService } from "@nestjs/config";
 import { eq, sql } from "drizzle-orm";
 import { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import { Payment, Preference } from "mercadopago";
+import { assertBookingNotExpired } from "../booking/booking-expired.exception";
+import { pastDeadline } from "../booking/booking-lock";
 import { BookingService } from "../booking/booking.service";
 import { DRIZZLE } from "../db/drizzle.module";
 import * as schema from "../db/schema";
@@ -62,10 +64,12 @@ export class PaymentService {
     const booking = await this.db.query.bookings.findFirst({
       where: eq(schema.bookings.id, bookingId),
       with: { session: { with: { movie: true } }, seats: { with: { seat: true } } },
+      extras: (table) => ({ pastDeadline: pastDeadline(table.expiresAt).as("past_deadline") }),
     });
     if (!booking || booking.userId !== userId) {
       throw new NotFoundException("Reserva não encontrada");
     }
+    assertBookingNotExpired(booking);
     if (booking.status !== "pending") {
       throw new ConflictException(`Reserva já está com status "${booking.status}"`);
     }
@@ -85,6 +89,10 @@ export class PaymentService {
           unit_price: bookingSeat.priceCents / CENTS_PER_UNIT,
         })),
         external_reference: booking.id,
+        // Mercado Pago refuses to start a payment once the booking's deadline
+        // passed. expires_at comes from the DB, never recomputed here.
+        expires: true,
+        expiration_date_to: booking.expiresAt.toISOString(),
         notification_url: `${this.publicApiUrl}/payments/webhook`,
         back_urls: {
           success: successUrl,
@@ -128,7 +136,10 @@ export class PaymentService {
       });
 
     if (payment.status === "approved") {
-      await this.bookingService.confirmPaidBooking(bookingId);
+      await this.bookingService.confirmPaidBooking(bookingId, {
+        externalPaymentId: String(payment.id),
+        amountCents,
+      });
     } else if (payment.status && FAILED_PAYMENT_STATUSES.has(payment.status)) {
       await this.bookingService.releaseFailedPaymentBooking(bookingId);
     }

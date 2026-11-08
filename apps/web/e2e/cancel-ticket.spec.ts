@@ -47,7 +47,7 @@ test("should cancel a confirmed ticket and free its seat back up", async ({ page
   await freeSeat.click();
   await expect(page.getByTitle(`${seatLabel} — Selecionado`)).toBeVisible();
 
-  await page.getByRole("button", { name: /^Pagar/ }).click();
+  await page.getByRole("button", { name: /^Continuar/ }).click();
   await expect(page).toHaveURL(/\/checkout$/);
   await page.getByRole("button", { name: /^Pagar$/ }).click();
   // Generous timeout: the intercepted route makes a real round-trip to the

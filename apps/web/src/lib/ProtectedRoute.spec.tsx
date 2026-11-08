@@ -3,6 +3,7 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, describe, expect, it } from "vitest";
 import { AuthProvider } from "../features/auth/AuthContext";
 import { ACCESS_TOKEN_STORAGE_KEY } from "./api-client";
+import { GUEST_TOKEN_STORAGE_KEY } from "./guest-token";
 import { ProtectedRoute } from "./ProtectedRoute";
 
 function renderProtectedRoute() {
@@ -27,6 +28,21 @@ describe("ProtectedRoute", () => {
 
   it("should redirect to /login when there is no access token", async () => {
     // ARRANGE — no token in storage
+
+    // ACT
+    renderProtectedRoute();
+
+    // ASSERT
+    expect(await screen.findByText("Login page")).toBeInTheDocument();
+    expect(screen.queryByText("Private content")).not.toBeInTheDocument();
+  });
+
+  it("AC8: should redirect to /login when only a guest token is stored", async () => {
+    // ARRANGE
+    localStorage.setItem(
+      GUEST_TOKEN_STORAGE_KEY,
+      JSON.stringify({ guestToken: "guest-token", expiresAt: new Date(Date.now() + 3_600_000).toISOString() }),
+    );
 
     // ACT
     renderProtectedRoute();
