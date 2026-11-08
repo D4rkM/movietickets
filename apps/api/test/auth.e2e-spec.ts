@@ -2,7 +2,7 @@ import { ValidationPipe } from "@nestjs/common";
 import { ConfigModule } from "@nestjs/config";
 import { NestFastifyApplication } from "@nestjs/platform-fastify";
 import { Test } from "@nestjs/testing";
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import { drizzle, PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import { AuthModule } from "../src/auth/auth.module";
@@ -16,6 +16,7 @@ describe("Auth (e2e)", () => {
   let db: PostgresJsDatabase<typeof schema>;
   let cleanupClient: ReturnType<typeof postgres>;
   const email = `auth-e2e-${Date.now()}@test.com`;
+  const roleSmugglerEmail = `auth-e2e-role-${Date.now()}@test.com`;
 
   beforeAll(async () => {
     process.env.JWT_SECRET ??= "test-secret";
@@ -36,7 +37,7 @@ describe("Auth (e2e)", () => {
   });
 
   afterAll(async () => {
-    await db.delete(schema.users).where(eq(schema.users.email, email));
+    await db.delete(schema.users).where(inArray(schema.users.email, [email, roleSmugglerEmail]));
     await cleanupClient.end();
     await app.close();
   });
@@ -102,5 +103,19 @@ describe("Auth (e2e)", () => {
 
     // THEN it returns 401
     expect(response.statusCode).toBe(401);
+  });
+
+  it("AC20: deve criar como cliente o usuário que se cadastra mandando role admin no body", async () => {
+    // GIVEN a sign-up payload that tries to pick the admin role
+    const payload = { name: "Mallory", email: roleSmugglerEmail, password: "password123", role: "admin" };
+
+    // WHEN the client calls POST /auth/register with it
+    const response = await app.inject({ method: "POST", url: "/auth/register", payload });
+
+    // THEN the user is created as a customer, in the response and in the database
+    expect(response.statusCode).toBe(201);
+    expect(response.json().role).toBe("customer");
+    const stored = await db.query.users.findFirst({ where: eq(schema.users.email, roleSmugglerEmail) });
+    expect(stored?.role).toBe("customer");
   });
 });
