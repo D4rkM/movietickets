@@ -29,3 +29,12 @@ export function resolveReturnTo(value: string | null | undefined): string {
     return DEFAULT_RETURN_TO;
   }
 }
+
+/**
+ * Query string that carries a (validated) `returnTo` across the login and
+ * register pages, so a visitor who has to create an account first still lands
+ * back on the seat page. Empty when there was no `returnTo` to begin with.
+ */
+export function returnToQuery(value: string | null): string {
+  return value ? `?returnTo=${encodeURIComponent(resolveReturnTo(value))}` : "";
+}

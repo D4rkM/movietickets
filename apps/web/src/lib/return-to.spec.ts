@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_RETURN_TO, resolveReturnTo } from "./return-to";
+import { DEFAULT_RETURN_TO, resolveReturnTo, returnToQuery } from "./return-to";
 
 describe("resolveReturnTo (AC9)", () => {
   it.each([
@@ -45,5 +45,21 @@ describe("resolveReturnTo (AC9)", () => {
 
     // ASSERT
     expect(result).toBe("/movies");
+  });
+});
+
+describe("returnToQuery", () => {
+  it.each([
+    [null, ""],
+    ["/sessions/abc/seats", "?returnTo=%2Fsessions%2Fabc%2Fseats"],
+    ["//evil.example", "?returnTo=%2Fmovies"],
+  ])("should turn returnTo %s into the query %s", (value, expected) => {
+    // ARRANGE — value from the table
+
+    // ACT
+    const query = returnToQuery(value);
+
+    // ASSERT
+    expect(query).toBe(expected);
   });
 });

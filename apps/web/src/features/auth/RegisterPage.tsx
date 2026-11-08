@@ -1,11 +1,14 @@
 import { useState } from "react";
 import type { FormEvent } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { returnToQuery } from "../../lib/return-to";
 import { register } from "./api";
 import { isValidEmail } from "./validation";
 
 export function RegisterPage() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const loginPath = `/login${returnToQuery(searchParams.get("returnTo"))}`;
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -23,7 +26,7 @@ export function RegisterPage() {
     setSubmitting(true);
     try {
       await register(name, email, password);
-      navigate("/login", { state: { registered: true } });
+      navigate(loginPath, { state: { registered: true } });
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -95,7 +98,7 @@ export function RegisterPage() {
       </form>
       <p className="text-center text-sm text-gray-600">
         Já tem conta?{" "}
-        <Link to="/login" className="underline">
+        <Link to={loginPath} className="underline">
           Entrar
         </Link>
       </p>
