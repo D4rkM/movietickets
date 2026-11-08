@@ -1,6 +1,7 @@
 import { Module } from "@nestjs/common";
 import { ConfigModule, ConfigService } from "@nestjs/config";
 import { LoggerModule } from "nestjs-pino";
+import { AdminModule } from "./admin/admin.module";
 import { AuthModule } from "./auth/auth.module";
 import { BookingModule } from "./booking/booking.module";
 import { CatalogModule } from "./catalog/catalog.module";
@@ -34,6 +35,7 @@ import { ValkeyModule } from "./valkey/valkey.module";
     CatalogModule,
     PaymentModule,
     NotificationModule,
+    AdminModule,
   ],
 })
 export class AppModule {}
