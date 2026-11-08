@@ -122,6 +122,7 @@ services:
         # plain `make up-full`; export VITE_API_URL (e.g. to the api's ngrok
         # tunnel URL) before `--build` to test through ngrok.
         VITE_API_URL: ${VITE_API_URL:-http://localhost:3000}
+        VITE_MP_PUBLIC_KEY: ${VITE_MP_PUBLIC_KEY:-}
     restart: unless-stopped
     depends_on:
       - api
