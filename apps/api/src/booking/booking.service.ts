@@ -2,6 +2,7 @@ import { ConflictException, Inject, Injectable, Logger, NotFoundException } from
 import { and, desc, eq, inArray } from "drizzle-orm";
 import { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import { DRIZZLE } from "../db/drizzle.module";
+import { isUniqueViolation } from "../db/pg-errors";
 import * as schema from "../db/schema";
 import { NotificationService } from "../notification/notification.service";
 import { SeatingGateway } from "../seating/seating.gateway";
@@ -18,7 +19,6 @@ import { TicketType } from "./dto/book-seat.dto";
 import { MyBooking } from "./my-booking.types";
 
 const HALF_PRICE_RATIO = 0.5;
-const UNIQUE_VIOLATION = "23505";
 
 export interface SeatChoice {
   seatId: string;
@@ -32,19 +32,6 @@ export interface CreateBookingResult {
   status: string;
   ticketType: TicketType;
   priceCents: number;
-}
-
-function hasCode(err: unknown, code: string): boolean {
-  return typeof err === "object" && err !== null && "code" in err && err.code === code;
-}
-
-// drizzle-orm wraps the driver's PostgresError in a DrizzleQueryError, so the
-// Postgres error code (e.g. "23505" for a unique violation) lives on `.cause`
-// rather than on the error itself.
-function isUniqueViolation(err: unknown): boolean {
-  if (hasCode(err, UNIQUE_VIOLATION)) return true;
-  const cause = err instanceof Error ? err.cause : undefined;
-  return hasCode(cause, UNIQUE_VIOLATION);
 }
 
 export interface ApprovedPayment {

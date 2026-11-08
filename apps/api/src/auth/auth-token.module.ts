@@ -2,6 +2,7 @@ import { Module } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { JwtModule, JwtModuleOptions } from "@nestjs/jwt";
 import { JwtAuthGuard } from "./jwt-auth.guard";
+import { RolesGuard } from "./roles.guard";
 import { UserOrGuestAuthGuard } from "./user-or-guest-auth.guard";
 
 /**
@@ -22,7 +23,7 @@ import { UserOrGuestAuthGuard } from "./user-or-guest-auth.guard";
       }),
     }),
   ],
-  providers: [JwtAuthGuard, UserOrGuestAuthGuard],
-  exports: [JwtAuthGuard, UserOrGuestAuthGuard, JwtModule],
+  providers: [JwtAuthGuard, UserOrGuestAuthGuard, RolesGuard],
+  exports: [JwtAuthGuard, UserOrGuestAuthGuard, RolesGuard, JwtModule],
 })
 export class AuthTokenModule {}
