@@ -1,6 +1,7 @@
 import { ConflictException, NotFoundException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { Test } from "@nestjs/testing";
+import { BookingExpiredException } from "../booking/booking-expired.exception";
 import { BookingService } from "../booking/booking.service";
 import { DRIZZLE } from "../db/drizzle.module";
 import { PAYMENT_CLIENT, PREFERENCE_CLIENT } from "./mercadopago.providers";
@@ -43,6 +44,8 @@ describe("PaymentService", () => {
       id: "booking-1",
       userId: "user-1",
       status: "pending",
+      expiresAt: new Date("2026-11-08T18:10:00.000Z"),
+      pastDeadline: false,
       session: { movie: { title: "Dune" } },
       seats: [
         { seatId: "seat-1", priceCents: 3000, seat: { rowLabel: "A", seatNumber: 1 } },
@@ -133,6 +136,35 @@ describe("PaymentService", () => {
       expect(mockPreferenceClient.create).not.toHaveBeenCalled();
     });
 
+    it("should create the preference with expires and expiration_date_to equal to the booking expires_at", async () => {
+      // ARRANGE
+      mockDb.query.bookings.findFirst.mockResolvedValue(pendingBooking);
+      mockPreferenceClient.create.mockResolvedValue({ init_point: "https://mp.test/checkout/abc" });
+
+      // ACT
+      await service.createCheckout("booking-1", "user-1");
+
+      // ASSERT
+      const body = mockPreferenceClient.create.mock.calls[0][0].body;
+      expect(body.expires).toBe(true);
+      expect(body.expiration_date_to).toBe("2026-11-08T18:10:00.000Z");
+    });
+
+    it.each([
+      { status: "expired", pastDeadline: false },
+      { status: "pending", pastDeadline: true },
+    ])("should refuse checkout as BOOKING_EXPIRED for status $status and pastDeadline $pastDeadline", async (state) => {
+      // ARRANGE
+      mockDb.query.bookings.findFirst.mockResolvedValue({ ...pendingBooking, ...state });
+
+      // ACT
+      const promise = service.createCheckout("booking-1", "user-1");
+
+      // ASSERT
+      await expect(promise).rejects.toThrow(BookingExpiredException);
+      expect(mockPreferenceClient.create).not.toHaveBeenCalled();
+    });
+
     it("should throw Conflict when the booking is no longer pending", async () => {
       // ARRANGE
       mockDb.query.bookings.findFirst.mockResolvedValue({ ...pendingBooking, status: "confirmed" });
@@ -173,7 +205,7 @@ describe("PaymentService", () => {
 
       // ASSERT
       expect(mockPaymentClient.get).toHaveBeenCalledWith({ id: 183574424580 });
-      expect(mockBookingService.confirmPaidBooking).toHaveBeenCalledWith("booking-1");
+      expect(mockBookingService.confirmPaidBooking).toHaveBeenCalledWith("booking-1", expect.anything());
     });
 
     it("should handle the legacy IPN sent only as query params, with no usable body", async () => {
@@ -190,7 +222,7 @@ describe("PaymentService", () => {
 
       // ASSERT
       expect(mockPaymentClient.get).toHaveBeenCalledWith({ id: 183574424580 });
-      expect(mockBookingService.confirmPaidBooking).toHaveBeenCalledWith("booking-1");
+      expect(mockBookingService.confirmPaidBooking).toHaveBeenCalledWith("booking-1", expect.anything());
     });
 
     it("should not throw when Mercado Pago sends no JSON body at all", async () => {
@@ -226,7 +258,10 @@ describe("PaymentService", () => {
       // ASSERT
       expect(mockPaymentClient.get).toHaveBeenCalledWith({ id: 999 });
       expect(onConflictDoUpdate).toHaveBeenCalled();
-      expect(mockBookingService.confirmPaidBooking).toHaveBeenCalledWith("booking-1");
+      expect(mockBookingService.confirmPaidBooking).toHaveBeenCalledWith("booking-1", {
+        externalPaymentId: "999",
+        amountCents: 4500,
+      });
     });
 
     it("should guard the payments upsert so a later notification can't overwrite an approved row", async () => {

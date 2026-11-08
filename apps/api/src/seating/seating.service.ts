@@ -1,7 +1,8 @@
 import { ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, eq } from "drizzle-orm";
+import { and, eq, SQL } from "drizzle-orm";
 import { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import type { Redis } from "ioredis";
+import { activeBookingCondition } from "../booking/booking-lock";
 import { DRIZZLE } from "../db/drizzle.module";
 import * as schema from "../db/schema";
 import { VALKEY } from "../valkey/valkey.module";
@@ -204,12 +205,12 @@ export class SeatingService {
     await this.valkey.del(...keys);
   }
 
+  /** True when a booking that still locks the seat exists (see `activeBookingCondition`). */
   private async isSeatBooked(sessionId: string, seatId: string): Promise<boolean> {
-    const rows = await this.db.query.bookingSeats.findMany({
-      where: and(eq(schema.bookingSeats.sessionId, sessionId), eq(schema.bookingSeats.seatId, seatId)),
-      with: { booking: true },
-    });
-    return rows.some((row) => row.booking.status === "confirmed");
+    const rows = await this.lockedSeatRows(
+      and(eq(schema.bookingSeats.sessionId, sessionId), eq(schema.bookingSeats.seatId, seatId))!,
+    );
+    return rows.length > 0;
   }
 
   private async countActiveHoldsForUser(sessionId: string, userId: string): Promise<number> {
@@ -267,14 +268,22 @@ export class SeatingService {
     return "free";
   }
 
+  /**
+   * Seats locked by a confirmed booking, or by a pending one still within its
+   * deadline (or with a payment in flight). An expired pending booking shows
+   * as free right away, even before the sweeper cleans it up.
+   */
   private async getBookedSeatIds(sessionId: string): Promise<Set<string>> {
-    const rows = await this.db.query.bookingSeats.findMany({
-      where: eq(schema.bookingSeats.sessionId, sessionId),
-      with: { booking: true },
-    });
-    return new Set(
-      rows.filter((row) => row.booking.status === "confirmed").map((row) => row.seatId),
-    );
+    const rows = await this.lockedSeatRows(eq(schema.bookingSeats.sessionId, sessionId));
+    return new Set(rows.map((row) => row.seatId));
+  }
+
+  private lockedSeatRows(seatFilter: SQL): Promise<{ seatId: string }[]> {
+    return this.db
+      .select({ seatId: schema.bookingSeats.seatId })
+      .from(schema.bookingSeats)
+      .innerJoin(schema.bookings, eq(schema.bookings.id, schema.bookingSeats.bookingId))
+      .where(and(seatFilter, activeBookingCondition()));
   }
 
   private async getActiveHolds(sessionId: string): Promise<Map<string, string>> {

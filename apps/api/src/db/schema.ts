@@ -1,5 +1,5 @@
-import { relations } from "drizzle-orm";
-import { integer, pgTable, text, timestamp, unique, uuid } from "drizzle-orm/pg-core";
+import { relations, sql } from "drizzle-orm";
+import { boolean, integer, pgTable, text, timestamp, unique, uuid } from "drizzle-orm/pg-core";
 
 export const users = pgTable("users", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -78,8 +78,18 @@ export const bookings = pgTable("bookings", {
   sessionId: uuid("session_id")
     .notNull()
     .references(() => sessions.id),
+  // "pending" | "confirmed" | "cancelled" | "expired" (free text, no DB constraint).
   status: text("status").notNull().default("pending"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  // Only meaningful while status = "pending". Always computed by the DB clock;
+  // the default only covers inserts that don't pass it (e.g. seed.ts).
+  expiresAt: timestamp("expires_at", { withTimezone: true })
+    .notNull()
+    .default(sql`(now() + interval '10 minutes')`),
+  // Set once when an approved payment lands on an already expired booking.
+  needsRefundReview: boolean("needs_refund_review").notNull().default(false),
+  // Set once when a pending booking's in-flight payment is older than 24h.
+  stalePaymentAlertedAt: timestamp("stale_payment_alerted_at", { withTimezone: true }),
 });
 
 export const bookingSeats = pgTable(

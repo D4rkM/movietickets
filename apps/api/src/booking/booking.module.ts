@@ -6,11 +6,12 @@ import { BookingConfirmationController } from "./booking-confirmation.controller
 import { BookingController } from "./booking.controller";
 import { BookingService } from "./booking.service";
 import { MyBookingsController } from "./my-bookings.controller";
+import { PendingBookingSweeper } from "./pending-booking.sweeper";
 
 @Module({
   imports: [AuthModule, SeatingModule, NotificationModule],
   controllers: [BookingController, BookingConfirmationController, MyBookingsController],
-  providers: [BookingService],
+  providers: [BookingService, PendingBookingSweeper],
   exports: [BookingService],
 })
 export class BookingModule {}

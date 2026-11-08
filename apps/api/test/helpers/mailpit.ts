@@ -28,3 +28,10 @@ export async function findMailpitMessage(searchTerm: string): Promise<MailpitMes
   }
   throw new Error(`No Mailpit message found matching "${searchTerm}" after ${POLL_ATTEMPTS} attempts`);
 }
+
+/** Single-shot count of Mailpit messages mentioning the term, for "no email was sent" assertions. */
+export async function countMailpitMessages(searchTerm: string): Promise<number> {
+  const response = await fetch(`${MAILPIT_URL}/api/v1/search?query=${encodeURIComponent(searchTerm)}`);
+  const body = await response.json();
+  return body.messages?.length ?? 0;
+}
