@@ -67,4 +67,16 @@ describe("ProfileMenu (integration)", () => {
     expect(await screen.findByText("Login page")).toBeInTheDocument();
     expect(localStorage.getItem("movietickets:accessToken")).toBeNull();
   });
+
+  it("should show a login link instead of the menu when nobody is logged in", async () => {
+    // ARRANGE
+    localStorage.clear();
+    renderProfileMenu();
+
+    // ACT
+    await userEvent.click(screen.getByRole("link", { name: "Entrar" }));
+
+    // ASSERT
+    expect(await screen.findByText("Login page")).toBeInTheDocument();
+  });
 });
