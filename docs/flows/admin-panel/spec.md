@@ -21,26 +21,37 @@ Nesta spec, "sessão" é a sessão de cinema (exibição de um filme numa sala e
 ## Fora de escopo
 
 - Soft delete / desativar filme, sala ou sessão (ex: coluna `active`). Nesta versão, o que tem dependência é bloqueado com 409 e o resto é apagado de verdade.
-- Excluir cinema.
+- Excluir cinema (ver "Decididas").
 - Layout de sala irregular (fileiras com quantidades diferentes, corredores configuráveis, assento PCD). A sala gerada pelo admin é sempre retangular. O layout irregular da sala de exemplo do seed continua existindo só via seed.
 - Upload de pôster (o admin informa uma URL em `posterUrl`).
 - Gestão de usuários pela API (promover/rebaixar admin, listar usuários).
-- Cancelar sessão com reembolso automático dos ingressos já vendidos.
+- Cancelar sessão que já vendeu ingresso (soft delete + reembolso dos ingressos). Fica pra uma feature futura separada.
+- Expiração automática de booking `pending`. Tratada na spec separada `docs/flows/pending-booking-expiry/spec.md` (ver "Decididas").
+- Intervalo de limpeza/trailer entre sessões na mesma sala (ver "Decididas").
 - Paginação, busca e ordenação configurável nas listas do admin.
 - Relatórios (vendas, ocupação).
 - Auditoria de quem alterou o quê.
 
-## Decisões desta spec (pra revisar)
+## Decisões desta spec
 
-> Propostas. O escopo ainda não foi confirmado, então cada item abaixo pode mudar na revisão.
+> A subseção "Decididas" já foi confirmada. As subseções marcadas **(pra revisar)** ainda são propostas e podem mudar na revisão.
 
-### Escopo do MVP e cinemas
+### Decididas
+
+- **Intervalo entre sessões: 0 min.** Na mesma sala, uma sessão pode começar exatamente quando a anterior termina (`startsAt + duração do filme`). Sem tempo de limpeza ou trailer nesta versão. Se precisar depois, vira uma constante configurável somada ao fim de cada sessão na checagem de sobreposição, sem mudar a regra do AC14.
+- **`rating` validado.** Se informado, precisa ser um de `L`, `10`, `12`, `14`, `16`, `18` (classificação indicativa brasileira). Outro valor → 400. Continua opcional.
+- **Booking `pending` sem expiração não é resolvido aqui.** A expiração de `pending` fica na spec separada `docs/flows/pending-booking-expiry/spec.md` (a escrever), que é dependência desta. As regras de integridade desta spec não mudam: booking `pending` continua bloqueando edição e exclusão da sessão.
+- **Preço com só booking `confirmed` pode mudar.** O preço pago já fica gravado por assento em `booking_seats.price_cents` (e é ele que vai pro pagamento), então mudar `priceCents` da sessão não afeta quem já comprou. Mudar preço continua bloqueado (409) quando houver booking `pending` ou hold ativo: quem está no meio da compra viu um preço e não pode ser surpreendido no checkout.
+- **Cancelar sessão que já vendeu ingresso** (soft delete + reembolso) fica fora de escopo. Será uma feature separada no futuro.
+- **Exclusão de cinema** fica fora de escopo. Listar, criar e editar bastam.
+- **Fuso do formulário de sessão fixo em `America/Sao_Paulo`.** O front mostra e recebe o horário de sessão nesse fuso, independente do fuso do navegador, e envia `startsAt` em ISO 8601 com offset. A API grava em `timestamptz` (UTC) como já faz hoje. As listas do admin também mostram o horário em `America/Sao_Paulo`.
+
+### Escopo do MVP e cinemas (pra revisar)
 
 - Entram filmes, salas e sessões, como no `docs/planning.md`.
 - Cinemas entram só com listar, criar e editar (`name`, `address`, `city`). Motivo: sala exige `cinemaId` (`rooms.cinema_id` é `NOT NULL`), então sem criar cinema o admin só consegue pôr sala nova nos cinemas que o seed criou. É trivial (três campos de texto, sem regra de negócio).
-- Exclusão de cinema fica fora: cinema sem sala é raro e cinema com sala cairia nas mesmas regras de bloqueio da sala. Não compensa nesta versão.
 
-### Autorização
+### Autorização (pra revisar)
 
 - Novo decorator `@Roles("admin")` + `RolesGuard` em `apps/api/src/auth/`. O guard lê `request.user.role`, que o `JwtAuthGuard` já preenche com o payload do token. Hoje não existe nenhum guard de papel na API.
 - Todas as rotas do `AdminModule` ficam em `/admin/*` e usam `@UseGuards(JwtAuthGuard, RolesGuard)` no nível do controller, com `@Roles("admin")`.
@@ -50,7 +61,7 @@ Nesta spec, "sessão" é a sessão de cinema (exibição de um filme numa sala e
 - O papel vem do token, sem consulta ao banco por requisição. Consequência: quem perde o papel admin continua com acesso até o token expirar (`JWT_EXPIRES_IN`, padrão `1h`). Aceito nesta versão (ver "Riscos").
 - O `GET /movies` público continua sem guard. As rotas admin não reutilizam o `CatalogController`.
 
-### Primeiro admin
+### Primeiro admin (pra revisar)
 
 - Dev/local: o seed já cria `admin@movietickets.dev` com `role: "admin"` (senha de dev `password123`). Nada muda.
 - Outros ambientes: o admin é promovido por SQL manual, documentado no `apps/api/README.md`:
@@ -63,13 +74,13 @@ Nesta spec, "sessão" é a sessão de cinema (exibição de um filme numa sala e
 - `POST /auth/register` continua criando sempre `role: "customer"`. O `RegisterDto` não declara `role` e o `ValidationPipe` (`whitelist: true`) remove o campo, então mandar `role: "admin"` no body não promove ninguém. Isso vira AC pra não regredir.
 - Sem endpoint de promoção e sem variável de ambiente de bootstrap (ex: `ADMIN_EMAIL`) nesta versão.
 
-### Filmes
+### Filmes (pra revisar)
 
-- Campos: `title` (obrigatório, 1–200 caracteres), `synopsis` (opcional), `durationMinutes` (obrigatório, inteiro 1–600), `posterUrl` (opcional, URL `http`/`https`), `rating` (opcional, texto livre até 10 caracteres, ver "Perguntas em aberto").
+- Campos: `title` (obrigatório, 1–200 caracteres), `synopsis` (opcional), `durationMinutes` (obrigatório, inteiro 1–600), `posterUrl` (opcional, URL `http`/`https`), `rating` (opcional; se informado, um de `L`, `10`, `12`, `14`, `16`, `18`, ver "Decididas").
 - Exclusão: só se o filme não tiver **nenhuma** sessão (passada ou futura). Com sessão → 409. Motivo: `sessions.movie_id` é FK sem `ON DELETE`, então o banco já recusaria. A checagem explícita devolve 409 com mensagem clara em vez de 500.
 - Editar `durationMinutes` revalida a sobreposição de todas as sessões futuras do filme. Se a nova duração fizer alguma sessão invadir a seguinte na mesma sala → 409 e nada muda.
 
-### Salas e assentos
+### Salas e assentos (pra revisar)
 
 - Campos: `cinemaId` (obrigatório, cinema existente), `name` (obrigatório), `rows` (inteiro 1–26), `seatsPerRow` (inteiro 1–40).
 - `rows` vai até 26 porque o rótulo da fileira é uma letra (`A`, `B`, ...), mesmo padrão do seed (`String.fromCharCode(65 + rowIndex)`).
@@ -80,25 +91,25 @@ Nesta spec, "sessão" é a sessão de cinema (exibição de um filme numa sala e
 - Excluir sala: só sem nenhuma sessão (mesma razão de FK de `sessions.room_id`). Apaga assentos e sala na mesma transação. Com sessão → 409.
 - Mudar o cinema da sala (`cinemaId`) não é permitido na edição. Se precisar, apaga e cria outra.
 
-### Sessões
+### Sessões (pra revisar)
 
-- Campos: `movieId` (filme existente), `roomId` (sala existente), `startsAt` (ISO 8601 com fuso, precisa ser futuro), `priceCents` (inteiro > 0).
-- **Sobreposição.** O schema tem `movies.duration_minutes`, então o intervalo de uma sessão é `[startsAt, startsAt + movie.durationMinutes)`. Duas sessões na mesma sala se sobrepõem quando `A.start < B.end` e `B.start < A.end`. Sobreposição → 409. Sessão que começa exatamente quando a outra termina não é sobreposição. Sem intervalo de limpeza entre sessões nesta versão (ver "Perguntas em aberto").
+- Campos: `movieId` (filme existente), `roomId` (sala existente), `startsAt` (ISO 8601 com offset, precisa ser futuro, gravado em UTC), `priceCents` (inteiro > 0).
+- **Sobreposição.** O schema tem `movies.duration_minutes`, então o intervalo de uma sessão é `[startsAt, startsAt + movie.durationMinutes)`. Duas sessões na mesma sala se sobrepõem quando `A.start < B.end` e `B.start < A.end`. Sobreposição → 409. Sessão que começa exatamente quando a outra termina não é sobreposição. Sem intervalo de limpeza entre sessões (ver "Decididas").
 - A checagem de sobreposição vale pra criar sessão, editar `roomId`/`startsAt`/`movieId` e editar `durationMinutes` de filme. Sessões passadas também entram na conta (uma sessão nova não pode começar no meio de outra que já começou).
 - **Concorrência.** Duas criações simultâneas que se sobrepõem não podem passar as duas. A checagem e o insert/update rodam numa transação que trava a linha da sala (`SELECT ... FROM rooms WHERE id = $1 FOR UPDATE`) antes de ler as sessões dela. Exclusion constraint do Postgres (`tstzrange` + `btree_gist`) foi descartada porque a duração mora em `movies`, não em `sessions`.
 - **Sessão já iniciada** (`startsAt <= agora`) é só leitura: edição e exclusão → 409.
 - **Atividade de compra.** Uma sessão tem atividade se tiver booking `pending` ou `confirmed`, ou hold ativo no Valkey (chaves `seat-hold:<sessionId>:*`, mesma varredura que o `SeatingService.scanHoldKeys` já faz).
-  - Com atividade, editar `movieId`, `roomId`, `startsAt` ou `priceCents` → 409. Sem campo editável restante, na prática a sessão fica congelada.
-  - `priceCents` também fica bloqueado, mesmo com o preço já gravado por assento em `booking_seats.price_cents`: quem está segurando assento viu um preço e não pode ser surpreendido no checkout (ver "Perguntas em aberto").
+  - Com qualquer atividade, editar `movieId`, `roomId` ou `startsAt` → 409.
+  - `priceCents`: com booking `pending` ou hold ativo → 409. Com só booking `confirmed` (sem `pending` e sem hold) → permitido, porque o preço pago está gravado em `booking_seats.price_cents` (ver "Decididas").
 - **Exclusão de sessão.** Bloqueada (409) se houver hold ativo ou **qualquer** booking, inclusive `cancelled`. Motivo: `bookings.session_id` e `booking_seats.session_id` são FK sem `ON DELETE`, e booking cancelado guarda histórico de pagamento (`payments`). Apagar em cascata perderia esse histórico.
 - Sessão sem booking e sem hold é apagada de verdade.
 
-### Cache do catálogo
+### Cache do catálogo (pra revisar)
 
 - Hoje o `CatalogService.listMovies` (`apps/api/src/catalog/catalog.service.ts`) consulta o Postgres direto. **Não existe cache Valkey no `GET /movies`**, apesar de o `docs/planning.md` citar "cache Valkey" no `CatalogModule`. Então nesta versão não há nada pra invalidar.
 - Regra pra frente: se um cache for adicionado no catálogo, toda escrita do admin (filme, sala, cinema, sessão) invalida as chaves do catálogo na mesma requisição, depois do commit. Os ACs 4, 12 e 17 checam que o catálogo reflete a escrita imediatamente, então pegam a regressão se alguém adicionar cache sem invalidar.
 
-### Listas do admin
+### Listas do admin (pra revisar)
 
 - `GET /admin/movies`: todos os filmes, ordem por título.
 - `GET /admin/cinemas`: todos os cinemas, ordem por nome.
@@ -106,7 +117,7 @@ Nesta spec, "sessão" é a sessão de cinema (exibição de um filme numa sala e
 - `GET /admin/sessions`: sessões futuras por padrão, ordem por `startsAt`, com título do filme, sala e cinema. `?includePast=true` inclui as passadas.
 - Sem paginação nesta versão.
 
-### Front
+### Front (pra revisar)
 
 - Rotas novas em `apps/web/src/App.tsx`, todas dentro de um novo `AdminRoute`:
   - `/admin` (índice com links pras seções)
@@ -117,7 +128,7 @@ Nesta spec, "sessão" é a sessão de cinema (exibição de um filme numa sala e
 - `AdminRoute` (`apps/web/src/lib/AdminRoute.tsx`): sem token de usuário → `/login`. Com token, mas `user.role !== "admin"` (lido do `AuthContext`, que já guarda `role` em `movietickets:user`) → tela "Acesso restrito" com link pra `/movies`. A checagem no front é só de navegação. Quem protege de verdade é a API.
 - Link "Admin" no `ProfileMenu` (`apps/web/src/features/auth/ProfileMenu.tsx`) só aparece pra `role === "admin"`.
 - Páginas de lista: tabela simples com os campos principais, botão "Novo", "Editar" e "Excluir" (confirmação com `window.confirm`).
-- Formulários: inputs nativos (`text`, `number`, `datetime-local`, `select`), sem biblioteca de formulário nova. Preço digitado em reais e convertido pra centavos. `startsAt` digitado no fuso do navegador e enviado em ISO 8601 com fuso.
+- Formulários: inputs nativos (`text`, `number`, `datetime-local`, `select`), sem biblioteca de formulário nova. Preço digitado em reais e convertido pra centavos. `startsAt` digitado e exibido em `America/Sao_Paulo` (não no fuso do navegador) e enviado em ISO 8601 com offset (ver "Decididas").
 - Erro da API (400, 404, 409) aparece no formulário com a mensagem retornada, sem perder o que foi digitado.
 - 401 numa chamada admin segue o comportamento atual do `api-client` (limpa a sessão e manda pro login).
 
@@ -127,7 +138,7 @@ Nesta spec, "sessão" é a sessão de cinema (exibição de um filme numa sala e
 - **AC2**: qualquer rota `/admin/*` chamada com token de usuário `role: "customer"` responde 403 e não altera nada no banco.
 - **AC3**: qualquer rota `/admin/*` chamada com token de convidado (`kind: "guest"`) responde 401.
 - **AC4**: admin cria um filme e cria uma sessão futura pra ele. O filme aparece em `GET /movies` com essa sessão na resposta seguinte, sem espera.
-- **AC5**: criar ou editar filme com `title` vazio, `durationMinutes` fora de 1–600 ou `posterUrl` que não é URL `http`/`https` responde 400 e não grava nada.
+- **AC5**: criar ou editar filme com `title` vazio, `durationMinutes` fora de 1–600 `posterUrl` que não é URL `http`/`https` ou `rating` fora de `L`, `10`, `12`, `14`, `16`, `18` responde 400 e não grava nada. `rating` ausente é aceito.
 - **AC6**: editar `durationMinutes` de um filme de forma que alguma sessão futura dele passe a se sobrepor a outra sessão da mesma sala responde 409 e a duração não muda. Edição que não cria sobreposição é aceita.
 - **AC7**: excluir filme sem nenhuma sessão responde 204 e o filme some de `GET /movies`. Excluir filme com qualquer sessão (passada ou futura) responde 409 e nada é apagado.
 - **AC8**: admin lista, cria e edita cinemas (`name`, `address`, `city` obrigatórios). Campo obrigatório vazio responde 400.
@@ -138,7 +149,7 @@ Nesta spec, "sessão" é a sessão de cinema (exibição de um filme numa sala e
 - **AC13**: criar sessão com `startsAt` no passado, `priceCents <= 0` ou sem campo obrigatório responde 400. `movieId` ou `roomId` inexistente responde 404.
 - **AC14**: criar ou editar sessão cujo intervalo `[startsAt, startsAt + duração do filme)` se sobrepõe a outra sessão da mesma sala responde 409. Sessão que começa exatamente no fim da outra é aceita. Mesmo horário em sala diferente é aceito.
 - **AC15**: duas criações simultâneas de sessões que se sobrepõem na mesma sala resultam em exatamente uma sessão gravada. A outra requisição responde 409.
-- **AC16**: editar `movieId`, `roomId`, `startsAt` ou `priceCents` de sessão futura sem booking `pending`/`confirmed` e sem hold ativo é aceito e reflete em `GET /movies`. A mesma edição com booking `pending`, com booking `confirmed` ou com hold ativo no Valkey responde 409 e nada muda.
+- **AC16**: editar `movieId`, `roomId`, `startsAt` ou `priceCents` de sessão futura sem booking `pending`/`confirmed` e sem hold ativo é aceito e reflete em `GET /movies`. Com booking `pending`, com booking `confirmed` ou com hold ativo no Valkey, editar `movieId`, `roomId` ou `startsAt` responde 409 e nada muda. Editar `priceCents` com booking `pending` ou hold ativo responde 409. Editar `priceCents` com só booking `confirmed` é aceito, e o `booking_seats.price_cents` dos ingressos já vendidos não muda.
 - **AC17**: excluir sessão futura sem nenhum booking e sem hold ativo responde 204 e a sessão some de `GET /movies`. Excluir sessão com hold ativo ou com booking em qualquer status (`pending`, `confirmed`, `cancelled`) responde 409 e nada é apagado.
 - **AC18**: editar ou excluir sessão que já começou (`startsAt <= agora`) responde 409.
 - **AC19**: excluir sala sem nenhuma sessão apaga a sala e os assentos dela (204). Excluir sala com qualquer sessão responde 409 e nada é apagado.
@@ -147,6 +158,7 @@ Nesta spec, "sessão" é a sessão de cinema (exibição de um filme numa sala e
 - **AC22**: o link "Admin" no menu de perfil aparece só pra usuário `role: "admin"`.
 - **AC23**: no front, admin cadastra filme, sala e sessão pelos formulários, e a sessão criada aparece em `/movies`.
 - **AC24**: no front, quando a API responde 400 ou 409 num formulário admin, a mensagem de erro aparece no formulário e os valores digitados continuam preenchidos.
+- **AC25**: no formulário de sessão, o horário digitado é interpretado em `America/Sao_Paulo`, independente do fuso do navegador, e enviado como ISO 8601 que corresponde ao instante UTC certo (ex: `2026-12-20T19:00` digitado → `2026-12-20T22:00:00.000Z`). Ao editar, a sessão gravada em UTC aparece no formulário e na lista no horário de `America/Sao_Paulo`.
 
 ## Modelo de dados / API (impacto)
 
@@ -179,6 +191,7 @@ Nesta spec, "sessão" é a sessão de cinema (exibição de um filme numa sala e
 
 - DTOs com `class-validator`. `PATCH` aceita campos parciais. `ValidationPipe` global já roda com `whitelist: true, transform: true` (`apps/api/src/main.ts`).
 - Mensagens de erro em português, mesmo padrão das exceptions existentes (ex: `"Sessão não encontrada"`).
+- `sessions.starts_at` continua `timestamptz` (UTC). A API aceita `startsAt` em ISO 8601 com offset e devolve em ISO UTC. A conversão pra `America/Sao_Paulo` é só no front.
 - Valkey: só leitura das chaves `seat-hold:<sessionId>:*` pra checar hold ativo. Nenhuma chave nova.
 - `GET /movies`, `GET /sessions/:id/seats` e rotas de hold/booking: sem mudança.
 - Front: `AdminRoute`, páginas em `apps/web/src/features/admin/`, link condicional no `ProfileMenu`. `AuthUser.role` já existe (`apps/web/src/features/auth/types.ts`).
@@ -187,20 +200,13 @@ Nesta spec, "sessão" é a sessão de cinema (exibição de um filme numa sala e
 ## Riscos
 
 - **Papel desatualizado no token**: quem é rebaixado mantém acesso admin até o token expirar (até `JWT_EXPIRES_IN`, padrão 1h). Mitigação: TTL curto do token. Consulta ao banco por requisição fica como evolução se virar problema.
-- **Sessão congelada por booking `pending` órfão**: hoje não existe expiração de booking `pending` na API (só sai de `pending` por webhook de pagamento ou confirmação). Booking abandonado trava edição e exclusão da sessão pra sempre (AC16, AC17). Ver "Perguntas em aberto".
+- **Sessão congelada por booking `pending` órfão**: hoje não existe expiração de booking `pending` na API (só sai de `pending` por webhook de pagamento ou confirmação). Booking abandonado trava edição e exclusão da sessão até ser resolvido (AC16, AC17). A expiração fica na spec `docs/flows/pending-booking-expiry/spec.md`, dependência desta (ver "Decididas").
 - **Race entre checagem de hold e novo hold**: o admin checa holds e, no mesmo instante, um cliente segura um assento. A janela é de milissegundos. Pra exclusão o risco é baixo, porque o hold expira em 600s e o booking seguinte falha com 404 de sessão. Pra edição de sala/horário, o cliente pode ficar com hold de assento de outra sala até o TTL. Aceito nesta versão.
 - **Layout gerado diferente do layout de exemplo**: o `SeatMap` do front tem regras visuais pensadas pra sala do seed (bloco do meio de 20 assentos, corredores a partir de 16 por fileira). Sala retangular gerada pelo admin precisa renderizar corretamente nessas regras. Vale um teste de componente com layout pequeno (ex: 5 × 8) e grande (26 × 40).
 
 ## Perguntas em aberto
 
-1. **Intervalo entre sessões**: precisa de um tempo de limpeza/trailer entre sessões na mesma sala (ex: 15 ou 30 min) além da duração do filme? A spec assume 0.
-2. **`rating`**: validar contra a classificação indicativa brasileira (`L`, `10`, `12`, `14`, `16`, `18`) ou manter texto livre? O seed não preenche esse campo hoje.
-3. **Booking `pending` sem expiração**: deve existir expiração automática de `pending` (ex: igual ao TTL do hold) antes do painel admin, pra não congelar sessões? Ou o admin ganha uma ação de cancelar booking `pending` antigo?
-4. **Mudança de preço com atividade**: como `booking_seats.price_cents` já guarda o preço pago, mudar `priceCents` de sessão com booking `confirmed` não afeta quem já pagou. Liberar a mudança de preço quando só houver `confirmed` (sem `pending` nem hold)? A spec bloqueia por segurança.
-5. **Cancelar sessão com venda**: hoje não há caminho pra tirar do ar uma sessão que já vendeu ingresso (ex: sala com problema). Isso precisa de soft delete + reembolso, fora desta spec. Precisa entrar logo depois?
-6. **Exclusão de cinema**: é necessária em algum cenário real do projeto, ou listar/criar/editar basta?
-7. **Fuso do formulário de sessão**: o admin digita no fuso do navegador. Um admin pode cadastrar sessão de cinema em outro fuso (ex: Manaus, UTC-4, a partir de São Paulo, UTC-3)? Se sim, `cinemas` precisaria de uma coluna de fuso e o formulário usaria o fuso do cinema.
-8. **Promoção de admin fora do dev**: SQL manual basta, ou vale um script (`pnpm --filter api admin:promote <email>`) pra não depender de acesso direto ao banco?
+1. **Promoção de admin fora do dev**: SQL manual basta, ou vale um script (`pnpm --filter api admin:promote <email>`) pra não depender de acesso direto ao banco? Enquanto isso, vale a proposta de "Primeiro admin" (pra revisar).
 
 ## Rastreabilidade com testes
 
@@ -213,8 +219,8 @@ Cada AC vira pelo menos um teste com o número da AC no título do `it`. Teste d
 | AC2 | integração | `it("AC2: deve recusar com 403 usuário cliente tentando criar filme")` e equivalente pra excluir sessão, confirmando que nada mudou no banco |
 | AC3 | integração | token de convidado recusado com 401 numa rota admin (entra junto com a identidade de convidado) |
 | AC4 | integração | admin cria filme + sessão futura e o `GET /movies` seguinte já traz os dois |
-| AC5 | integração | um `it` por campo inválido: título vazio, duração 0, duração 601, `posterUrl` inválida |
-| AC5 | unitário | DTO de filme (aqui `it.each` é bem-vindo) |
+| AC5 | integração | um `it` por campo inválido: título vazio, duração 0, duração 601, `posterUrl` inválida, `rating` inválido (ex: `"15"`) |
+| AC5 | unitário | DTO de filme, incluindo `rating` aceito (`L`, `10`, `12`, `14`, `16`, `18`, ausente) e recusado (`"15"`, `"livre"`, `""`) (aqui `it.each` é bem-vindo) |
 | AC6 | integração | duração nova que cria sobreposição → 409 e duração mantida; duração nova sem sobreposição → 200 |
 | AC7 | integração | filme sem sessão excluído; filme com sessão futura → 409; filme só com sessão passada → 409 |
 | AC8 | integração | criar, editar e listar cinema; campo obrigatório vazio → 400 |
@@ -227,7 +233,8 @@ Cada AC vira pelo menos um teste com o número da AC no título do `it`. Teste d
 | AC14 | integração | um `it` por caso: sobreposição no início, sobreposição no fim, sessão contida em outra, sessão encostada no fim (aceita), mesmo horário em outra sala (aceita), edição de `startsAt` que cria sobreposição |
 | AC14 | unitário | função de sobreposição de intervalos (aqui `it.each` é bem-vindo: encostado, contido, parcial, disjunto) |
 | AC15 | integração | duas requisições paralelas (`Promise.all`) criando sessões sobrepostas na mesma sala: uma 201, uma 409, uma linha no banco |
-| AC16 | integração | um `it` por caso: edição sem atividade aceita e refletida em `GET /movies`; com booking `pending` → 409; com booking `confirmed` → 409; com hold ativo no Valkey → 409 |
+| AC16 | integração | um `it` por caso: edição sem atividade aceita e refletida em `GET /movies`; mudar `startsAt` com booking `pending` → 409; mudar `startsAt` com booking `confirmed` → 409; mudar `startsAt` com hold ativo no Valkey → 409; mudar `priceCents` com booking `pending` → 409; mudar `priceCents` com hold ativo → 409 |
+| AC16 | integração | `it("AC16: deve permitir mudar o preço de sessão que só tem reservas confirmadas, sem alterar o preço já pago")`: `priceCents` novo gravado e `booking_seats.price_cents` dos ingressos vendidos igual ao anterior |
 | AC17 | integração | um `it` por caso: exclusão sem atividade (sessão some do catálogo); com hold ativo; com booking `pending`; com `confirmed`; com `cancelled` → 409 |
 | AC18 | integração | editar sessão já iniciada → 409; excluir sessão já iniciada → 409 |
 | AC19 | integração | sala sem sessão excluída junto com os assentos; sala com sessão → 409 |
@@ -237,4 +244,6 @@ Cada AC vira pelo menos um teste com o número da AC no título do `it`. Teste d
 | AC23 | e2e (Playwright) | admin loga, cria filme, sala e sessão pelos formulários e vê a sessão em `/movies` |
 | AC24 | componente | formulário de sessão com resposta 409 da API mostra a mensagem e mantém os campos preenchidos |
 | — | componente | `SeatMap` renderiza sala retangular gerada (5 × 8 e 26 × 40) sem quebrar alinhamento |
-| — | unitário | conversão de preço em reais pra centavos e de `datetime-local` pra ISO com fuso no front |
+| AC25 | componente | com o fuso do processo de teste diferente de São Paulo (ex: `TZ=UTC`), formulário de sessão com `2026-12-20T19:00` envia `startsAt` `2026-12-20T22:00:00.000Z`; edição de sessão gravada em UTC mostra o horário de São Paulo |
+| AC25 | unitário | conversão `datetime-local` em `America/Sao_Paulo` ↔ ISO UTC (aqui `it.each` é bem-vindo) |
+| — | unitário | conversão de preço em reais pra centavos no front |
