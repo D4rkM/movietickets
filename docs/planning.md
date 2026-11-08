@@ -109,11 +109,11 @@ Definição completa de colunas, tipos, PK/FK e a tabela de junção `booking_se
 ### 3. Checkout / pagamento (Mercado Pago sandbox)
 - Resumo do pedido (filme, sessão, assentos, valor) — **implementado**
 - Pagamento mockado (sem gateway real), reserva atômica multi-assento numa transação só — **implementado**
-- Checkout Transparente (Card Payment Brick no front, `POST /bookings/:id/payments` no back, Payments API direta com `X-Idempotency-Key`) — **migração em andamento, milestone AC3**. Spec: `docs/flows/checkout-transparente/spec.md`. Substitui o Checkout Pro (Preferences API / `init_point`), que sai junto com `back_urls`/`auto_return`/`/checkout/retorno` pro cartão. Pix fica fora desta etapa
-- Decisão registrada na spec: rejeição não libera hold (usuário pode tentar outro cartão); liberação fica com timeout do hold ou cancelamento
-- Histórico do pagamento: tabela append-only `payment_events` gravada na mesma transação de cada mudança de estado (auditoria, sem event sourcing). Dentro da regra "CQRS light, sem event store"
+- Checkout Transparente com Core Methods (formulário próprio no front; número, validade e CVV em campos seguros do MercadoPago.js v2; `GET /bookings/:id/payment-summary` e `POST /bookings/:id/payments` no back, Payments API direta com `X-Idempotency-Key` = id da tentativa gerado pelo cliente) — **spec em revisão**: `docs/flows/checkout-transparente/spec.md`. Substitui o Checkout Pro (Preferences API / `init_point`), que sai junto com `back_urls`/`auto_return`/`/checkout/retorno`. Pix fica fora desta etapa. Depende da spec `pending-booking-expiry`
+- Decisões registradas na spec: cartão recusado (ou `cancelled`) mantém a reserva `pending` pra nova tentativa; quem libera o assento é a expiração da reserva pendente (spec `pending-booking-expiry`). `payments` passa a ter uma linha por tentativa
+- Histórico do pagamento: tabela append-only `payment_events`, cada evento gravado na mesma transação Postgres da mudança de estado (a chamada ao MP fica fora de transação: grava tentativa, chama MP, grava resposta). Auditoria, sem event sourcing, dentro da regra "CQRS light, sem event store"
 - Webhook de confirmação de pagamento → re-busca o pagamento na API do MP, atualiza `Booking` pra `confirmed` (idempotente) e grava `payments` — **implementado no back (sandbox)**. Ambiente local precisa de URL pública (tunnel) pra o MP conseguir chamar o webhook
-- Falha/timeout de pagamento → libera hold do assento — depende do hold existir (feature #1)
+- Falha/abandono de pagamento → assento liberado pela expiração da reserva pendente (spec `pending-booking-expiry`), não pela recusa do cartão
 
 ### 4. Conta de usuário + histórico de ingressos
 - Cadastro/login (JWT) — **implementado**
