@@ -1,5 +1,5 @@
 import { relations, sql } from "drizzle-orm";
-import { boolean, integer, pgTable, text, timestamp, unique, uuid } from "drizzle-orm/pg-core";
+import { boolean, index, integer, jsonb, pgTable, text, timestamp, unique, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 
 export const users = pgTable("users", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -116,18 +116,45 @@ export const bookingSeats = pgTable(
   (table) => [unique().on(table.sessionId, table.seatId)],
 );
 
-export const payments = pgTable("payments", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  bookingId: uuid("booking_id")
-    .notNull()
-    .unique()
-    .references(() => bookings.id),
-  provider: text("provider").notNull().default("mercado_pago"),
-  externalPaymentId: text("external_payment_id"),
-  status: text("status").notNull(),
-  amountCents: integer("amount_cents").notNull(),
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-});
+export const payments = pgTable(
+  "payments",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    bookingId: uuid("booking_id")
+      .notNull()
+      .references(() => bookings.id),
+    provider: text("provider").notNull().default("mercado_pago"),
+    externalPaymentId: text("external_payment_id"),
+    status: text("status").notNull(),
+    statusDetail: text("status_detail"),
+    amountCents: integer("amount_cents").notNull(),
+    installments: integer("installments"),
+    paymentMethodId: text("payment_method_id"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("payments_booking_id_idx").on(table.bookingId),
+    uniqueIndex("payments_external_payment_id_uq")
+      .on(table.externalPaymentId)
+      .where(sql`${table.externalPaymentId} IS NOT NULL`),
+  ],
+);
+
+export const paymentEvents = pgTable(
+  "payment_events",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    bookingId: uuid("booking_id")
+      .notNull()
+      .references(() => bookings.id),
+    paymentId: uuid("payment_id").references(() => payments.id),
+    type: text("type").notNull(),
+    payload: jsonb("payload").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [index("payment_events_booking_id_created_at_idx").on(table.bookingId, table.createdAt)],
+);
 
 export const moviesRelations = relations(movies, ({ many }) => ({
   sessions: many(sessions),
@@ -155,6 +182,8 @@ export const bookingsRelations = relations(bookings, ({ one, many }) => ({
   user: one(users, { fields: [bookings.userId], references: [users.id] }),
   session: one(sessions, { fields: [bookings.sessionId], references: [sessions.id] }),
   seats: many(bookingSeats),
+  payments: many(payments),
+  paymentEvents: many(paymentEvents),
 }));
 
 export const bookingSeatsRelations = relations(bookingSeats, ({ one }) => ({
@@ -163,8 +192,14 @@ export const bookingSeatsRelations = relations(bookingSeats, ({ one }) => ({
   seat: one(seats, { fields: [bookingSeats.seatId], references: [seats.id] }),
 }));
 
-export const paymentsRelations = relations(payments, ({ one }) => ({
+export const paymentsRelations = relations(payments, ({ one, many }) => ({
   booking: one(bookings, { fields: [payments.bookingId], references: [bookings.id] }),
+  events: many(paymentEvents),
+}));
+
+export const paymentEventsRelations = relations(paymentEvents, ({ one }) => ({
+  booking: one(bookings, { fields: [paymentEvents.bookingId], references: [bookings.id] }),
+  payment: one(payments, { fields: [paymentEvents.paymentId], references: [payments.id] }),
 }));
 
 export type User = typeof users.$inferSelect;
@@ -193,3 +228,6 @@ export type NewBookingSeat = typeof bookingSeats.$inferInsert;
 
 export type Payment = typeof payments.$inferSelect;
 export type NewPayment = typeof payments.$inferInsert;
+
+export type PaymentEvent = typeof paymentEvents.$inferSelect;
+export type NewPaymentEvent = typeof paymentEvents.$inferInsert;

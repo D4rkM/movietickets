@@ -1,11 +1,13 @@
 import { Logger } from "@nestjs/common";
 import { NestFastifyApplication } from "@nestjs/platform-fastify";
+import { randomUUID } from "node:crypto";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { eq, inArray, sql } from "drizzle-orm";
+import { asc, eq, inArray, sql } from "drizzle-orm";
 import { PostgresJsDatabase } from "drizzle-orm/postgres-js";
+import { BookingService } from "../../src/booking/booking.service";
 import * as schema from "../../src/db/schema";
-import { PAYMENT_CLIENT, PREFERENCE_CLIENT } from "../../src/payment/mercadopago.providers";
+import { PAYMENT_CLIENT } from "../../src/payment/mercadopago.providers";
 import { callAs } from "./guest-flow";
 
 type Db = PostgresJsDatabase<typeof schema>;
@@ -14,6 +16,21 @@ type Db = PostgresJsDatabase<typeof schema>;
 export function bookSeatsAs(app: NestFastifyApplication, token: string, sessionId: string, seatIds: string[]) {
   return callAs(app, token, "POST", `/sessions/${sessionId}/book`, {
     seats: seatIds.map((seatId) => ({ seatId, ticketType: "full" })),
+  });
+}
+
+/** POST /sessions/:id/seats/:seatId/book for a single seat. */
+export function bookSingleSeatAs(
+  app: NestFastifyApplication,
+  token: string,
+  sessionId: string,
+  seatId: string,
+  ticketType: "full" | "half" = "full",
+  halfPriceDocument?: string,
+) {
+  return callAs(app, token, "POST", `/sessions/${sessionId}/seats/${seatId}/book`, {
+    ticketType,
+    ...(halfPriceDocument ? { halfPriceDocument } : {}),
   });
 }
 
@@ -31,8 +48,40 @@ export async function bookSeatsAsOrFail(
   return response.json()[0].bookingId;
 }
 
-export function checkoutAs(app: NestFastifyApplication, token: string, bookingId: string) {
+export function validPaymentBody(overrides: Record<string, unknown> = {}) {
+  return {
+    attemptId: randomUUID(),
+    token: "card-token-e2e",
+    paymentMethodId: "visa",
+    issuerId: "25",
+    installments: 1,
+    payer: {
+      email: "comprador@test.com",
+      identification: { type: "CPF", number: "12345678909" },
+    },
+    ...overrides,
+  };
+}
+
+export function payBookingAs(
+  app: NestFastifyApplication,
+  token: string,
+  bookingId: string,
+  body: Record<string, unknown> = validPaymentBody(),
+) {
+  return callAs(app, token, "POST", `/bookings/${bookingId}/payments`, body);
+}
+
+export function paymentSummaryAs(app: NestFastifyApplication, token: string, bookingId: string) {
+  return callAs(app, token, "GET", `/bookings/${bookingId}/payment-summary`);
+}
+
+export function removedCheckoutProAs(app: NestFastifyApplication, token: string, bookingId: string) {
   return callAs(app, token, "POST", `/bookings/${bookingId}/checkout`);
+}
+
+export function checkoutAs(app: NestFastifyApplication, token: string, bookingId: string) {
+  return payBookingAs(app, token, bookingId);
 }
 
 export function confirmAs(app: NestFastifyApplication, token: string, bookingId: string) {
@@ -51,6 +100,34 @@ export async function insertBooking(
   if (values.seatIds.length > 0) {
     await db.insert(schema.bookingSeats).values(
       values.seatIds.map((seatId) => ({ bookingId: id, sessionId: values.sessionId, seatId, priceCents: 3000 })),
+    );
+  }
+  return id;
+}
+
+/** Inserts a booking with explicit per-seat ticket types and prices. */
+export async function insertBookingWithPrices(
+  db: Db,
+  values: {
+    userId: string;
+    sessionId: string;
+    seats: { seatId: string; ticketType?: "full" | "half"; priceCents: number }[];
+    status?: string;
+  },
+): Promise<string> {
+  const [{ id }] = await db
+    .insert(schema.bookings)
+    .values({ userId: values.userId, sessionId: values.sessionId, status: values.status ?? "pending" })
+    .returning({ id: schema.bookings.id });
+  if (values.seats.length > 0) {
+    await db.insert(schema.bookingSeats).values(
+      values.seats.map((seat) => ({
+        bookingId: id,
+        sessionId: values.sessionId,
+        seatId: seat.seatId,
+        ticketType: seat.ticketType ?? "full",
+        priceCents: seat.priceCents,
+      })),
     );
   }
   return id;
@@ -86,9 +163,34 @@ export async function backdateCreationOnly(db: Db, bookingId: string, hours: num
     .where(eq(schema.bookings.id, bookingId));
 }
 
+let nextRecordedPaymentSeq = 1;
+
 /** Records a Mercado Pago payment row for the booking (e.g. `in_process` = payment in flight). */
-export async function recordPayment(db: Db, bookingId: string, status: string): Promise<void> {
-  await db.insert(schema.payments).values({ bookingId, externalPaymentId: `mp-${bookingId}`, status, amountCents: 3000 });
+export async function recordPayment(
+  db: Db,
+  bookingId: string,
+  status: string,
+  overrides: {
+    id?: string;
+    externalPaymentId?: string | null;
+    statusDetail?: string | null;
+    amountCents?: number;
+  } = {},
+): Promise<string> {
+  const attemptId = overrides.id ?? randomUUID();
+  const externalPaymentId =
+    overrides.externalPaymentId !== undefined
+      ? overrides.externalPaymentId
+      : `mp-${bookingId}-${nextRecordedPaymentSeq++}`;
+  await db.insert(schema.payments).values({
+    id: attemptId,
+    bookingId,
+    externalPaymentId,
+    status,
+    statusDetail: overrides.statusDetail ?? null,
+    amountCents: overrides.amountCents ?? 3000,
+  });
+  return attemptId;
 }
 
 export async function readBooking(db: Db, bookingId: string): Promise<schema.Booking> {
@@ -99,6 +201,27 @@ export async function readBooking(db: Db, bookingId: string): Promise<schema.Boo
 export async function readPayment(db: Db, bookingId: string): Promise<schema.Payment | undefined> {
   const [payment] = await db.select().from(schema.payments).where(eq(schema.payments.bookingId, bookingId));
   return payment;
+}
+
+export async function readPaymentAttempt(db: Db, attemptId: string): Promise<schema.Payment | undefined> {
+  const [payment] = await db.select().from(schema.payments).where(eq(schema.payments.id, attemptId));
+  return payment;
+}
+
+export async function readPaymentsOfBooking(db: Db, bookingId: string): Promise<schema.Payment[]> {
+  return db
+    .select()
+    .from(schema.payments)
+    .where(eq(schema.payments.bookingId, bookingId))
+    .orderBy(asc(schema.payments.createdAt));
+}
+
+export async function readPaymentEvents(db: Db, bookingId: string): Promise<schema.PaymentEvent[]> {
+  return db
+    .select()
+    .from(schema.paymentEvents)
+    .where(eq(schema.paymentEvents.bookingId, bookingId))
+    .orderBy(asc(schema.paymentEvents.createdAt));
 }
 
 export async function seatIdsOf(db: Db, bookingId: string): Promise<string[]> {
@@ -118,13 +241,21 @@ export async function deadlineWindowSeconds(db: Db, bookingId: string): Promise<
   return Number(row.seconds);
 }
 
-/** Deletes payments of the given sessions' bookings (cinema fixture cleanup doesn't know about payments). */
+/**
+ * Deletes payment_events and payments of the given sessions' bookings.
+ * `payment_events` has an append-only row trigger, so test cleanup disables
+ * row triggers for the cleanup transaction only via `session_replication_role = replica`.
+ */
 export async function deletePaymentsOfSessions(db: Db, sessionIds: string[]): Promise<void> {
-  const bookingIds = db
-    .select({ id: schema.bookings.id })
-    .from(schema.bookings)
-    .where(inArray(schema.bookings.sessionId, sessionIds));
-  await db.delete(schema.payments).where(inArray(schema.payments.bookingId, bookingIds));
+  await db.transaction(async (tx) => {
+    await tx.execute(sql`SET LOCAL session_replication_role = replica`);
+    const bookingIds = tx
+      .select({ id: schema.bookings.id })
+      .from(schema.bookings)
+      .where(inArray(schema.bookings.sessionId, sessionIds));
+    await tx.delete(schema.paymentEvents).where(inArray(schema.paymentEvents.bookingId, bookingIds));
+    await tx.delete(schema.payments).where(inArray(schema.payments.bookingId, bookingIds));
+  });
 }
 
 /**
@@ -144,19 +275,58 @@ export async function runExpiresAtBackfillFor(db: Db, bookingId: string): Promis
 }
 
 export interface MercadoPagoMocks {
-  preference: { create: jest.Mock };
-  payment: { get: jest.Mock };
+  payment: { create: jest.Mock; get: jest.Mock };
 }
 
-/** The stubbed Mercado Pago clients wired by startGuestFlowApp. */
+/** The stubbed Mercado Pago client wired by startGuestFlowApp. */
 export function mercadoPagoMocks(app: NestFastifyApplication): MercadoPagoMocks {
-  return { preference: app.get(PREFERENCE_CLIENT), payment: app.get(PAYMENT_CLIENT) };
+  return { payment: app.get(PAYMENT_CLIENT) };
 }
 
 let nextPaymentId = Math.floor(Date.now() / 1000);
 
+export interface WebhookPaymentOverrides {
+  paymentId?: number;
+  statusDetail?: string;
+  attemptId?: string;
+  transactionAmount?: number;
+}
+
 /** Makes Mercado Pago report a payment with the given status for the booking, then delivers the webhook. */
 export async function deliverPaymentWebhook(
+  app: NestFastifyApplication,
+  mocks: MercadoPagoMocks,
+  bookingId: string,
+  status: string,
+  paymentIdOrOverrides?: number | WebhookPaymentOverrides,
+): Promise<number> {
+  const overrides: WebhookPaymentOverrides =
+    typeof paymentIdOrOverrides === "number"
+      ? { paymentId: paymentIdOrOverrides }
+      : (paymentIdOrOverrides ?? {});
+  const paymentId = overrides.paymentId ?? nextPaymentId++;
+
+  mocks.payment.get.mockResolvedValue({
+    id: paymentId,
+    status,
+    status_detail: overrides.statusDetail ?? null,
+    external_reference: bookingId,
+    transaction_amount: overrides.transactionAmount ?? 30,
+    ...(overrides.attemptId ? { metadata: { attempt_id: overrides.attemptId } } : {}),
+  });
+  const response = await app.inject({
+    method: "POST",
+    url: "/payments/webhook",
+    payload: { type: "payment", data: { id: String(paymentId) } },
+  });
+  if (response.statusCode !== 200) {
+    throw new Error(`Webhook failed with ${response.statusCode}: ${response.body}`);
+  }
+  return paymentId;
+}
+
+/** Delivers a legacy IPN notification in `{ topic: "payment", resource: "<id>" }` body shape. */
+export async function deliverLegacyIpnBodyWebhook(
   app: NestFastifyApplication,
   mocks: MercadoPagoMocks,
   bookingId: string,
@@ -172,10 +342,34 @@ export async function deliverPaymentWebhook(
   const response = await app.inject({
     method: "POST",
     url: "/payments/webhook",
-    payload: { type: "payment", data: { id: String(paymentId) } },
+    payload: { topic: "payment", resource: String(paymentId) },
   });
   if (response.statusCode !== 200) {
-    throw new Error(`Webhook failed with ${response.statusCode}: ${response.body}`);
+    throw new Error(`IPN body webhook failed with ${response.statusCode}: ${response.body}`);
+  }
+  return paymentId;
+}
+
+/** Delivers a legacy IPN notification in `?topic=payment&id=<id>` query-only shape. */
+export async function deliverLegacyIpnQueryWebhook(
+  app: NestFastifyApplication,
+  mocks: MercadoPagoMocks,
+  bookingId: string,
+  status: string,
+  paymentId = nextPaymentId++,
+): Promise<number> {
+  mocks.payment.get.mockResolvedValue({
+    id: paymentId,
+    status,
+    external_reference: bookingId,
+    transaction_amount: 30,
+  });
+  const response = await app.inject({
+    method: "POST",
+    url: `/payments/webhook?topic=payment&id=${paymentId}`,
+  });
+  if (response.statusCode !== 200) {
+    throw new Error(`IPN query webhook failed with ${response.statusCode}: ${response.body}`);
   }
   return paymentId;
 }
@@ -201,4 +395,32 @@ export function captureWarnings(): WarningLog {
 /** Waits a bit so late WebSocket events (if any) have a chance to arrive before counting them. */
 export function settle(ms = 150): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+export async function attemptPaymentEventsUpdate(db: Db, eventId: string): Promise<void> {
+  try {
+    await db
+      .update(schema.paymentEvents)
+      .set({ type: "tampered" })
+      .where(eq(schema.paymentEvents.id, eventId));
+  } catch (err) {
+    throw err instanceof Error && err.cause instanceof Error ? err.cause : err;
+  }
+}
+
+export async function attemptPaymentEventsDelete(db: Db, eventId: string): Promise<void> {
+  try {
+    await db.delete(schema.paymentEvents).where(eq(schema.paymentEvents.id, eventId));
+  } catch (err) {
+    throw err instanceof Error && err.cause instanceof Error ? err.cause : err;
+  }
+}
+
+/** Forces `BookingService.confirmPaidBooking` to throw once inside `tx2`, then restores it. */
+export function failBookingConfirmationOnce(app: NestFastifyApplication): () => void {
+  const bookingService = app.get(BookingService);
+  const spy = jest.spyOn(bookingService, "confirmPaidBooking").mockImplementationOnce(async () => {
+    throw new Error("Simulated failure inside tx2");
+  });
+  return () => spy.mockRestore();
 }

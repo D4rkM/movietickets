@@ -13,6 +13,7 @@ function renderProfileMenu() {
       <AuthProvider>
         <Routes>
           <Route path="/movies" element={<ProfileMenu />} />
+          <Route path="/admin" element={<p>Admin page</p>} />
           <Route path="/tickets" element={<p>Tickets page</p>} />
           <Route path="/login" element={<p>Login page</p>} />
         </Routes>
@@ -78,5 +79,34 @@ describe("ProfileMenu (integration)", () => {
 
     // ASSERT
     expect(await screen.findByText("Login page")).toBeInTheDocument();
+  });
+
+  it("AC22: não deve mostrar o link 'Admin' quando o usuário tem role customer", async () => {
+    // GIVEN um usuário customer logado
+    renderProfileMenu();
+
+    // WHEN ele abre o menu de perfil
+    await userEvent.click(screen.getByRole("button", { name: /Ana Souza/ }));
+
+    // THEN o link "Admin" não aparece
+    expect(screen.queryByRole("link", { name: "Admin" })).not.toBeInTheDocument();
+  });
+
+  it("AC22: deve mostrar o link 'Admin' e navegar para /admin quando o usuário tem role admin", async () => {
+    // GIVEN um usuário admin logado
+    localStorage.setItem(
+      "movietickets:user",
+      JSON.stringify({ id: "admin-1", name: "Admin Geral", email: "admin@test.com", role: "admin" }),
+    );
+    renderProfileMenu();
+
+    // WHEN ele abre o menu de perfil e clica em "Admin"
+    await userEvent.click(screen.getByRole("button", { name: /Admin Geral/ }));
+    const adminLink = screen.getByRole("link", { name: "Admin" });
+    expect(adminLink).toHaveAttribute("href", "/admin");
+    await userEvent.click(adminLink);
+
+    // THEN navega para a área administrativa
+    expect(await screen.findByText("Admin page")).toBeInTheDocument();
   });
 });

@@ -5,7 +5,7 @@ import { DRIZZLE } from "../db/drizzle.module";
 import { NotificationService } from "../notification/notification.service";
 import { SeatingGateway } from "../seating/seating.gateway";
 import { SeatingService } from "../seating/seating.service";
-import { BookingExpiredException } from "./booking-expired.exception";
+import { BookingAlreadyPendingException, BookingExpiredException } from "./booking-expired.exception";
 import { BookingService } from "./booking.service";
 import { TicketType } from "./dto/book-seat.dto";
 
@@ -71,6 +71,7 @@ describe("BookingService", () => {
     mockDb.update.mockReset();
     mockDb.insert.mockReset();
     stubTransaction();
+    mockDb.query.bookings.findMany.mockResolvedValue([]);
     mockDb.query.bookingSeats.findMany.mockResolvedValue([]);
     // Subquery builder for the lazy-expiry lookup of conflicting bookings.
     mockDb.select.mockReturnValue({ from: jest.fn().mockReturnValue({ where: jest.fn().mockReturnValue({}) }) });
@@ -576,53 +577,85 @@ describe("BookingService", () => {
     mockDb.update.mockReturnValue({ set: jest.fn().mockReturnValue({ where }) });
 
     // ACT
-    await service.confirmPaidBooking("booking-1");
+    const result = await service.confirmPaidBooking("booking-1");
 
     // ASSERT
+    expect(result.confirmed).toBe(false);
     expect(mockDb.query.bookingSeats.findMany).not.toHaveBeenCalled();
     expect(mockGateway.broadcastSeatUpdate).not.toHaveBeenCalled();
   });
 
-  it("should cancel a pending booking and delete its seat rows when the payment fails", async () => {
+  it("should defer broadcast and confirmation email until notify() is called when confirmPaidBooking receives a tx", async () => {
     // ARRANGE
-    const updateWhere = jest.fn().mockReturnValue({
-      returning: jest.fn().mockResolvedValue([{ id: "booking-1", status: "cancelled", sessionId: "session-1" }]),
+    const where = jest.fn().mockReturnValue({
+      returning: jest.fn().mockResolvedValue([{ id: "booking-1", status: "confirmed", sessionId: "session-1" }]),
     });
-    mockDb.update.mockReturnValue({ set: jest.fn().mockReturnValue({ where: updateWhere }) });
-    const deleteWhere = stubDelete([{ seatId: "seat-1" }, { seatId: "seat-2" }]);
+    const tx = { update: jest.fn().mockReturnValue({ set: jest.fn().mockReturnValue({ where }) }) };
+    mockDb.query.bookingSeats.findMany.mockResolvedValue([{ seatId: "seat-1" }]);
 
     // ACT
-    await service.releaseFailedPaymentBooking("booking-1");
+    const confirmation = await service.confirmPaidBooking("booking-1", undefined, tx as never);
 
     // ASSERT
-    expect(mockDb.delete).toHaveBeenCalled();
-    expect(deleteWhere).toHaveBeenCalled();
+    expect(confirmation.confirmed).toBe(true);
+    expect(mockGateway.broadcastSeatUpdate).not.toHaveBeenCalled();
+    expect(mockNotificationService.sendBookingConfirmationEmail).not.toHaveBeenCalled();
+
+    await confirmation.notify();
+    expect(mockGateway.broadcastSeatUpdate).toHaveBeenCalledWith("session-1", { seatId: "seat-1", status: "booked" });
   });
 
-  it("should broadcast every seat freed by a failed payment as released, after the transaction", async () => {
+  it("should throw BookingAlreadyPendingException with the bookingId when the user already has a pending booking for the exact same seats", async () => {
     // ARRANGE
-    stubUpdates([{ id: "booking-1", status: "cancelled", sessionId: "session-1" }]);
-    stubDelete([{ seatId: "seat-1" }, { seatId: "seat-2" }]);
+    mockDb.query.sessions.findFirst.mockResolvedValue({ id: "session-1", priceCents: 2000 });
+    mockDb.transaction.mockRejectedValue(Object.assign(new Error("duplicate key"), { code: "23505" }));
+    mockDb.query.bookings.findMany.mockResolvedValue([
+      { id: "pending-booking-42", seats: [{ seatId: "seat-1" }, { seatId: "seat-2" }] },
+    ]);
 
     // ACT
-    await service.releaseFailedPaymentBooking("booking-1");
+    const promise = service.createBookingForSeats(
+      "session-1",
+      [
+        { seatId: "seat-2", ticketType: TicketType.FULL },
+        { seatId: "seat-1", ticketType: TicketType.FULL },
+      ],
+      "user-1",
+    );
 
     // ASSERT
-    expect(mockGateway.broadcastSeatUpdate).toHaveBeenCalledTimes(2);
-    expect(mockGateway.broadcastSeatUpdate).toHaveBeenCalledWith("session-1", { seatId: "seat-1", status: "released" });
-    expect(mockGateway.broadcastSeatUpdate).toHaveBeenCalledWith("session-1", { seatId: "seat-2", status: "released" });
+    await expect(promise).rejects.toThrow(BookingAlreadyPendingException);
+    await expect(promise).rejects.toMatchObject({
+      response: {
+        statusCode: 409,
+        code: "BOOKING_ALREADY_PENDING",
+        bookingId: "pending-booking-42",
+        message: "Você já tem uma reserva pendente para esses assentos.",
+      },
+    });
   });
 
-  it("should do nothing when releaseFailedPaymentBooking is redelivered for a booking that's already past pending", async () => {
+  it("should throw a plain ConflictException without bookingId when the user's pending booking covers a different set of seats", async () => {
     // ARRANGE
-    const updateWhere = jest.fn().mockReturnValue({ returning: jest.fn().mockResolvedValue([]) });
-    mockDb.update.mockReturnValue({ set: jest.fn().mockReturnValue({ where: updateWhere }) });
+    mockDb.query.sessions.findFirst.mockResolvedValue({ id: "session-1", priceCents: 2000 });
+    mockDb.transaction.mockRejectedValue(Object.assign(new Error("duplicate key"), { code: "23505" }));
+    mockDb.query.bookings.findMany.mockResolvedValue([
+      { id: "pending-booking-42", seats: [{ seatId: "seat-1" }] },
+    ]);
 
     // ACT
-    await service.releaseFailedPaymentBooking("booking-1");
+    const promise = service.createBookingForSeats(
+      "session-1",
+      [
+        { seatId: "seat-1", ticketType: TicketType.FULL },
+        { seatId: "seat-2", ticketType: TicketType.FULL },
+      ],
+      "user-1",
+    );
 
     // ASSERT
-    expect(mockDb.delete).not.toHaveBeenCalled();
+    await expect(promise).rejects.toThrow(ConflictException);
+    await expect(promise).rejects.not.toThrow(BookingAlreadyPendingException);
   });
 
   it("should only return confirmed bookings, mapped with session and seat details", async () => {

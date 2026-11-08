@@ -132,11 +132,21 @@ describe("Acesso de convidado (e2e)", () => {
     expect(response.statusCode).toBe(401);
   });
 
-  it("AC2: deve recusar token de convidado com 401 em POST /bookings/:id/checkout", async () => {
+  it("AC2: deve recusar token de convidado com 401 em GET /bookings/:id/payment-summary", async () => {
+    // GIVEN um convidado
+
+    // WHEN ele tenta consultar o resumo de pagamento de uma reserva
+    const response = await callAs(ctx.app, guest.guestToken, "GET", `/bookings/${unknownBookingId}/payment-summary`);
+
+    // THEN é recusado com 401
+    expect(response.statusCode).toBe(401);
+  });
+
+  it("AC2: deve recusar token de convidado com 401 em POST /bookings/:id/payments", async () => {
     // GIVEN um convidado
 
     // WHEN ele tenta iniciar o pagamento de uma reserva
-    const response = await callAs(ctx.app, guest.guestToken, "POST", `/bookings/${unknownBookingId}/checkout`);
+    const response = await callAs(ctx.app, guest.guestToken, "POST", `/bookings/${unknownBookingId}/payments`);
 
     // THEN é recusado com 401
     expect(response.statusCode).toBe(401);

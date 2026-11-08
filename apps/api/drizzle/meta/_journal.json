@@ -29,6 +29,13 @@
       "when": 1794163934939,
       "tag": "0003_material_lifeguard",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1794174631153,
+      "tag": "0004_serious_frightful_four",
+      "breakpoints": true
     }
   ]
 }
