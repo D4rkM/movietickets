@@ -1,10 +1,10 @@
 import { useEffect, useState } from "react";
-import { Navigate, useLocation, useNavigate } from "react-router-dom";
+import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
 import { UnauthorizedError } from "../../lib/api-client";
 import { useAuth } from "../auth/AuthContext";
 import { bookSeats, getSeatMap, releaseAllHolds } from "../seating/api";
 import type { SeatMapSeat, TicketType } from "../seating/types";
-import { createCheckout } from "./api";
+import { BookingExpiredError, createCheckout } from "./api";
 
 interface CheckoutLocationState {
   sessionId: string;
@@ -41,6 +41,7 @@ export function CheckoutPage() {
   const [priceCents, setPriceCents] = useState(0);
   const [choices, setChoices] = useState<Record<string, TicketChoice>>({});
   const [error, setError] = useState<string | null>(null);
+  const [bookingExpired, setBookingExpired] = useState(false);
   const [paying, setPaying] = useState(false);
   const [showCancelModal, setShowCancelModal] = useState(false);
 
@@ -93,6 +94,7 @@ export function CheckoutPage() {
   async function handlePay() {
     if (!state || !accessToken || missingDocument) return;
     setError(null);
+    setBookingExpired(false);
     setPaying(true);
     try {
       // All seats are booked in a single atomic request (one booking, one DB
@@ -114,6 +116,12 @@ export function CheckoutPage() {
     } catch (err) {
       if (err instanceof UnauthorizedError) {
         window.location.href = "/login";
+        return;
+      }
+      if (err instanceof BookingExpiredError) {
+        // The booking can't be paid anymore: the user has to pick seats again.
+        setBookingExpired(true);
+        setPaying(false);
         return;
       }
       setError((err as Error).message);
@@ -145,6 +153,18 @@ export function CheckoutPage() {
         <p role="alert" className="text-red-600">
           {error}
         </p>
+      )}
+
+      {bookingExpired && (
+        <div role="alert" className="mb-4 rounded border border-red-200 bg-red-50 p-3">
+          <p className="mb-2 text-red-700">Sua reserva expirou. Escolha os assentos novamente.</p>
+          <Link
+            to={`/sessions/${state.sessionId}/seats`}
+            className="inline-block rounded bg-gray-900 px-3 py-1.5 text-sm text-white"
+          >
+            Escolher assentos
+          </Link>
+        </div>
       )}
 
       {seats && (
@@ -207,7 +227,7 @@ export function CheckoutPage() {
 
       <button
         type="button"
-        disabled={paying || !seats || missingDocument}
+        disabled={paying || bookingExpired || !seats || missingDocument}
         onClick={handlePay}
         className="rounded bg-gray-900 px-4 py-2 text-white disabled:opacity-50"
       >
