@@ -62,14 +62,14 @@ describe("SessionSeatsPage (integration)", () => {
     vi.unstubAllGlobals();
   });
 
-  it("should disable the pay button until at least one free seat is selected", async () => {
+  it("should disable the continue button until at least one free seat is selected", async () => {
     // GIVEN the seat map has loaded
     renderSessionSeatsPage();
     await screen.findByTitle("A1 — Disponível");
 
     // WHEN no seat has been selected yet
-    // THEN the pay button is disabled
-    expect(screen.getByRole("button", { name: /Pagar/ })).toBeDisabled();
+    // THEN the continue button is disabled
+    expect(screen.getByRole("button", { name: /Continuar/ })).toBeDisabled();
   });
 
   it("should not allow selecting an already booked seat", async () => {
@@ -80,19 +80,19 @@ describe("SessionSeatsPage (integration)", () => {
     // WHEN the user clicks the booked seat
     await userEvent.click(bookedSeat);
 
-    // THEN it stays disabled and the pay button remains disabled
+    // THEN it stays disabled and the continue button remains disabled
     expect(bookedSeat).toBeDisabled();
-    expect(screen.getByRole("button", { name: /Pagar/ })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /Continuar/ })).toBeDisabled();
   });
 
-  it("should navigate to /checkout with the selected seat once the user clicks pay", async () => {
+  it("should navigate to /checkout with the selected seat once the user clicks continue", async () => {
     // GIVEN a free seat has been selected
     renderSessionSeatsPage();
     const freeSeat = await screen.findByTitle("A1 — Disponível");
     await userEvent.click(freeSeat);
 
-    // WHEN the user clicks the pay button
-    await userEvent.click(screen.getByRole("button", { name: /Pagar \(1 assento\)/ }));
+    // WHEN the user clicks the continue button
+    await userEvent.click(screen.getByRole("button", { name: /Continuar \(1 assento\)/ }));
 
     // THEN it navigates to the checkout page
     expect(await screen.findByText("Checkout page")).toBeInTheDocument();
@@ -193,7 +193,7 @@ describe("SessionSeatsPage (integration)", () => {
     // THEN it shows a conflict error and the seat stays free (not added to the selection)
     expect(await screen.findByRole("alert")).toHaveTextContent("Esse assento já foi reservado por outra pessoa.");
     expect(screen.getByTitle("A1 — Disponível")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /Pagar/ })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /Continuar/ })).toBeDisabled();
   });
 
   it("should release all holds when the user cancels after selecting a seat", async () => {
