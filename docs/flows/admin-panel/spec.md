@@ -24,7 +24,7 @@ Nesta spec, "sessão" é a sessão de cinema (exibição de um filme numa sala e
 - Excluir cinema (ver "Decididas").
 - Layout de sala irregular (fileiras com quantidades diferentes, corredores configuráveis, assento PCD). A sala gerada pelo admin é sempre retangular. O layout irregular da sala de exemplo do seed continua existindo só via seed.
 - Upload de pôster (o admin informa uma URL em `posterUrl`).
-- Gestão de usuários pela API (promover/rebaixar admin, listar usuários).
+- Gestão de usuários pela API (promover/rebaixar admin, listar usuários). Um endpoint pra admin promover outros usuários pode vir numa feature futura. Nesta versão, promoção é só por SQL manual (ver "Decididas").
 - Cancelar sessão que já vendeu ingresso (soft delete + reembolso dos ingressos). Fica pra uma feature futura separada.
 - Expiração automática de booking `pending`. Tratada na spec separada `docs/flows/pending-booking-expiry/spec.md` (ver "Decididas").
 - Intervalo de limpeza/trailer entre sessões na mesma sala (ver "Decididas").
@@ -46,6 +46,19 @@ Nesta spec, "sessão" é a sessão de cinema (exibição de um filme numa sala e
 - **Exclusão de cinema** fica fora de escopo. Listar, criar e editar bastam.
 - **Fuso do formulário de sessão fixo em `America/Sao_Paulo`.** O front mostra e recebe o horário de sessão nesse fuso, independente do fuso do navegador, e envia `startsAt` em ISO 8601 com offset. A API grava em `timestamptz` (UTC) como já faz hoje. As listas do admin também mostram o horário em `America/Sao_Paulo`.
 
+#### Primeiro admin
+
+- Dev/local: o seed já cria `admin@movietickets.dev` com `role: "admin"` (senha de dev `password123`). Nada muda.
+- Outros ambientes: o admin é promovido por SQL manual, documentado no `apps/api/README.md` como parte da implementação:
+
+  ```sql
+  UPDATE users SET role = 'admin' WHERE email = '<email>';
+  ```
+
+  Depois disso, a pessoa precisa logar de novo pra receber um token com `role: "admin"`.
+- `POST /auth/register` continua criando sempre `role: "customer"`. O `RegisterDto` não declara `role` e o `ValidationPipe` (`whitelist: true`) remove o campo, então mandar `role: "admin"` no body não promove ninguém. Isso vira AC pra não regredir.
+- Sem script, sem endpoint de promoção e sem variável de ambiente de bootstrap (ex: `ADMIN_EMAIL`) nesta versão. Um endpoint pra admin promover outros usuários pode vir numa feature futura (ver "Fora de escopo").
+
 ### Escopo do MVP e cinemas (pra revisar)
 
 - Entram filmes, salas e sessões, como no `docs/planning.md`.
@@ -60,19 +73,6 @@ Nesta spec, "sessão" é a sessão de cinema (exibição de um filme numa sala e
 - Token de convidado (`kind: "guest"`, introduzido pela spec `docs/flows/public-catalog-login-gate/spec.md`) → 401, porque o `JwtAuthGuard` já recusa convidado depois daquela feature. Se esta feature for implementada antes da identidade de convidado, essa regra vale assim que o convidado existir, e o teste do AC3 entra junto com ela.
 - O papel vem do token, sem consulta ao banco por requisição. Consequência: quem perde o papel admin continua com acesso até o token expirar (`JWT_EXPIRES_IN`, padrão `1h`). Aceito nesta versão (ver "Riscos").
 - O `GET /movies` público continua sem guard. As rotas admin não reutilizam o `CatalogController`.
-
-### Primeiro admin (pra revisar)
-
-- Dev/local: o seed já cria `admin@movietickets.dev` com `role: "admin"` (senha de dev `password123`). Nada muda.
-- Outros ambientes: o admin é promovido por SQL manual, documentado no `apps/api/README.md`:
-
-  ```sql
-  UPDATE users SET role = 'admin' WHERE email = '<email>';
-  ```
-
-  Depois disso, a pessoa precisa logar de novo pra receber um token com `role: "admin"`.
-- `POST /auth/register` continua criando sempre `role: "customer"`. O `RegisterDto` não declara `role` e o `ValidationPipe` (`whitelist: true`) remove o campo, então mandar `role: "admin"` no body não promove ninguém. Isso vira AC pra não regredir.
-- Sem endpoint de promoção e sem variável de ambiente de bootstrap (ex: `ADMIN_EMAIL`) nesta versão.
 
 ### Filmes (pra revisar)
 
@@ -206,7 +206,7 @@ Nesta spec, "sessão" é a sessão de cinema (exibição de um filme numa sala e
 
 ## Perguntas em aberto
 
-1. **Promoção de admin fora do dev**: SQL manual basta, ou vale um script (`pnpm --filter api admin:promote <email>`) pra não depender de acesso direto ao banco? Enquanto isso, vale a proposta de "Primeiro admin" (pra revisar).
+Nenhuma.
 
 ## Rastreabilidade com testes
 
