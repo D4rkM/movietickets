@@ -2,11 +2,24 @@ import { render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import * as api from "./api";
 import { SeatMap } from "./SeatMap";
+import type { SeatMapSeat } from "./types";
 
 vi.mock("./api");
 vi.mock("socket.io-client", () => ({
   io: vi.fn(() => ({ on: vi.fn(), emit: vi.fn(), disconnect: vi.fn() })),
 }));
+
+function makeRectangularSeats(rows: number, seatsPerRow: number): SeatMapSeat[] {
+  return Array.from({ length: rows }, (_, rowIndex) => {
+    const rowLabel = String.fromCharCode(65 + rowIndex);
+    return Array.from({ length: seatsPerRow }, (_, seatIndex) => ({
+      id: `${rowLabel}-${seatIndex + 1}`,
+      rowLabel,
+      seatNumber: seatIndex + 1,
+      status: "free" as const,
+    }));
+  }).flat();
+}
 
 describe("SeatMap", () => {
   it("should render each seat with a title reflecting its status", async () => {
@@ -64,5 +77,44 @@ describe("SeatMap", () => {
     expect(screen.getByText("Selecionado")).toBeInTheDocument();
     expect(screen.getByText("Reservado")).toBeInTheDocument();
     expect(screen.getByText("Bloqueado")).toBeInTheDocument();
+  });
+
+  it("should render a small rectangular 5x8 room with uniform row structure", async () => {
+    // ARRANGE
+    vi.mocked(api.getSeatMap).mockResolvedValue({
+      room: { rows: 5, seatsPerRow: 8 },
+      priceCents: 2000,
+      seats: makeRectangularSeats(5, 8),
+    });
+
+    // ACT
+    render(<SeatMap sessionId="session-1" accessToken="token" userId="user-1" />);
+    await screen.findByTitle("A1 — Disponível");
+
+    // ASSERT
+    expect(screen.getByTitle("E8 — Disponível")).toBeInTheDocument();
+    expect(screen.getAllByRole("button")).toHaveLength(40);
+  });
+
+  it("should render a large rectangular 26x40 room keeping the same aisle layout on every row including Z", async () => {
+    // ARRANGE
+    vi.mocked(api.getSeatMap).mockResolvedValue({
+      room: { rows: 26, seatsPerRow: 40 },
+      priceCents: 3500,
+      seats: makeRectangularSeats(26, 40),
+    });
+
+    // ACT
+    const { container } = render(
+      <SeatMap sessionId="session-1" accessToken="token" userId="user-1" />,
+    );
+    await screen.findByTitle("Z40 — Disponível");
+
+    // ASSERT
+    expect(screen.getByTitle("A1 — Disponível")).toBeInTheDocument();
+    expect(screen.getAllByRole("button")).toHaveLength(26 * 40);
+    // Every row in a 26x40 rectangular room (including back row Z) gets 2 aisles (52 spacer divs total).
+    const aisleSpacers = container.querySelectorAll('div[style*="width"]');
+    expect(aisleSpacers).toHaveLength(26 * 2);
   });
 });
