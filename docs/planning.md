@@ -95,40 +95,42 @@ Definição completa de colunas, tipos, PK/FK e a tabela de junção `booking_se
 ### 1. Seleção de assento (core, prioridade máxima)
 - Mapa visual de assentos por sessão (livre / ocupado / segurado-por-outro-usuário / selecionado-por-mim) — **implementado**
 - Ao confirmar pagamento: transação Postgres grava assento como ocupado definitivamente (respeitando unique constraint) — **implementado**
-- Ao clicar assento: cria hold no Valkey (`SETNX` com TTL) — evita dois usuários segurando mesmo assento — **implementado no back**; front pendente, AC2
-- Visitante deslogado também segura assento: hold com identidade de convidado (`POST /auth/guest`, JWT `kind: guest` de 2h), mesma regra do usuário logado (`SETNX` + TTL 600s, máx. 6 por sessão). No login (`guestToken` opcional, uso único), os holds são transferidos pro usuário mantendo o TTL; se passar de 6 na mesma sessão, ficam os do convidado e saem os holds mais antigos do usuário — **milestone AC3** (spec `public-catalog-login-gate`)
-- WebSocket broadcast pros outros clientes na mesma sessão quando assento muda de estado — **implementado no back** (`SeatingGateway`, room por sessão, eventos held/released/booked); front pendente, AC2
-- Ao expirar TTL sem confirmar checkout, ou ao cliente cancelar: hold libera (automático ou manual), assento volta a ficar livre (evento broadcast), e remove o hold do Valkey na confirmação — **implementado no back** (TTL passiva do Redis + liberação manual/bulk); front pendente, AC2
+- Ao clicar assento: cria hold no Valkey (`SETNX` com TTL) — evita dois usuários segurando mesmo assento — **implementado** (back + front: `SessionSeatsPage` segura/solta ao clicar via `POST`/`DELETE /sessions/:id/seats/:seatId/hold`)
+- Visitante deslogado também segura assento: hold com identidade de convidado (`POST /auth/guest`, JWT `kind: guest` de 2h), mesma regra do usuário logado (`SETNX` + TTL 600s, máx. 6 por sessão). No login (`guestToken` opcional, uso único), os holds são transferidos pro usuário mantendo o TTL; se passar de 6 na mesma sessão, ficam os do convidado e saem os holds mais antigos do usuário — **milestone AC3** (spec `public-catalog-login-gate`); back em review (PR não mergeado), front pendente
+- WebSocket broadcast pros outros clientes na mesma sessão quando assento muda de estado — **implementado no back** (`SeatingGateway`, room por sessão, eventos held/released/booked; front `useSeatingSocket` com `socket.io-client` atualiza o `SeatMap`)
+- Ao expirar TTL sem confirmar checkout, ou ao cliente cancelar: hold libera (automático ou manual), assento volta a ficar livre (evento broadcast), e remove o hold do Valkey na confirmação — **implementado no back** (TTL do Valkey + `HoldExpiryListener` via keyspace notifications + liberação manual/bulk) e no front (desmarcar assento solta o hold; sair do checkout chama `DELETE /sessions/:id/holds`)
 
 ### 2. Catálogo — busca/listagem de filmes e sessões
 - Lista de filmes em cartaz com sessões futuras — **implementado**
-- Filtro por cidade/cinema/data (query params em `GET /movies`) — **implementado no back**; front pendente, AC2
+- Filtro por cidade/cinema/data (query params em `GET /movies`) — **implementado** (front: selects de cidade/cinema e campo de data no `MoviesPage`)
 - Detalhe do filme com horários disponíveis (sessões) — **implementado** (embutido na listagem)
-- Catálogo e mapa de assentos públicos (sem login), como página de apresentação do site — **milestone AC3**. Spec: `docs/flows/public-catalog-login-gate/spec.md`
+- Catálogo e mapa de assentos públicos (sem login), como página de apresentação do site — **milestone AC3**. Spec: `docs/flows/public-catalog-login-gate/spec.md`; back em review (PR não mergeado), front pendente (hoje `/movies` e `/sessions/:id/seats` ainda ficam atrás de `ProtectedRoute`)
 
 ### 3. Checkout / pagamento (Mercado Pago sandbox)
 - Resumo do pedido (filme, sessão, assentos, valor) — **implementado**
 - Pagamento mockado (sem gateway real), reserva atômica multi-assento numa transação só — **implementado**
-- Checkout Pro via Preferences API (redirect pro `init_point`) — **implementado no back (sandbox), front pendente**. Migração futura pra Orders API / Checkout Transparente fica em aberto
+- Checkout Pro via Preferences API (redirect pro `init_point`) — **implementado (sandbox)**: front `CheckoutPage` cria o booking, chama `POST /bookings/:id/checkout` e redireciona pro `checkoutUrl`; `CheckoutReturnPage` (`/checkout/retorno`) mostra o status de volta do MP
+- Migração pra Checkout Transparente (Card Payment Brick, pagamento sem sair do site) — **planejado, milestone AC3**, spec em review (`docs/flows/checkout-transparente/spec.md`). Decisões: pagamento recusado mantém o booking `pending` (cliente pode tentar de novo); sem Pix por enquanto; tabela append-only `payment_events` pra auditoria
 - Webhook de confirmação de pagamento → re-busca o pagamento na API do MP, atualiza `Booking` pra `confirmed` (idempotente) e grava `payments` — **implementado no back (sandbox)**. Ambiente local precisa de URL pública (tunnel) pra o MP conseguir chamar o webhook
-- Falha/timeout de pagamento → libera hold do assento — depende do hold existir (feature #1)
+- Falha/timeout de pagamento → libera o assento. Hoje: webhook com pagamento `rejected`/`cancelled` cancela o booking e apaga os `booking_seats` (**implementado no back**). Lacuna real: na criação do booking o hold do Valkey é apagado e o assento passa a ficar preso pela linha em `booking_seats` de um booking `pending`; se o cliente abandona o pagamento (nenhum webhook chega), nada expira esse booking hoje — **planejado, milestone AC3**, com spec própria (`pending-booking-expiry`, a escrever)
 
 ### 4. Conta de usuário + histórico de ingressos
 - Cadastro/login (JWT) — **implementado**
-- Login exigido só ao avançar pro pagamento (catálogo e assentos são públicos; token de convidado recusado com 401 em booking, pagamento e ingressos) — **milestone AC3** (spec `public-catalog-login-gate`)
+- Login exigido só ao avançar pro pagamento (catálogo e assentos são públicos; token de convidado recusado com 401 em booking, pagamento e ingressos) — **milestone AC3** (spec `public-catalog-login-gate`); back em review (PR não mergeado), front pendente
 - "Meus ingressos": lista de bookings confirmados, com detalhe — **implementado**
-- Cancelamento de ingresso pelo cliente (self-service), libera o(s) assento(s) de volta pro catálogo — **implementado no back** (`POST /bookings/:id/cancel`, broadcast released); front pendente, AC2
+- Cancelamento de ingresso pelo cliente (self-service), libera o(s) assento(s) de volta pro catálogo — **implementado no back** (`POST /bookings/:id/cancel`, broadcast released) e no front (botão "Cancelar" com confirmação no `TicketsPage`)
 - QR code simples — opcional/fora do MVP
 
 ### 5. Painel admin
 - CRUD de filmes, salas e sessões
 - Sem necessidade de UI sofisticada — formulários simples, protegido por role admin
-- **Status: não iniciado**, sem entrega planejada ainda
+- **Status: não iniciado** — **milestone AC3**, spec em escrita (`docs/flows/admin-panel/spec.md`)
 
 ### 6. Notificação por e-mail
 - Confirmação de compra por e-mail quando o `Booking` é confirmado
 - Dev local via Mailpit (ver seção Stack) — sem depender de provedor real
-- **Status: não iniciado, AC2**
+- Envio assíncrono por worker, com tabela `notifications`; mecanismo do worker (outbox + polling vs outbox + BullMQ) ainda em aberto
+- **Status: não iniciado** — movida pra **milestone AC3**, no fim do milestone; spec em review (`docs/flows/notification/spec.md`)
 
 ## Arquitetura de módulos (NestJS)
 
