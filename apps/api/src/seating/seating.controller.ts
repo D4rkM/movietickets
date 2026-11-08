@@ -1,10 +1,15 @@
 import { Controller, Delete, Get, HttpCode, HttpStatus, Param, Post, Req, UseGuards } from "@nestjs/common";
 import { FastifyRequest } from "fastify";
-import { JwtAuthGuard } from "../auth/jwt-auth.guard";
+import { UserOrGuestAuthGuard } from "../auth/user-or-guest-auth.guard";
 import { SeatingService } from "./seating.service";
 
+/**
+ * Seat map and hold/release routes, open to both users and guests (visitors
+ * who haven't logged in yet). The hold owner is the token's `sub`: a user id,
+ * or `guest:<uuid>` for a guest.
+ */
 @Controller("sessions")
-@UseGuards(JwtAuthGuard)
+@UseGuards(UserOrGuestAuthGuard)
 export class SeatingController {
   constructor(private readonly seatingService: SeatingService) {}
 

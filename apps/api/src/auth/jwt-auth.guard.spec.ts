@@ -69,4 +69,36 @@ describe("JwtAuthGuard", () => {
     expect(result).toBe(true);
     expect(request.user).toEqual(payload);
   });
+
+  it.each([
+    ["kind 'user'", { kind: "user", sub: "1", email: "ana@test.com", role: "customer" }],
+    ["no kind (token issued before guest identities existed)", { sub: "1", email: "ana@test.com", role: "customer" }],
+  ])("should accept a user token with %s", async (_label, payload) => {
+    // ARRANGE
+    const { context, request } = buildContext({ authorization: "Bearer user-token" });
+    mockJwtService.verifyAsync.mockResolvedValue(payload);
+
+    // ACT
+    const result = await guard.canActivate(context);
+
+    // ASSERT
+    expect(result).toBe(true);
+    expect(request.user).toEqual(payload);
+  });
+
+  it.each([
+    ["a guest token", { kind: "guest", sub: "guest:abc" }],
+    ["a token with an unknown kind", { kind: "admin", sub: "1" }],
+  ])("should reject %s with UnauthorizedException", async (_label, payload) => {
+    // ARRANGE
+    const { context, request } = buildContext({ authorization: "Bearer some-token" });
+    mockJwtService.verifyAsync.mockResolvedValue(payload);
+
+    // ACT
+    const result = guard.canActivate(context);
+
+    // ASSERT
+    await expect(result).rejects.toThrow(UnauthorizedException);
+    expect(request.user).toBeUndefined();
+  });
 });
