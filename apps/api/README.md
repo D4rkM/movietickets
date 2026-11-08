@@ -12,7 +12,7 @@ REST + WebSocket Gateway. Módulos: Catalog, Seating, Booking, Payment, Auth, Ad
 
 **CORS:** liberado só pra origem configurada em `CORS_ORIGIN` (`.env.example`, default `http://localhost:5173` — origem do `apps/web` em dev).
 
-Implementado até agora: **Auth MVP** (cadastro + login com JWT, `bcrypt` para hash de senha), **Seating** (`GET /sessions/:id/seats`, mapa de assento combinando Postgres + Valkey), **Booking** (insert MVP de reserva, sem hold/conflito ainda). Demais módulos entram junto com suas features.
+Implementado até agora: **Auth MVP** (cadastro + login com JWT, `bcrypt` para hash de senha), **Seating** (`GET /sessions/:id/seats`, mapa de assento combinando Postgres + Valkey), **Booking** (insert MVP de reserva, sem hold/conflito ainda), **Admin** (CRUD de filmes, cinemas, salas e sessões em `/admin/*`, ver "Painel admin"). Demais módulos entram junto com suas features.
 
 ## Rodar
 
@@ -47,6 +47,20 @@ pnpm dev:api
 ```bash
 docker compose --profile full up -d --build
 ```
+
+## Painel admin
+
+Rotas em `/admin/*` (filmes, cinemas, salas e sessões) exigem token de usuário com `role: "admin"`: sem token, token inválido/expirado ou token de convidado → 401; usuário `customer` → 403. Regras de negócio na spec `docs/flows/admin-panel/spec.md`.
+
+### Como criar um admin
+
+Em dev/local, o seed já cria `admin@movietickets.dev` (senha `password123`). Em outros ambientes, a pessoa se cadastra normalmente (`POST /auth/register` sempre cria `customer`, mesmo mandando `role` no body) e é promovida por SQL manual:
+
+```sql
+UPDATE users SET role = 'admin' WHERE email = '<email>';
+```
+
+O papel vai dentro do JWT, então a pessoa precisa **logar de novo** pra receber um token com `role: "admin"`. Pelo mesmo motivo, quem é rebaixado continua com acesso admin até o token expirar (`JWT_EXPIRES_IN`, padrão `1h`).
 
 ## Testes
 
