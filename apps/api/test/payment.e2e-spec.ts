@@ -15,6 +15,7 @@ import { PaymentModule } from "../src/payment/payment.module";
 import { SeatingModule } from "../src/seating/seating.module";
 import { ValkeyModule } from "../src/valkey/valkey.module";
 import { buildFastifyApp } from "./helpers/build-app";
+import { deletePaymentsOfSessions } from "./helpers/pending-booking";
 
 describe("Payment (e2e)", () => {
   let app: NestFastifyApplication;
@@ -91,7 +92,7 @@ describe("Payment (e2e)", () => {
 
   beforeEach(async () => {
     jest.clearAllMocks();
-    await db.delete(schema.payments);
+    await deletePaymentsOfSessions(db, [sessionId]);
     await db.delete(schema.bookingSeats).where(eq(schema.bookingSeats.sessionId, sessionId));
     await db.delete(schema.bookings).where(eq(schema.bookings.sessionId, sessionId));
 
@@ -109,7 +110,7 @@ describe("Payment (e2e)", () => {
   });
 
   afterAll(async () => {
-    await db.delete(schema.payments);
+    await deletePaymentsOfSessions(db, [sessionId]);
     await db.delete(schema.bookingSeats).where(eq(schema.bookingSeats.sessionId, sessionId));
     await db.delete(schema.bookings).where(eq(schema.bookings.sessionId, sessionId));
     await db.delete(schema.sessions).where(eq(schema.sessions.id, sessionId));
