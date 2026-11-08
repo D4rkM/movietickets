@@ -9,7 +9,7 @@ Quando o cliente cria uma reserva (`POST /sessions/:id/book` ou `POST /sessions/
 Uma reserva só sai de `pending` por três caminhos:
 
 - webhook do Mercado Pago com pagamento `approved` → `confirmPaidBooking` (vira `confirmed`);
-- webhook com pagamento `rejected`/`cancelled` → `releaseFailedPaymentBooking` (vira `cancelled` e apaga os `booking_seats`);
+- webhook com pagamento `rejected`/`cancelled` → `releaseFailedPaymentBooking` (vira `cancelled` e apaga os `booking_seats`). Esse caminho vale enquanto o Checkout Pro estiver em uso: a spec de checkout transparente remove `releaseFailedPaymentBooking` e mantém a reserva `pending` (ver "Relação com outras specs");
 - `POST /bookings/:id/confirm` (confirmação mock).
 
 Se o cliente abandona o checkout e nenhum webhook chega, a reserva fica `pending` pra sempre e o assento nunca mais pode ser reservado naquela sessão. Pior: o mapa de assentos hoje só conta reservas `confirmed` como ocupadas (`getBookedSeatIds` e `isSeatBooked` em `apps/api/src/seating/seating.service.ts`), então o assento travado aparece como `free`, outro cliente consegue segurá-lo (hold na Valkey) e só descobre o problema com um 409 na hora de reservar.
@@ -62,12 +62,13 @@ Esta spec dá prazo de validade à reserva pendente: 10 minutos. Depois disso, s
 ### Pagamento em andamento
 
 - Uma reserva tem **pagamento em andamento** quando existe linha em `payments` com `booking_id` dela e `status IN ('pending', 'in_process')`.
-  - `payments.booking_id` é único, então existe no máximo uma linha por reserva (cada webhook sobrescreve o status, exceto quando já está `approved`, ver `payment.service.ts`).
+  - A regra é escrita com `EXISTS` sobre qualquer linha de `payments` da reserva, então vale tanto pro modelo de hoje (uma linha por reserva, sobrescrita a cada webhook) quanto pro modelo da spec de checkout transparente (uma linha por tentativa, `booking_id` sem unicidade). Basta **uma** tentativa `pending`/`in_process` pra travar; tentativas `rejected`, `cancelled`, `approved` ou com status internos (`created`, `request_failed`, `abandoned`) não contam.
   - Motivo: o cliente pode já ter pago e a confirmação do Mercado Pago ainda não chegou. Expirar nesse momento liberaria o assento pra outra pessoa com o pagamento já em curso.
 - **Nunca** expirar reserva `pending` com pagamento em andamento, nem pelo caminho preguiçoso nem pelo sweeper. O assento continua travado mesmo depois de `expires_at`.
 - Quando esse pagamento termina:
   - `approved` → `confirmPaidBooking` confirma normalmente (`confirmed`, broadcast `booked`, e-mail). A reserva ainda está `pending`, então o fluxo atual já funciona.
-  - `rejected`/`cancelled` → `releaseFailedPaymentBooking` libera normalmente (`cancelled`, apaga `booking_seats`). Ganha um broadcast `released` por assento (ver "Mapa e broadcast").
+  - `rejected`/`cancelled` com Checkout Pro → `releaseFailedPaymentBooking` libera normalmente (`cancelled`, apaga `booking_seats`). Ganha um broadcast `released` por assento (ver "Mapa e broadcast").
+  - `rejected`/`cancelled` com checkout transparente → a reserva continua `pending` (cliente pode tentar de novo). Sem outra tentativa em andamento, ela passa a ser expirável assim que `expires_at` vence, e quem libera o assento é esta spec (verificação preguiçosa ou sweeper).
 - Limitação conhecida: a linha em `payments` só existe depois do primeiro webhook. Com o Checkout Pro (redirecionamento), o cliente pode estar na página do Mercado Pago sem nenhuma linha em `payments` ainda, e a reserva expira normalmente aos 10 min. Mitigação na decisão "Validade da preferência no Mercado Pago" abaixo.
 
 ### Regra única: reserva que trava o assento
@@ -150,7 +151,7 @@ A regra fica num único lugar (helper SQL/Drizzle no módulo de booking, ex: `ac
 - `SeatEventStatus` (`"held" | "released" | "booked"`, `seating.gateway.ts`) não muda.
 - Criação de reserva pendente passa a emitir `booked` por assento depois do commit. Hoje ela só apaga o hold sem broadcast, e como o mapa vai mostrar pendente dentro do prazo como `booked`, quem está com o mapa aberto precisa ver o mesmo estado sem refazer a consulta.
 - Expiração (preguiçosa ou sweeper) emite `released` por assento liberado.
-- `releaseFailedPaymentBooking` passa a emitir `released` por assento liberado (hoje não emite, porque o mapa nem mostrava o pendente como ocupado).
+- `releaseFailedPaymentBooking` passa a emitir `released` por assento liberado (hoje não emite, porque o mapa nem mostrava o pendente como ocupado). Vale só enquanto o Checkout Pro estiver em uso; com o checkout transparente esse método é removido e o `released` vem da expiração.
 
 ### Checkout e confirm de reserva expirada
 
@@ -172,7 +173,7 @@ Caso: cliente pagou, mas a reserva já foi expirada (sem linha em `payments` no 
 Proposta:
 
 - Não reatribuir assento. A reserva continua `expired`, sem `booking_seats`.
-- O `payments` é gravado normalmente com `status = "approved"` (o upsert atual já faz isso).
+- O `payments` é gravado normalmente com `status = "approved"` (o upsert atual já faz isso; no modelo de uma linha por tentativa, é a linha da tentativa).
 - `confirmPaidBooking` hoje ignora em silêncio qualquer reserva fora de `pending`. Passa a distinguir: se a reserva está `expired`, loga `warn` com `bookingId`, `externalPaymentId` e valor, marcando "pagamento aprovado em reserva expirada, revisar estorno". Não envia e-mail de confirmação.
 - Revisão manual achada por consulta: `bookings.status = 'expired' AND payments.status = 'approved'`.
 - Estorno automático fora de escopo.
@@ -186,7 +187,10 @@ Proposta:
 
 ### Relação com outras specs
 
-- A spec de checkout transparente (`docs/flows/checkout-transparente/spec.md`, ainda em revisão, fora da `main`) prevê que pagamento com cartão recusado mantenha a reserva `pending` pra o cliente tentar de novo. Esta expiração é o que, no fim, libera esses assentos se o cliente desistir. Esta spec não depende daquela: vale com o Checkout Pro de hoje e com o checkout transparente.
+- A spec de checkout transparente (`docs/flows/checkout-transparente/spec.md`, ainda em revisão, fora da `main`) muda duas coisas que tocam esta spec:
+  - Webhook `rejected`/`cancelled` **mantém** a reserva `pending` (nova tentativa permitida) e `releaseFailedPaymentBooking` é removido. Esta expiração passa a ser o que libera esses assentos se o cliente desistir. Onde esta spec descreve liberação no `rejected`/`cancelled` (AC13, "Pagamento em andamento", "Mapa e broadcast"), é o comportamento enquanto o Checkout Pro estiver em uso; a spec de checkout transparente o substitui.
+  - `payments` vira uma linha por tentativa (`booking_id` deixa de ser único). A regra de "pagamento em andamento" desta spec já usa `EXISTS` sobre qualquer linha da reserva e não muda. A consulta de revisão de estorno (`bookings.status = 'expired' AND payments.status = 'approved'`) também continua valendo.
+- Esta spec não depende daquela: vale com o Checkout Pro de hoje e com o checkout transparente.
 
 ## Critérios de aceitação
 
@@ -202,7 +206,7 @@ Proposta:
 - **AC10**: duas execuções do sweeper ao mesmo tempo (simulando duas instâncias) expiram cada reserva uma única vez e emitem um único `released` por assento.
 - **AC11**: o sweeper não roda sobreposto na mesma instância: se a execução anterior ainda não terminou, o tick é pulado.
 - **AC12**: webhook `approved` para reserva `pending` vencida com pagamento em andamento confirma a reserva normalmente (`confirmed`, broadcast `booked`, e-mail).
-- **AC13**: webhook `rejected` ou `cancelled` para reserva `pending` com pagamento em andamento libera normalmente (`cancelled`, `booking_seats` apagados) e emite `released` por assento.
+- **AC13**: enquanto o Checkout Pro estiver em uso, webhook `rejected` ou `cancelled` para reserva `pending` com pagamento em andamento libera normalmente (`cancelled`, `booking_seats` apagados) e emite `released` por assento. Com o checkout transparente, esta AC é substituída pela daquela spec: a reserva continua `pending` e o assento é liberado pela expiração (AC3, AC5, AC8).
 - **AC14**: webhook `approved` para reserva `expired` grava `payments.status = "approved"`, mantém a reserva `expired`, não recria `booking_seats`, não envia e-mail e registra log `warn` com `bookingId` e `externalPaymentId` pra revisão de estorno. (pra revisar)
 - **AC15**: `POST /bookings/:id/checkout` e `POST /bookings/:id/confirm` respondem 409 com `code: "BOOKING_EXPIRED"` para reserva `expired` e para reserva `pending` com `expires_at` já passado.
 - **AC16**: no checkout, um 409 com `code: "BOOKING_EXPIRED"` mostra "Sua reserva expirou. Escolha os assentos novamente." e um botão que leva pra `/sessions/:sessionId/seats`.
@@ -212,12 +216,12 @@ Proposta:
 ## Modelo de dados / API (impacto)
 
 - `bookings`: nova coluna `expires_at timestamptz NOT NULL DEFAULT (now() + interval '10 minutes')`, com backfill `created_at + 10 min`. Novo valor de `status`: `expired` (sem constraint a alterar).
-- `payments`: sem mudança de schema. Os valores `pending`/`in_process` passam a ter significado na regra de expiração.
+- `payments`: sem mudança de schema nesta spec. Os valores `pending`/`in_process` passam a ter significado na regra de expiração. A regra funciona com uma ou várias linhas por reserva (a spec de checkout transparente remove a unicidade de `booking_id`).
 - `POST /sessions/:id/book` e `POST /sessions/:id/seats/:seatId/book`: expiram reservas vencidas conflitantes na mesma transação; emitem `booked` por assento. Contrato de resposta sem mudança.
 - `GET /sessions/:id/seats`: `booked` passa a incluir reserva `pending` que ainda trava o assento. `SeatState` sem mudança.
 - `POST /sessions/:id/seats/:seatId/hold`: 409 também pra assento de reserva pendente que ainda trava.
 - `POST /bookings/:id/checkout` e `POST /bookings/:id/confirm`: novo 409 com `code: "BOOKING_EXPIRED"`.
-- `POST /payments/webhook`: `releaseFailedPaymentBooking` passa a emitir `released`; `confirmPaidBooking` loga `warn` quando a reserva está `expired`.
+- `POST /payments/webhook`: `releaseFailedPaymentBooking` passa a emitir `released` (enquanto existir, com Checkout Pro); `confirmPaidBooking` loga `warn` quando a reserva está `expired`.
 - Nova dependência: `@nestjs/schedule` (versão exata) + `ScheduleModule.forRoot()`.
 - Valkey: sem mudança.
 
@@ -227,6 +231,7 @@ Proposta:
 - **Pagamento em andamento travando assento por muito tempo** (pra revisar): Pix ou boleto `pending`/`in_process` podem segurar o assento por horas. Proposta: teto de 24h depois de `created_at`. Passado o teto, o sweeper **não** expira a reserva sozinho, só loga `warn` ("pagamento em andamento há mais de 24h, revisar") com `bookingId` e status do pagamento. Pra revisar: se depois do teto deve expirar automaticamente, e como evitar que o mesmo `warn` se repita a cada tick (ex: logar só uma vez por hora, ou coluna de marcação).
 - **Pagamento aprovado depois da expiração**: pode acontecer quando o primeiro webhook chega depois dos 10 min (sem linha em `payments` no momento da expiração). Mitigado pela validade da preferência no Mercado Pago e tratado com revisão manual (AC14). Estorno automático fora de escopo.
 - **Corrida entre expiração e webhook `in_process`**: o `NOT EXISTS` em `payments` não trava a linha de pagamento. Se o webhook `in_process` chega no mesmo instante da expiração, a reserva pode expirar mesmo assim. Cai no mesmo caminho de "pagamento aprovado depois da expiração" e é aceito como risco baixo.
+- **Tentativa ainda sendo enviada ao Mercado Pago não trava** (risco aceito): no checkout transparente, a tentativa fica com status `created` enquanto a chamada ao Mercado Pago não respondeu. `created` não conta como pagamento em andamento, então a reserva pode expirar nesse intervalo. Se esse pagamento depois for aprovado, cai no AC14 (revisão manual de estorno).
 - **Cliente voltando do Mercado Pago e pagando de novo**: hoje o `CheckoutPage` cria uma reserva nova a cada clique em "Pagar". Se o cliente volta da página do Mercado Pago e clica de novo dentro dos 10 min, a reserva anterior (dele mesmo) ainda trava os assentos e ele recebe 409. Esta spec não muda isso. Depois dos 10 min a criação preguiçosa resolve sozinha.
 - **Dados perdidos da reserva expirada**: `booking_seats` é apagado na expiração (a constraint única é incondicional, então não dá pra manter as linhas). O log `info` do sweeper/criação guarda `bookingId` e assentos, que é o que a revisão manual precisa.
 - **Pico de broadcast no deploy**: o backfill pode deixar muitas reservas vencidas de uma vez. O lote de 100 por transação limita o tamanho de cada transação, e os broadcasts saem por room de sessão.
@@ -252,7 +257,7 @@ Pra simular reserva vencida nos testes de integração, o helper ajusta `expires
 | AC10 | integração | `it("AC10: deve expirar cada reserva uma única vez com duas execuções simultâneas do sweeper")` (duas instâncias do serviço, `Promise.all`) |
 | AC11 | unitário | `should skip the tick while a previous run is still in progress` |
 | AC12 | integração | `it("AC12: deve confirmar reserva vencida quando o pagamento em andamento é aprovado")` (mock do cliente do Mercado Pago, como no `payment.e2e-spec.ts`) |
-| AC13 | integração | um `it` por status: `rejected` e `cancelled` liberam a reserva e emitem `released` |
+| AC13 | integração | um `it` por status: `rejected` e `cancelled` liberam a reserva e emitem `released` (enquanto o Checkout Pro estiver em uso; removido junto com `releaseFailedPaymentBooking` pela spec de checkout transparente) |
 | AC14 | integração | `it("AC14: deve registrar o pagamento aprovado sem reativar a reserva expirada")` |
 | AC14 | unitário | `should log a refund-review warning when an approved payment hits an expired booking` |
 | AC15 | integração | um `it` por rota e por caso: checkout e confirm com reserva `expired`; checkout e confirm com reserva `pending` vencida |
