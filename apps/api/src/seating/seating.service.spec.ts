@@ -20,7 +20,10 @@ describe("SeatingService", () => {
     set: jest.fn(),
     expire: jest.fn(),
     del: jest.fn(),
+    srem: jest.fn(),
+    multi: jest.fn(),
   };
+  const mockMulti = { sadd: jest.fn(), expire: jest.fn(), exec: jest.fn() };
   const mockGateway = { broadcastSeatUpdate: jest.fn() };
 
   let service: SeatingService;
@@ -47,6 +50,10 @@ describe("SeatingService", () => {
     mockValkey.mget.mockResolvedValue([]);
     mockValkey.get.mockResolvedValue(null);
     mockValkey.set.mockResolvedValue("OK");
+    mockValkey.multi.mockReturnValue(mockMulti);
+    mockMulti.sadd.mockReturnValue(mockMulti);
+    mockMulti.expire.mockReturnValue(mockMulti);
+    mockMulti.exec.mockResolvedValue([]);
 
     const moduleRef = await Test.createTestingModule({
       providers: [
@@ -406,6 +413,110 @@ describe("SeatingService", () => {
 
       // ASSERT
       expect(mockValkey.del).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("guest holds index", () => {
+    const guest = "guest:3f1c";
+    const seat = { id: "seat-A1", roomId: "room-1", rowLabel: "A", seatNumber: 1 };
+
+    beforeEach(() => {
+      mockDb.query.sessions.findFirst.mockResolvedValue(session);
+      mockDb.query.seats.findFirst.mockResolvedValue(seat);
+    });
+
+    it("should hold the seat with the guest:<uuid> owner value and index it in guest-holds:<guestId> with a TTL", async () => {
+      // ACT
+      await service.holdSeat("session-1", "seat-A1", guest);
+
+      // ASSERT
+      expect(mockValkey.set).toHaveBeenCalledWith("seat-hold:session-1:seat-A1", guest, "EX", 600, "NX");
+      expect(mockMulti.sadd).toHaveBeenCalledWith("guest-holds:3f1c", "session-1:seat-A1");
+      expect(mockMulti.expire).toHaveBeenCalledWith("guest-holds:3f1c", 600);
+      expect(mockMulti.exec).toHaveBeenCalled();
+      expect(mockGateway.broadcastSeatUpdate).toHaveBeenCalledWith("session-1", {
+        seatId: "seat-A1",
+        status: "held",
+        heldByUserId: guest,
+      });
+    });
+
+    it("should renew the guest index TTL when the guest re-holds its own seat", async () => {
+      // ARRANGE
+      mockValkey.get.mockResolvedValue(guest);
+
+      // ACT
+      await service.holdSeat("session-1", "seat-A1", guest);
+
+      // ASSERT
+      expect(mockMulti.expire).toHaveBeenCalledWith("guest-holds:3f1c", 600);
+    });
+
+    it("should not touch any guest index when the holder is a user", async () => {
+      // ACT
+      await service.holdSeat("session-1", "seat-A1", "user-1");
+
+      // ASSERT
+      expect(mockValkey.multi).not.toHaveBeenCalled();
+    });
+
+    it("should not index the seat when the guest loses the SETNX race", async () => {
+      // ARRANGE
+      mockValkey.set.mockResolvedValue(null);
+
+      // ACT
+      const result = service.holdSeat("session-1", "seat-A1", guest);
+
+      // ASSERT
+      await expect(result).rejects.toThrow(ConflictException);
+      expect(mockValkey.multi).not.toHaveBeenCalled();
+    });
+
+    it("should remove the seat from the guest index when the guest releases it", async () => {
+      // ARRANGE
+      mockValkey.get.mockResolvedValue(guest);
+
+      // ACT
+      await service.releaseSeat("session-1", "seat-A1", guest);
+
+      // ASSERT
+      expect(mockValkey.srem).toHaveBeenCalledWith("guest-holds:3f1c", "session-1:seat-A1");
+    });
+
+    it("should remove every released seat from the guest index on release-all", async () => {
+      // ARRANGE
+      mockValkey.scan.mockResolvedValue(["0", ["seat-hold:session-1:seat-A1", "seat-hold:session-1:seat-A2"]]);
+      mockValkey.mget.mockResolvedValue([guest, guest]);
+
+      // ACT
+      await service.releaseAllHoldsForUser("session-1", guest);
+
+      // ASSERT
+      expect(mockValkey.srem).toHaveBeenCalledWith("guest-holds:3f1c", "session-1:seat-A1", "session-1:seat-A2");
+    });
+
+    it("should not touch any guest index when a user releases seats", async () => {
+      // ARRANGE
+      mockValkey.get.mockResolvedValue("user-1");
+
+      // ACT
+      await service.releaseSeat("session-1", "seat-A1", "user-1");
+
+      // ASSERT
+      expect(mockValkey.srem).not.toHaveBeenCalled();
+    });
+
+    it("should show the guest's own hold as held_by_me and a user's as held_by_other on the guest's seat map", async () => {
+      // ARRANGE
+      mockValkey.scan.mockResolvedValue(["0", ["seat-hold:session-1:seat-A1", "seat-hold:session-1:seat-A2"]]);
+      mockValkey.mget.mockResolvedValue([guest, "user-1"]);
+
+      // ACT
+      const result = await service.getSeatMap("session-1", guest);
+
+      // ASSERT
+      expect(result.seats.find((s) => s.id === "seat-A1")?.status).toBe("held_by_me");
+      expect(result.seats.find((s) => s.id === "seat-A2")?.status).toBe("held_by_other");
     });
   });
 });
