@@ -7,7 +7,14 @@ export function ProfileMenu() {
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
 
-  if (!user) return null;
+  // Visitors browse the public catalog without an account: offer a way in.
+  if (!user) {
+    return (
+      <Link to="/login" className="rounded border border-gray-300 px-3 py-1.5 text-sm hover:bg-gray-50">
+        Entrar
+      </Link>
+    );
+  }
 
   function handleLogout() {
     setOpen(false);

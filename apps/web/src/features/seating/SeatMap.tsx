@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { UnauthorizedError } from "../../lib/api-client";
 import { getSeatMap } from "./api";
 import type { SeatMapResponse, SeatMapSeat, SeatState } from "./types";
@@ -6,10 +6,20 @@ import { toSeatState, useSeatingSocket } from "./useSeatingSocket";
 
 interface SeatMapProps {
   sessionId: string;
+  /** User or guest bearer token. */
   accessToken: string;
+  /** Hold owner id matching `heldByUserId` broadcasts: a user id or `guest:<uuid>`. */
   userId: string;
   selectedSeatIds?: string[];
   onToggleSeat?: (seat: SeatMapSeat) => void;
+  /** Called once with the seats as first loaded, e.g. to restore `held_by_me` seats as the selection. */
+  onLoaded?: (seats: SeatMapSeat[]) => void;
+  /** Called when the API rejects the token. Defaults to sending the user to /login. */
+  onUnauthorized?: () => void;
+}
+
+function redirectToLogin() {
+  window.location.href = "/login";
 }
 
 const STATUS_LABEL: Record<SeatState, string> = {
@@ -84,9 +94,24 @@ export function buildRowSegments(seats: SeatMapSeat[], isBackRow: boolean): RowS
   );
 }
 
-export function SeatMap({ sessionId, accessToken, userId, selectedSeatIds, onToggleSeat }: SeatMapProps) {
+export function SeatMap({
+  sessionId,
+  accessToken,
+  userId,
+  selectedSeatIds,
+  onToggleSeat,
+  onLoaded,
+  onUnauthorized = redirectToLogin,
+}: SeatMapProps) {
   const [seatMap, setSeatMap] = useState<SeatMapResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Refs so a new callback identity from the parent doesn't refetch the map.
+  const onLoadedRef = useRef(onLoaded);
+  const onUnauthorizedRef = useRef(onUnauthorized);
+  useEffect(() => {
+    onLoadedRef.current = onLoaded;
+    onUnauthorizedRef.current = onUnauthorized;
+  }, [onLoaded, onUnauthorized]);
 
   useEffect(() => {
     let cancelled = false;
@@ -95,12 +120,13 @@ export function SeatMap({ sessionId, accessToken, userId, selectedSeatIds, onTog
       .then((data) => {
         if (!cancelled) {
           setSeatMap(data);
+          onLoadedRef.current?.(data.seats);
         }
       })
       .catch((err: Error) => {
         if (cancelled) return;
         if (err instanceof UnauthorizedError) {
-          window.location.href = "/login";
+          onUnauthorizedRef.current();
           return;
         }
         setError(err.message);

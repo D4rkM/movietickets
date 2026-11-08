@@ -23,9 +23,11 @@ export function App() {
             a static message — no auth needed, and the booking itself was already
             confirmed server-to-server by the webhook regardless of this page. */}
         <Route path="/checkout/retorno" element={<CheckoutReturnPage />} />
+        {/* Public: the catalog is the site's landing page, and a visitor picks
+            seats under a guest identity. Login is only required to pay. */}
+        <Route path="/movies" element={<MoviesPage />} />
+        <Route path="/sessions/:id/seats" element={<SessionSeatsPage />} />
         <Route element={<ProtectedRoute />}>
-          <Route path="/movies" element={<MoviesPage />} />
-          <Route path="/sessions/:id/seats" element={<SessionSeatsPage />} />
           <Route path="/checkout" element={<CheckoutPage />} />
           <Route path="/tickets" element={<TicketsPage />} />
         </Route>

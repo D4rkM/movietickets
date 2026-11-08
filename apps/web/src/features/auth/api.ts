@@ -1,11 +1,12 @@
 import { API_URL, apiFetch } from "../../lib/api-client";
 import type { AuthUser, LoginResponse } from "./types";
 
-export async function login(email: string, password: string): Promise<LoginResponse> {
+/** `guestToken`, when given, asks the API to move the visitor's seat holds to this user. */
+export async function login(email: string, password: string, guestToken?: string | null): Promise<LoginResponse> {
   const response = await apiFetch(`${API_URL}/auth/login`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ email, password }),
+    body: JSON.stringify(guestToken ? { email, password, guestToken } : { email, password }),
   });
 
   if (!response.ok) {

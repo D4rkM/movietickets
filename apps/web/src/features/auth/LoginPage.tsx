@@ -1,6 +1,8 @@
 import { useState } from "react";
 import type { FormEvent } from "react";
-import { Link, useLocation, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
+import { resolveReturnTo, returnToQuery } from "../../lib/return-to";
+import type { ReleasedSeatsNoticeState } from "../seating/released-seats-state";
 import { useAuth } from "./AuthContext";
 import { isValidEmail } from "./validation";
 
@@ -8,6 +10,8 @@ export function LoginPage() {
   const { login } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
+  const [searchParams] = useSearchParams();
+  const returnTo = resolveReturnTo(searchParams.get("returnTo"));
   const justRegistered = Boolean((location.state as { registered?: boolean } | null)?.registered);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -22,8 +26,13 @@ export function LoginPage() {
     setError(null);
     setSubmitting(true);
     try {
-      await login(email, password);
-      navigate("/movies");
+      const transfer = await login(email, password);
+      // Seats lost in the hand-over are reported on the seat page the user
+      // returns to, so they can review the selection before paying.
+      const state: ReleasedSeatsNoticeState | undefined = transfer?.releasedSeats.length
+        ? { releasedSeats: transfer.releasedSeats }
+        : undefined;
+      navigate(returnTo, { state });
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -75,7 +84,7 @@ export function LoginPage() {
       </form>
       <p className="text-center text-sm text-gray-600">
         Não tem conta?{" "}
-        <Link to="/register" className="underline">
+        <Link to={`/register${returnToQuery(searchParams.get("returnTo"))}`} className="underline">
           Criar conta
         </Link>
       </p>
