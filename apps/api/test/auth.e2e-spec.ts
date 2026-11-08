@@ -8,6 +8,7 @@ import postgres from "postgres";
 import { AuthModule } from "../src/auth/auth.module";
 import { DrizzleModule } from "../src/db/drizzle.module";
 import * as schema from "../src/db/schema";
+import { ValkeyModule } from "../src/valkey/valkey.module";
 import { buildFastifyApp } from "./helpers/build-app";
 
 describe("Auth (e2e)", () => {
@@ -20,7 +21,7 @@ describe("Auth (e2e)", () => {
     process.env.JWT_SECRET ??= "test-secret";
 
     const moduleRef = await Test.createTestingModule({
-      imports: [ConfigModule.forRoot({ isGlobal: true }), DrizzleModule, AuthModule],
+      imports: [ConfigModule.forRoot({ isGlobal: true }), DrizzleModule, ValkeyModule, AuthModule],
     }).compile();
 
     // ConfigModule.forRoot() above loads .env into process.env as a side effect,

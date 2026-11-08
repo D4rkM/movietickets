@@ -67,4 +67,16 @@ describe("SeatingController", () => {
     expect(mockSeatingService.releaseAllHoldsForUser).toHaveBeenCalledWith("session-1", "user-1");
     expect(result).toEqual({ releasedSeatIds: ["seat-A1", "seat-B1"] });
   });
+
+  it("should use the guest subject as the hold owner when the request comes from a guest", async () => {
+    // ARRANGE
+    const request = { user: { kind: "guest", sub: "guest:3f1c" } } as FastifyRequest;
+    mockSeatingService.holdSeat.mockResolvedValue({ seatId: "seat-A1", status: "held", expiresInSeconds: 600 });
+
+    // ACT
+    await controller.holdSeat("session-1", "seat-A1", request);
+
+    // ASSERT
+    expect(mockSeatingService.holdSeat).toHaveBeenCalledWith("session-1", "seat-A1", "guest:3f1c");
+  });
 });

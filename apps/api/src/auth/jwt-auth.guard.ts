@@ -1,35 +1,26 @@
-import {
-  CanActivate,
-  ExecutionContext,
-  Injectable,
-  UnauthorizedException,
-} from "@nestjs/common";
+import { CanActivate, ExecutionContext, Injectable, UnauthorizedException } from "@nestjs/common";
 import { JwtService } from "@nestjs/jwt";
 import { FastifyRequest } from "fastify";
-import { JwtPayload } from "./jwt-payload.type";
+import { verifyBearerToken } from "./bearer-token";
+import { isUserPayload } from "./jwt-payload.type";
 
+/**
+ * User-only guard: accepts a valid user token (with `kind: "user"` or, for
+ * tokens issued before guest identities existed, no `kind` at all) and
+ * rejects guest tokens with 401. Every route behind it — booking, payment,
+ * tickets — stays closed to guests.
+ */
 @Injectable()
 export class JwtAuthGuard implements CanActivate {
   constructor(private readonly jwtService: JwtService) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest<FastifyRequest>();
-    const token = this.extractToken(request);
-    if (!token) {
-      throw new UnauthorizedException("Token ausente");
+    const payload = await verifyBearerToken(this.jwtService, request);
+    if (!isUserPayload(payload)) {
+      throw new UnauthorizedException("Token de convidado não autorizado nesta rota");
     }
-
-    try {
-      const payload = await this.jwtService.verifyAsync<JwtPayload>(token);
-      request.user = payload;
-      return true;
-    } catch {
-      throw new UnauthorizedException("Token inválido ou expirado");
-    }
-  }
-
-  private extractToken(request: FastifyRequest): string | undefined {
-    const [type, token] = request.headers.authorization?.split(" ") ?? [];
-    return type === "Bearer" ? token : undefined;
+    request.user = payload;
+    return true;
   }
 }

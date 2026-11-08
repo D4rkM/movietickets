@@ -2,7 +2,7 @@ import { AuthController } from "./auth.controller";
 import { AuthService } from "./auth.service";
 
 describe("AuthController", () => {
-  const mockAuthService = { register: jest.fn(), login: jest.fn() };
+  const mockAuthService = { register: jest.fn(), login: jest.fn(), issueGuestToken: jest.fn() };
   let controller: AuthController;
 
   beforeEach(() => {
@@ -35,5 +35,18 @@ describe("AuthController", () => {
     // ASSERT
     expect(mockAuthService.login).toHaveBeenCalledWith(dto);
     expect(result).toEqual({ accessToken: "token" });
+  });
+
+  it("should delegate guest token issuing to AuthService", () => {
+    // ARRANGE
+    const issued = { guestToken: "guest-token", expiresAt: "2026-11-08T12:00:00.000Z" };
+    mockAuthService.issueGuestToken.mockReturnValue(issued);
+
+    // ACT
+    const result = controller.issueGuestToken();
+
+    // ASSERT
+    expect(mockAuthService.issueGuestToken).toHaveBeenCalled();
+    expect(result).toEqual(issued);
   });
 });

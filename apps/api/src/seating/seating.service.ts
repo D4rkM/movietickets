@@ -5,12 +5,20 @@ import type { Redis } from "ioredis";
 import { DRIZZLE } from "../db/drizzle.module";
 import * as schema from "../db/schema";
 import { VALKEY } from "../valkey/valkey.module";
+import {
+  guestHoldMember,
+  guestHoldsKey,
+  guestIdFromHolder,
+  HOLD_TTL_SECONDS,
+  holdKey,
+  MAX_HELD_SEATS_PER_USER,
+  scanSessionHoldKeys,
+  seatIdFromHoldKey,
+} from "./hold-keys";
 import { SeatingGateway } from "./seating.gateway";
 import { SeatMapResponse, SeatState } from "./seat-map.types";
 
-export const HOLD_KEY_PREFIX = "seat-hold";
-const HOLD_TTL_SECONDS = 600;
-const MAX_HELD_SEATS_PER_USER = 6;
+export { HOLD_KEY_PREFIX } from "./hold-keys";
 
 export interface HoldSeatResult {
   seatId: string;
@@ -27,6 +35,12 @@ export interface ReleaseAllHoldsResult {
   releasedSeatIds: string[];
 }
 
+/**
+ * Every `userId` parameter below is the hold owner taken from the token's
+ * `sub`: a user id, or `guest:<uuid>` for a guest. Both follow the same rules
+ * (SETNX + TTL, 6 seats per session); guest holds are also indexed in
+ * `guest-holds:<guestId>` so they can be transferred on login.
+ */
 @Injectable()
 export class SeatingService {
   constructor(
@@ -96,6 +110,7 @@ export class SeatingService {
     if (currentHolder === userId) {
       // Same user re-holding: treat as a TTL refresh instead of a conflict.
       await this.valkey.expire(key, HOLD_TTL_SECONDS);
+      await this.trackGuestHolds(userId, sessionId, [seatId]);
       return { seatId, status: "held", expiresInSeconds: HOLD_TTL_SECONDS };
     }
     if (currentHolder) {
@@ -114,6 +129,7 @@ export class SeatingService {
       // Someone else won the race between the check above and this SETNX.
       throw new ConflictException("Assento já está sendo segurado por outro usuário");
     }
+    await this.trackGuestHolds(userId, sessionId, [seatId]);
 
     this.gateway.broadcastSeatUpdate(sessionId, { seatId, status: "held", heldByUserId: userId });
     return { seatId, status: "held", expiresInSeconds: HOLD_TTL_SECONDS };
@@ -140,6 +156,7 @@ export class SeatingService {
     }
 
     await this.valkey.del(key);
+    await this.untrackGuestHolds(userId, sessionId, [seatId]);
     this.gateway.broadcastSeatUpdate(sessionId, { seatId, status: "released" });
     return { seatId, released: true };
   }
@@ -164,7 +181,8 @@ export class SeatingService {
 
     await this.valkey.del(...ownedKeys);
 
-    const releasedSeatIds = ownedKeys.map((key) => key.slice(`${HOLD_KEY_PREFIX}:${sessionId}:`.length));
+    const releasedSeatIds = ownedKeys.map((key) => seatIdFromHoldKey(sessionId, key));
+    await this.untrackGuestHolds(userId, sessionId, releasedSeatIds);
     for (const seatId of releasedSeatIds) {
       this.gateway.broadcastSeatUpdate(sessionId, { seatId, status: "released" });
     }
@@ -204,7 +222,30 @@ export class SeatingService {
   }
 
   private holdKey(sessionId: string, seatId: string): string {
-    return `${HOLD_KEY_PREFIX}:${sessionId}:${seatId}`;
+    return holdKey(sessionId, seatId);
+  }
+
+  /**
+   * Keeps the `guest-holds:<guestId>` index in sync for guest holders (no-op
+   * for users), so login can find a guest's holds without scanning every
+   * session. The index TTL is renewed on each hold: it never needs to outlive
+   * the newest hold it lists.
+   */
+  private async trackGuestHolds(holderId: string, sessionId: string, seatIds: string[]): Promise<void> {
+    const guestId = guestIdFromHolder(holderId);
+    if (!guestId || seatIds.length === 0) return;
+    const indexKey = guestHoldsKey(guestId);
+    await this.valkey
+      .multi()
+      .sadd(indexKey, ...seatIds.map((seatId) => guestHoldMember(sessionId, seatId)))
+      .expire(indexKey, HOLD_TTL_SECONDS)
+      .exec();
+  }
+
+  private async untrackGuestHolds(holderId: string, sessionId: string, seatIds: string[]): Promise<void> {
+    const guestId = guestIdFromHolder(holderId);
+    if (!guestId || seatIds.length === 0) return;
+    await this.valkey.srem(guestHoldsKey(guestId), ...seatIds.map((seatId) => guestHoldMember(sessionId, seatId)));
   }
 
   private resolveStatus(
@@ -247,22 +288,14 @@ export class SeatingService {
     keys.forEach((key, index) => {
       const heldByUserId = values[index];
       if (heldByUserId) {
-        const seatId = key.slice(`${HOLD_KEY_PREFIX}:${sessionId}:`.length);
+        const seatId = seatIdFromHoldKey(sessionId, key);
         holds.set(seatId, heldByUserId);
       }
     });
     return holds;
   }
 
-  private async scanHoldKeys(sessionId: string): Promise<string[]> {
-    const pattern = `${HOLD_KEY_PREFIX}:${sessionId}:*`;
-    const keys: string[] = [];
-    let cursor = "0";
-    do {
-      const [nextCursor, found] = await this.valkey.scan(cursor, "MATCH", pattern, "COUNT", 100);
-      keys.push(...found);
-      cursor = nextCursor;
-    } while (cursor !== "0");
-    return keys;
+  private scanHoldKeys(sessionId: string): Promise<string[]> {
+    return scanSessionHoldKeys(this.valkey, sessionId);
   }
 }
