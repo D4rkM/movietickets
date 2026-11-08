@@ -44,6 +44,15 @@ export function ProfileMenu() {
             onClick={() => setOpen(false)}
           />
           <div className="absolute right-0 z-20 mt-2 w-44 rounded border border-gray-200 bg-white py-1 shadow-lg">
+            {user.role === "admin" && (
+              <Link
+                to="/admin"
+                onClick={() => setOpen(false)}
+                className="block px-4 py-2 text-sm hover:bg-gray-50"
+              >
+                Admin
+              </Link>
+            )}
             <Link
               to="/tickets"
               onClick={() => setOpen(false)}
