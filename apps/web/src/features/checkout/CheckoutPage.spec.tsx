@@ -274,4 +274,51 @@ describe("CheckoutPage (integration)", () => {
     expect(checkoutCalls).toHaveLength(0);
     expect(screen.getByRole("button", { name: /^Pagar$/ })).toBeEnabled();
   });
+  it("AC16: should show the expired-booking notice with a link back to seat selection when the checkout gets 409 BOOKING_EXPIRED", async () => {
+    // GIVEN the booking succeeds but its deadline passes before the checkout is created
+    vi.mocked(fetch).mockImplementation((url: string | URL | Request) => {
+      const urlString = url.toString();
+      if (urlString.endsWith("/sessions/session-1/book")) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => [{ bookingId: "booking-1", seatId: "seat-1", priceCents: 2500 }],
+        } as Response);
+      }
+      if (urlString.endsWith("/bookings/booking-1/checkout")) {
+        return Promise.resolve({
+          ok: false,
+          status: 409,
+          json: async () => ({
+            statusCode: 409,
+            code: "BOOKING_EXPIRED",
+            message: "Reserva expirada. Escolha os assentos novamente.",
+          }),
+        } as Response);
+      }
+      return Promise.resolve({
+        ok: true,
+        json: async () => ({
+          room: { rows: 1, seatsPerRow: 1 },
+          priceCents: 2500,
+          seats: [{ id: "seat-1", rowLabel: "A", seatNumber: 1, status: "held_by_me" }],
+        }),
+      } as Response);
+    });
+    renderCheckoutPage({ sessionId: "session-1", seatIds: ["seat-1"] });
+    await screen.findByText("Assento A1");
+
+    // WHEN the user tries to pay
+    await userEvent.click(screen.getByRole("button", { name: /^Pagar$/ }));
+
+    // THEN it shows the expired-booking message, disables paying again,
+    // and the link takes the user back to the session's seat selection
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Sua reserva expirou. Escolha os assentos novamente.",
+    );
+    expect(screen.getByRole("button", { name: /^Pagar$/ })).toBeDisabled();
+    const backToSeats = screen.getByRole("link", { name: "Escolher assentos" });
+    expect(backToSeats).toHaveAttribute("href", "/sessions/session-1/seats");
+    await userEvent.click(backToSeats);
+    expect(await screen.findByText("Seat selection page")).toBeInTheDocument();
+  });
 });
