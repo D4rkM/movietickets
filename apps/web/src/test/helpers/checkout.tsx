@@ -13,6 +13,7 @@ import type {
   MercadoPagoInstance,
   MercadoPagoIssuer,
   MercadoPagoPaymentMethod,
+  SecureFieldErrorEvent,
   SecureFieldType,
   ValidityChangeEvent,
 } from "../../features/checkout/mercadopago";
@@ -22,7 +23,7 @@ export interface MockSecureFieldController {
   unmount: ReturnType<typeof vi.fn>;
   emitBinChange: (event: BinChangeEvent) => Promise<void>;
   emitValidityChange: (event: ValidityChangeEvent) => Promise<void>;
-  emitError: (event?: unknown) => Promise<void>;
+  emitError: (event?: SecureFieldErrorEvent) => Promise<void>;
 }
 
 export interface MockMercadoPagoController {
@@ -47,15 +48,52 @@ export function createMockMercadoPago(overrides?: {
   const validityHandlers: Partial<
     Record<SecureFieldType, Array<(event: ValidityChangeEvent) => void>>
   > = {};
-  const errorHandlers: Partial<Record<SecureFieldType, Array<(event: unknown) => void>>> = {};
+  const errorHandlers: Partial<Record<SecureFieldType, Array<(event: SecureFieldErrorEvent) => void>>> = {};
+  // Field types currently mounted, mirroring the SDK's registry: it refuses to
+  // create a type that is already mounted until that field is unmounted.
+  const mountedTypes = new Set<SecureFieldType>();
 
   const makeField = (type: SecureFieldType): { field: MercadoPagoField; controller: MockSecureFieldController } => {
     binHandlers[type] = [];
     validityHandlers[type] = [];
     errorHandlers[type] = [];
 
-    const mount = vi.fn();
-    const unmount = vi.fn();
+    let mounted = false;
+
+    // Mirrors MercadoPago.js v2 `mount`: resolves the container with
+    // `document.getElementById` (bare id, not a `#` selector), appends the
+    // secure iframe on success, and on a missing container only warns and emits
+    // an async `error` event instead of throwing.
+    const mount = vi.fn((containerId: string) => {
+      if (mounted) throw new Error(`Field '${type}' already mounted`);
+      const container = document.getElementById(containerId);
+      if (!container) {
+        const message = `MercadoPago.js - Error when mounting field ${containerId}: Container not found`;
+        console.warn(message);
+        setTimeout(() => {
+          act(() => {
+            for (const h of errorHandlers[type] ?? []) {
+              h({ field: type, error: message });
+            }
+          });
+        });
+        return field;
+      }
+      const iframe = document.createElement("iframe");
+      iframe.setAttribute("data-mp-field", type);
+      container.appendChild(iframe);
+      mounted = true;
+      mountedTypes.add(type);
+      return field;
+    });
+
+    // Mirrors the SDK: unmounting a field that is not mounted throws.
+    const unmount = vi.fn(() => {
+      if (!mounted) throw new Error(`Field '${type}' already unmounted`);
+      document.querySelector(`iframe[data-mp-field="${type}"]`)?.remove();
+      mounted = false;
+      mountedTypes.delete(type);
+    });
 
     const field: MercadoPagoField = {
       mount,
@@ -66,7 +104,7 @@ export function createMockMercadoPago(overrides?: {
         } else if (event === "validityChange") {
           validityHandlers[type]!.push(handler as (event: ValidityChangeEvent) => void);
         } else if (event === "error") {
-          errorHandlers[type]!.push(handler as (event: unknown) => void);
+          errorHandlers[type]!.push(handler as (event: SecureFieldErrorEvent) => void);
         }
         return field;
       },
@@ -89,7 +127,9 @@ export function createMockMercadoPago(overrides?: {
           }
         });
       },
-      emitError: async (event: unknown = { message: "invalid" }) => {
+      emitError: async (
+        event: SecureFieldErrorEvent = { field: type, error: "MercadoPago.js - Secure field failed" },
+      ) => {
         await act(async () => {
           for (const h of errorHandlers[type] ?? []) {
             h(event);
@@ -111,7 +151,10 @@ export function createMockMercadoPago(overrides?: {
     securityCode: securityCode.field,
   };
 
-  const createFieldSpy = vi.fn((type: SecureFieldType) => fieldMap[type]);
+  const createFieldSpy = vi.fn((type: SecureFieldType) => {
+    if (mountedTypes.has(type)) throw new Error(`[Fields] The field ${type} has already been created`);
+    return fieldMap[type];
+  });
 
   let tokenIndex = 0;
   const tokenQueue = overrides?.tokens ?? ["tok-1", "tok-2", "tok-3"];

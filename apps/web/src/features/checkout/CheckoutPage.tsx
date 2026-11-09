@@ -15,10 +15,12 @@ import {
 } from "./api";
 import {
   initMercadoPago,
+  type MercadoPagoField,
   type MercadoPagoIdentificationType,
   type MercadoPagoInstance,
   type MercadoPagoIssuer,
   type MercadoPagoPayerCost,
+  type SecureFieldErrorEvent,
   type SecureFieldType,
 } from "./mercadopago";
 import { cleanCpf, isValidCpf, isValidEmail } from "./validation";
@@ -50,6 +52,36 @@ const SECURE_FIELD_ERROR_MESSAGES: Record<SecureFieldType, string> = {
   expirationDate: "Data de validade inválida.",
   securityCode: "Código de segurança inválido.",
 };
+
+const SECURE_FIELD_LOAD_ERROR_MESSAGE = "Não foi possível carregar o campo do cartão. Recarregue a página.";
+
+// Ids of the containers the SDK mounts each secure iframe into. Shared by the JSX
+// and the mount call so they can't drift: the SDK resolves them with
+// `document.getElementById`, so they are bare ids, not `#` selectors.
+const SECURE_FIELD_CONTAINER_IDS: Record<SecureFieldType, string> = {
+  cardNumber: "mp-card-number",
+  expirationDate: "mp-expiration-date",
+  securityCode: "mp-security-code",
+};
+
+const NO_SECURE_FIELD_FAILED: Record<SecureFieldType, boolean> = {
+  cardNumber: false,
+  expirationDate: false,
+  securityCode: false,
+};
+
+function secureFieldErrorMessage(fieldType: SecureFieldType, loadFailed: boolean): string {
+  return loadFailed ? SECURE_FIELD_LOAD_ERROR_MESSAGE : SECURE_FIELD_ERROR_MESSAGES[fieldType];
+}
+
+function unmountSecureField(fieldType: SecureFieldType, field: MercadoPagoField) {
+  try {
+    field.unmount?.();
+  } catch (err) {
+    // The SDK throws when the field never mounted (its `error` event already reported why).
+    console.warn(`[checkout] Could not unmount secure field "${fieldType}"`, err);
+  }
+}
 
 function isCheckoutLocationState(state: unknown): state is CheckoutLocationState {
   return (
@@ -98,6 +130,8 @@ export function CheckoutPage() {
     expirationDate: true,
     securityCode: true,
   });
+  const [secureFieldLoadFailed, setSecureFieldLoadFailed] =
+    useState<Record<SecureFieldType, boolean>>(NO_SECURE_FIELD_FAILED);
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
 
   const [error, setError] = useState<string | null>(null);
@@ -178,27 +212,28 @@ export function CheckoutPage() {
     };
   }, [bookingId, accessToken]);
 
+  // The secure field containers are rendered exactly when this is true (see the JSX below).
+  const showPaymentForm = Boolean(bookingId && paymentSummary && !paymentResult);
+
   // Step 2b: Mount secure iframe fields (cardNumber, expirationDate, securityCode) and wire SDK events.
+  // Gated on the same condition that renders their containers, so they are in the DOM when mount runs.
+  // Each run creates fresh fields and the cleanup unmounts them, which the SDK supports (it only rejects
+  // creating a field type that is currently mounted), so React StrictMode's mount/unmount/mount works.
   useEffect(() => {
-    if (!mpInstance || !paymentSummary || paymentResult) return;
+    if (!mpInstance || !paymentSummary || !showPaymentForm) return;
     let cancelled = false;
 
     const cardNumberField = mpInstance.fields.create("cardNumber", {
       placeholder: "Número do cartão",
     });
-    cardNumberField.mount("#mp-card-number");
-
     const expirationDateField = mpInstance.fields.create("expirationDate", {
       placeholder: "MM/AA",
     });
-    expirationDateField.mount("#mp-expiration-date");
-
     const securityCodeField = mpInstance.fields.create("securityCode", {
       placeholder: "CVV",
     });
-    securityCodeField.mount("#mp-security-code");
 
-    const bindValidityEvents = (fieldType: SecureFieldType, field: ReturnType<MercadoPagoInstance["fields"]["create"]>) => {
+    const bindValidityEvents = (fieldType: SecureFieldType, field: MercadoPagoField) => {
       field.on("validityChange", (event) => {
         if (cancelled) return;
         const hasError =
@@ -211,19 +246,28 @@ export function CheckoutPage() {
         }));
       });
 
-      field.on("error", () => {
+      // SDK failures (e.g. mount errors) are not user input errors: surface the real cause in the
+      // console and tell the user the field failed to load instead of calling their input invalid.
+      field.on("error", (event: SecureFieldErrorEvent) => {
         if (cancelled) return;
+        console.error(`[checkout] MercadoPago secure field "${fieldType}" failed`, event);
         setSecureFieldValid((current) => ({ ...current, [fieldType]: false }));
+        setSecureFieldLoadFailed((current) => ({ ...current, [fieldType]: true }));
         setFieldErrors((current) => ({
           ...current,
-          [fieldType]: SECURE_FIELD_ERROR_MESSAGES[fieldType],
+          [fieldType]: SECURE_FIELD_LOAD_ERROR_MESSAGE,
         }));
       });
     };
 
+    // Listeners first, so a mount failure (reported through an async `error` event) is never missed.
     bindValidityEvents("cardNumber", cardNumberField);
     bindValidityEvents("expirationDate", expirationDateField);
     bindValidityEvents("securityCode", securityCodeField);
+
+    cardNumberField.mount(SECURE_FIELD_CONTAINER_IDS.cardNumber);
+    expirationDateField.mount(SECURE_FIELD_CONTAINER_IDS.expirationDate);
+    securityCodeField.mount(SECURE_FIELD_CONTAINER_IDS.securityCode);
 
     cardNumberField.on("binChange", async (event) => {
       const bin = event?.bin?.trim() ?? "";
@@ -288,11 +332,11 @@ export function CheckoutPage() {
 
     return () => {
       cancelled = true;
-      cardNumberField.unmount?.();
-      expirationDateField.unmount?.();
-      securityCodeField.unmount?.();
+      unmountSecureField("cardNumber", cardNumberField);
+      unmountSecureField("expirationDate", expirationDateField);
+      unmountSecureField("securityCode", securityCodeField);
     };
-  }, [mpInstance, paymentSummary, paymentResult]);
+  }, [mpInstance, paymentSummary, showPaymentForm]);
 
   function updateChoice(seatId: string, update: Partial<TicketChoice>) {
     setChoices((current) => ({ ...current, [seatId]: { ...current[seatId], ...update } }));
@@ -341,13 +385,13 @@ export function CheckoutPage() {
     const nextErrors: FieldErrors = {};
 
     if (!secureFieldValid.cardNumber) {
-      nextErrors.cardNumber = SECURE_FIELD_ERROR_MESSAGES.cardNumber;
+      nextErrors.cardNumber = secureFieldErrorMessage("cardNumber", secureFieldLoadFailed.cardNumber);
     }
     if (!secureFieldValid.expirationDate) {
-      nextErrors.expirationDate = SECURE_FIELD_ERROR_MESSAGES.expirationDate;
+      nextErrors.expirationDate = secureFieldErrorMessage("expirationDate", secureFieldLoadFailed.expirationDate);
     }
     if (!secureFieldValid.securityCode) {
-      nextErrors.securityCode = SECURE_FIELD_ERROR_MESSAGES.securityCode;
+      nextErrors.securityCode = secureFieldErrorMessage("securityCode", secureFieldLoadFailed.securityCode);
     }
     if (cardholderName.trim() === "") {
       nextErrors.cardholderName = "Informe o nome do titular.";
@@ -589,7 +633,7 @@ export function CheckoutPage() {
         </>
       )}
 
-      {bookingId && paymentSummary && (
+      {showPaymentForm && paymentSummary && (
         <div className="flex flex-col gap-4">
           <div className="rounded border border-gray-200 p-3 text-sm">
             <p className="font-medium">{paymentSummary.description}</p>
@@ -611,7 +655,7 @@ export function CheckoutPage() {
           <div className="flex flex-col gap-1">
             <span className="text-sm font-medium">Número do cartão</span>
             <div
-              id="mp-card-number"
+              id={SECURE_FIELD_CONTAINER_IDS.cardNumber}
               data-testid="mp-card-number"
               className="h-10 rounded border border-gray-300 px-2 py-1"
             />
@@ -627,7 +671,7 @@ export function CheckoutPage() {
             <div className="flex flex-col gap-1">
               <span className="text-sm font-medium">Validade</span>
               <div
-                id="mp-expiration-date"
+                id={SECURE_FIELD_CONTAINER_IDS.expirationDate}
                 data-testid="mp-expiration-date"
                 className="h-10 rounded border border-gray-300 px-2 py-1"
               />
@@ -639,7 +683,7 @@ export function CheckoutPage() {
             <div className="flex flex-col gap-1">
               <span className="text-sm font-medium">Código de segurança</span>
               <div
-                id="mp-security-code"
+                id={SECURE_FIELD_CONTAINER_IDS.securityCode}
                 data-testid="mp-security-code"
                 className="h-10 rounded border border-gray-300 px-2 py-1"
               />
