@@ -1,5 +1,12 @@
 import { defineConfig, devices } from "@playwright/test";
 
+// Defaults match CI and `pnpm dev`. E2E_WEB_PORT / E2E_API_URL let the suite run
+// beside a local stack that already holds 5173/3000 (e.g. `make up-full`), so
+// it never reuses or hits those containers by accident.
+const webPort = Number(process.env.E2E_WEB_PORT ?? 5173);
+const webUrl = `http://localhost:${webPort}`;
+const apiUrl = process.env.E2E_API_URL;
+
 // Assumes a real backend is already up (docker compose up postgres valkey +
 // `pnpm --filter api start:dev`), same convention as the back's test:integration —
 // this config only starts the web dev server itself, not its dependencies.
@@ -20,13 +27,14 @@ export default defineConfig({
   timeout: 30_000,
   expect: { timeout: 10_000 },
   use: {
-    baseURL: "http://localhost:5173",
+    baseURL: webUrl,
     trace: "on-first-retry",
   },
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
   webServer: {
-    command: "pnpm dev",
-    url: "http://localhost:5173",
+    command: `pnpm exec vite --port ${webPort} --strictPort`,
+    url: webUrl,
+    env: apiUrl ? { VITE_API_URL: apiUrl } : {},
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,
   },
