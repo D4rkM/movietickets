@@ -16,7 +16,7 @@ Pré-requisitos:
 - **pnpm** — via Corepack, já vem com o Node (`corepack enable`).
 - **[Docker](https://www.docker.com/) ou [Podman](https://podman.io/)** — o Makefile detecta automaticamente qual tá instalado (prioriza `docker`, cai pro `podman` se não achar).
 - `make` — opcional, comandos diretos equivalentes em [Windows](#windows) logo abaixo (útil sem `make` em qualquer SO).
-- **[ngrok](https://ngrok.com/)** — só necessário pra receber o webhook do Mercado Pago localmente (ver seção abaixo); pagar com cartão de teste funciona sem ele. Precisa de conta (free tier serve); exporte o authtoken como `NGROK_AUTHTOKEN` no shell (pega em https://dashboard.ngrok.com/get-started/your-authtoken) — **não** `ngrok config add-authtoken`, que salva na config default do ngrok e é ignorado quando `make expose` passa `--config ngrok.yml` (o ngrok não faz merge dos dois arquivos).
+- **[ngrok](https://ngrok.com/)** — só necessário pra receber o webhook do Mercado Pago localmente e acessar o app por URL pública (ver [Rodando com ngrok](#rodando-com-ngrok-webhook-do-mercado-pago)); pagar com cartão de teste funciona sem ele. Precisa de conta (free tier serve); exporte o authtoken como `NGROK_AUTHTOKEN` no shell (pega em https://dashboard.ngrok.com/get-started/your-authtoken) — **não** `ngrok config add-authtoken`, que salva na config default do ngrok e é ignorado quando `make expose` passa `--config ngrok.yml` (o ngrok não faz merge dos dois arquivos).
 
 ## Subir o ambiente local
 
@@ -66,7 +66,7 @@ pnpm install
 docker compose --profile full up -d --build
 ```
 
-A `api` já aplica as migrations e popula o banco sozinha no boot (idempotente), o `web` é servido via `vite preview`. Front em `http://localhost:5173`, API em `http://localhost:3000`, [Drizzle Studio](https://orm.drizzle.team/drizzle-studio/overview) em `http://localhost:4983`, Mailpit em `http://localhost:8025`, login de teste: `cliente@movietickets.dev` / `password123` (usuários de teste completos em `apps/api/README.md`). Pra derrubar: `docker compose --profile full down`. Pra pagar no checkout, ver [Pagamento com Mercado Pago](#pagamento-com-mercado-pago-sandbox) (no PowerShell, `$env:VITE_MP_PUBLIC_KEY="<public-key>"` no lugar do `export`).
+A `api` já aplica as migrations e popula o banco sozinha no boot (idempotente), o `web` é servido via `vite preview`. Front em `http://localhost:5173`, API em `http://localhost:3000`, [Drizzle Studio](https://orm.drizzle.team/drizzle-studio/overview) em `http://localhost:4983`, Mailpit em `http://localhost:8025`, login de teste: `cliente@movietickets.dev` / `password123` (usuários de teste completos em `apps/api/README.md`). Pra derrubar: `docker compose --profile full down`. Pra pagar no checkout, ver [Pagamento com Mercado Pago](#pagamento-com-mercado-pago-sandbox) (no PowerShell, `$env:VITE_MP_PUBLIC_KEY="<public-key>"` no lugar do `export`, ou um `.env` na raiz do repo).
 
 Todo `make <alvo>` do [`Makefile`](./Makefile) tem um comando direto equivalente:
 
@@ -136,33 +136,60 @@ Hooks configurados (`.husky/`):
 O checkout usa o **Checkout Transparente** (Core Methods): o front monta os campos de cartão com o SDK JS do Mercado Pago e gera um token; a API (`PaymentModule`) cria o pagamento direto na Payments API com esse token. Não há redirect pra página do Mercado Pago. Precisa de credenciais **de teste** de uma aplicação no [painel de desenvolvedor do Mercado Pago](https://www.mercadopago.com.br/developers/panel/app):
 
 - **Access Token** → `MERCADOPAGO_ACCESS_TOKEN` em `apps/api/.env` (obrigatório: a API lê no boot).
-- **Public Key** → `VITE_MP_PUBLIC_KEY` no front. É lida em build-time pelo Vite (sem hot-reload):
+- **Public Key** (da mesma aplicação do Access Token) → `VITE_MP_PUBLIC_KEY` no front. É lida em build-time pelo Vite (sem hot-reload):
   - **`pnpm dev:web` (nativo)**: `apps/web/.env`.
-  - **`make up-full` (containerizado)**: `apps/web/.env` é ignorado no build (`.dockerignore` exclui `.env` de todas as imagens, de propósito) — `export VITE_MP_PUBLIC_KEY=<public-key>` no shell antes do `docker compose --profile full up -d --build` (vai como build arg, ver `docker-compose.yml`'s `web.build.args` e `apps/web/Dockerfile`).
+  - **`make up-full` (containerizado)**: `apps/web/.env` é ignorado no build (`.dockerignore` exclui `.env` de todas as imagens, de propósito) — coloca `VITE_MP_PUBLIC_KEY=<public-key>` num `.env` na raiz do repo (ou `export` no shell) antes do `docker compose --profile full up -d --build` (vai como build arg, ver `docker-compose.yml`'s `web.build.args` e `apps/web/Dockerfile`).
 
 Com isso, pagar com um [cartão de teste](https://www.mercadopago.com.br/developers/pt/docs/checkout-api/integration-test/test-cards) já funciona em `localhost`: pagamento aprovado na resposta síncrona confirma o ingresso na hora. Pagamento recusado mantém a reserva pendente e dá pra tentar de novo até o prazo da reserva (10 min).
 
-#### Recebendo o webhook localmente (ngrok)
+#### Rodando com ngrok (webhook do Mercado Pago)
 
-O webhook (`POST /payments/webhook`) só importa pra status que mudam **depois** da resposta síncrona (pagamento em análise, estorno etc.). Ele é server-to-server: o Mercado Pago chama o `notification_url` montado a partir do `PUBLIC_API_URL` configurado **no momento em que o pagamento foi criado** — por isso precisa de URL pública (https), e um pagamento criado antes de trocar a URL nunca recebe o callback.
+O webhook (`POST /payments/webhook`) só importa pra status que mudam **depois** da resposta síncrona (pagamento em análise, estorno etc.). Ele é server-to-server: o Mercado Pago chama o `notification_url` montado a partir do `PUBLIC_API_URL` configurado **no momento em que o pagamento foi criado** — por isso precisa de URL pública (https), e um pagamento criado antes de trocar a URL nunca recebe o callback. Pra testar o fluxo completo pela URL pública, front e API rodam cada um no seu túnel.
 
-1. **Sobe o túnel**, numa janela que você deixa aberta:
+1. **Sobe os dois túneis**, numa janela que você deixa aberta:
    ```bash
    make expose   # ngrok start --all --config ngrok.yml
    ```
-   Um único agente ngrok (free tier só permite uma sessão simultânea) expondo os dois túneis de [`ngrok.yml`](./ngrok.yml): `api` (porta 3000) e `web` (porta 5173). Pro webhook basta o `api`; o `web` só serve pra abrir o front de outro dispositivo.
+   Um único agente ngrok (free tier só permite uma sessão simultânea) expondo os dois túneis de [`ngrok.yml`](./ngrok.yml): `api` (porta 3000) e `web` (porta 5173). Copia as duas URLs `https://...` que aparecem no terminal.
 
-2. **Atualiza `apps/api/.env`** com a URL do túnel `api`:
+2. **`apps/api/.env`**:
    ```
+   CORS_ORIGIN=http://localhost:5173,<url-do-túnel-web>
+   WEB_URL=<url-do-túnel-web>
    PUBLIC_API_URL=<url-do-túnel-api>
+   MERCADOPAGO_ACCESS_TOKEN=<access-token-de-teste>
    ```
-   Se for abrir o front pela URL do túnel `web`, inclua ela também em `CORS_ORIGIN` (`CORS_ORIGIN=http://localhost:5173,<url-do-túnel-web>`, ver `apps/api/src/cors-options.ts`) e aponte o front pra API pública (`VITE_API_URL=<url-do-túnel-api>`, mesmas regras de build-time do `VITE_MP_PUBLIC_KEY` acima) — senão o Chrome bloqueia a origem pública chamando `localhost` (Private Network Access).
+   - `CORS_ORIGIN` precisa listar a URL do túnel `web` além do `localhost` (separadas por vírgula) — sem isso a API rejeita as chamadas do front aberto pelo ngrok (ver `apps/api/src/cors-options.ts`).
+   - `PUBLIC_API_URL` é a URL do túnel `api`: vira o `notification_url` do webhook.
+   - `WEB_URL` é a URL do túnel `web`. Ficou no `.env.example` desde o Checkout Pro; hoje nenhum código lê ela, mas vale manter alinhada.
 
-3. **Reinicia pra aplicar**: nativo, reinicia `pnpm dev:api` (e `pnpm dev:web` se mexeu no front); containerizado, `docker compose --profile full up -d --build`.
+3. **`apps/web/.env`**:
+   ```
+   VITE_API_URL=<url-do-túnel-api>
+   VITE_MP_PUBLIC_KEY=<public-key-de-teste>
+   ```
+   - `VITE_API_URL` aponta pro túnel `api` — senão o front, servido pela URL pública, continua chamando `http://localhost:3000` e o Chrome bloqueia (Private Network Access: origem pública não acessa endereço loopback).
+   - `VITE_MP_PUBLIC_KEY` é a Public Key **de teste da mesma aplicação** do Mercado Pago do `MERCADOPAGO_ACCESS_TOKEN` — chave e token de aplicações diferentes geram token de cartão que a API não consegue usar.
 
-4. **Faz um pagamento novo** — o `notification_url` de pagamentos antigos ficou fixado com a URL anterior. O free tier gera URLs novas a cada sessão do `make expose`, então repete a partir do passo 2 toda vez.
+4. **Reinicia/rebuilda pra aplicar** (nenhuma dessas variáveis tem hot-reload; `VITE_*` são lidas em build-time):
+   - **nativo**: reinicia `pnpm dev:api` e `pnpm dev:web`.
+   - **Docker (`make up-full`)**: o build do `web` **não** lê `apps/web/.env` (`.dockerignore` exclui `.env` de todas as imagens, de propósito). Os `VITE_*` entram como build args vindos de um `.env` **na raiz do repo** (lido automaticamente pelo `docker compose`, já está no `.gitignore`) ou do shell (`export VITE_API_URL=...`; no PowerShell, `$env:VITE_API_URL="..."`):
+     ```
+     # .env na raiz do repo
+     VITE_API_URL=<url-do-túnel-api>
+     VITE_MP_PUBLIC_KEY=<public-key-de-teste>
+     ```
+     Depois rebuilda o `web` e recria o `api` (o `api` lê `apps/api/.env` via `env_file` só ao criar o container; `--force-recreate` garante que ele pegue os valores novos):
+     ```bash
+     docker compose --profile full up -d --build web
+     docker compose --profile full up -d --force-recreate api
+     ```
 
-O free tier do ngrok mostra uma página intermediária ("Visit Site") na primeira navegação pra cada túnel. As chamadas que o front faz pra API (fetch/WebSocket) já mandam o header `ngrok-skip-browser-warning` automaticamente (`apiFetch` em `apps/web/src/lib/api-client.ts`). Pra não precisar clicar em "Visit Site" navegando pelo túnel `web` no browser:
+5. **Abre o front pela URL do túnel `web`** e faz uma **compra nova** — pagamentos criados antes ficaram com o `notification_url` antigo.
+
+As URLs do free tier mudam a cada vez que o `make expose` reinicia: repete os passos 2 a 5 com as URLs novas.
+
+O free tier do ngrok mostra uma página intermediária ("Visit Site") na primeira navegação pra cada túnel. As chamadas que o front faz pra API (fetch/WebSocket) já mandam o header `ngrok-skip-browser-warning` automaticamente (`apiFetch` em `apps/web/src/lib/api-client.ts`). Pra não precisar clicar em "Visit Site" navegando no browser:
 
 - **DevTools (sem extensão)**: F12 → menu ⋮ → More tools → **Network conditions** → desmarca "Use browser default" em User agent → digita qualquer string (ex: `movietickets-dev`). Vale só pra aba com o DevTools aberto.
 - **Extensão de header** (ex: [ModHeader](https://chromewebstore.google.com/detail/modheader/idgpnmonknjnojddfkpgkljpfnnfcklj)): configura pra mandar `ngrok-skip-browser-warning: true` em toda requisição.
