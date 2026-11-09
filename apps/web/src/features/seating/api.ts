@@ -20,11 +20,17 @@ export interface SeatBookingChoice {
   halfPriceDocument?: string;
 }
 
+export const BOOKING_ALREADY_PENDING_CODE = "BOOKING_ALREADY_PENDING";
+
 /**
  * Books every given seat in a single atomic request. The backend wraps the
  * inserts in one DB transaction, so either every seat is booked under one
  * booking, or (e.g. a seat was taken concurrently) none are — no partial
  * bookings left behind for the caller to reconcile.
+ *
+ * When the user already has a pending booking for the exact same seat set, the
+ * backend responds with 409 `BOOKING_ALREADY_PENDING` carrying the existing
+ * `bookingId` so the checkout flow can resume it directly.
  */
 export async function bookSeats(
   sessionId: string,
@@ -37,6 +43,25 @@ export async function bookSeats(
     body: JSON.stringify({ seats }),
   });
   assertAuthorized(response);
+
+  if (response.status === 409) {
+    try {
+      const body: unknown = await response.json();
+      if (
+        typeof body === "object" &&
+        body !== null &&
+        "code" in body &&
+        body.code === BOOKING_ALREADY_PENDING_CODE &&
+        "bookingId" in body &&
+        typeof body.bookingId === "string" &&
+        body.bookingId.length > 0
+      ) {
+        return { bookingId: body.bookingId };
+      }
+    } catch {
+      // Non-JSON 409 response falls through to the generic error below.
+    }
+  }
 
   if (!response.ok) {
     throw new Error(`Falha ao reservar os assentos (status ${response.status})`);

@@ -10,20 +10,20 @@ describe("App routing", () => {
     vi.unstubAllGlobals();
   });
 
-  it("should show the Mercado Pago return page without requiring a logged-in session", async () => {
-    // GIVEN no access token stored — e.g. Mercado Pago's back_urls redirect landed
-    // on a different origin/session than the one the user checked out from
+  it("AC32: não deve renderizar a página de retorno removida em /checkout/retorno", () => {
+    // GIVEN the Checkout Pro return route was removed
     localStorage.clear();
 
-    // WHEN the user lands on the checkout return route
+    // WHEN the user navigates to /checkout/retorno
     render(
       <MemoryRouter initialEntries={["/checkout/retorno?status=approved"]}>
         <App />
       </MemoryRouter>,
     );
 
-    // THEN it shows the return page instead of redirecting to login
-    expect(await screen.findByText("Pagamento aprovado!")).toBeInTheDocument();
+    // THEN the legacy return page heading is not rendered
+    expect(screen.queryByText("Pagamento aprovado!")).not.toBeInTheDocument();
+    expect(screen.queryByText("Retorno do pagamento")).not.toBeInTheDocument();
   });
 
   it("AC1: should show the catalog to a visitor without a token, with no redirect to login", async () => {
