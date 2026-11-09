@@ -16,16 +16,16 @@
         <mxCell id="U1VL2mUGIcac9nUAljFS-4" parent="1" style="shape=hexagon;size=50;perimeter=hexagonPerimeter2;whiteSpace=wrap;html=1;fixedSize=1;rounded=1;labelBackgroundColor=none;fillColor=#23A2D9;fontSize=11;fontColor=#ffffff;align=center;strokeColor=#0E7DAD;metaEdit=1;points=[[0.5,0,0],[1,0.25,0],[1,0.5,0],[1,0.75,0],[0.5,1,0],[0,0.75,0],[0,0.5,0],[0,0.25,0]];resizable=0;" value="Web App&lt;br&gt;&lt;i&gt;[Container: React + Vite]&lt;/i&gt;&lt;br&gt;SPA: catálogo, mapa de assento, checkout, conta, admin" vertex="1">
           <mxGeometry height="100" width="240" x="300" y="420" as="geometry" />
         </mxCell>
-        <mxCell id="U1VL2mUGIcac9nUAljFS-5" parent="1" style="shape=hexagon;size=50;perimeter=hexagonPerimeter2;whiteSpace=wrap;html=1;fixedSize=1;rounded=1;labelBackgroundColor=none;fillColor=#23A2D9;fontSize=11;fontColor=#ffffff;align=center;strokeColor=#0E7DAD;metaEdit=1;points=[[0.5,0,0],[1,0.25,0],[1,0.5,0],[1,0.75,0],[0.5,1,0],[0,0.75,0],[0,0.5,0],[0,0.25,0]];resizable=0;" value="API&lt;br&gt;&lt;i&gt;[Container: NestJS]&lt;/i&gt;&lt;br&gt;REST + WebSocket Gateway. Módulos: Catalog, Seating, Booking, Payment, Auth, Admin" vertex="1">
-          <mxGeometry height="100" width="240" x="750" y="500" as="geometry" />
+        <mxCell id="U1VL2mUGIcac9nUAljFS-5" parent="1" style="shape=hexagon;size=50;perimeter=hexagonPerimeter2;whiteSpace=wrap;html=1;fixedSize=1;rounded=1;labelBackgroundColor=none;fillColor=#23A2D9;fontSize=11;fontColor=#ffffff;align=center;strokeColor=#0E7DAD;metaEdit=1;points=[[0.5,0,0],[1,0.25,0],[1,0.5,0],[1,0.75,0],[0.5,1,0],[0,0.75,0],[0,0.5,0],[0,0.25,0]];resizable=0;" value="API&lt;br&gt;&lt;i&gt;[Container: NestJS]&lt;/i&gt;&lt;br&gt;REST + WebSocket Gateway. Módulos: Catalog, Seating, Booking, Payment, Auth, Admin, Notification. Job periódico de expiração de reservas" vertex="1">
+          <mxGeometry height="120" width="240" x="750" y="490" as="geometry" />
         </mxCell>
-        <mxCell id="U1VL2mUGIcac9nUAljFS-6" parent="1" style="shape=cylinder3;size=15;whiteSpace=wrap;html=1;boundedLbl=1;rounded=0;labelBackgroundColor=none;fillColor=#23A2D9;fontSize=10;fontColor=#ffffff;align=center;strokeColor=#0E7DAD;metaEdit=1;resizable=0;" value="PostgreSQL&lt;br&gt;&lt;i&gt;[Container: Database]&lt;/i&gt;&lt;br&gt;Dados transacionais: filmes, sessões, assentos, bookings, users" vertex="1">
+        <mxCell id="U1VL2mUGIcac9nUAljFS-6" parent="1" style="shape=cylinder3;size=15;whiteSpace=wrap;html=1;boundedLbl=1;rounded=0;labelBackgroundColor=none;fillColor=#23A2D9;fontSize=10;fontColor=#ffffff;align=center;strokeColor=#0E7DAD;metaEdit=1;resizable=0;" value="PostgreSQL&lt;br&gt;&lt;i&gt;[Container: Database]&lt;/i&gt;&lt;br&gt;Dados transacionais: filmes, sessões, assentos, bookings, users, payments, payment_events" vertex="1">
           <mxGeometry height="100" width="200" x="1150" y="430" as="geometry" />
         </mxCell>
-        <mxCell id="U1VL2mUGIcac9nUAljFS-7" parent="1" style="shape=cylinder3;size=15;whiteSpace=wrap;html=1;boundedLbl=1;rounded=0;labelBackgroundColor=none;fillColor=#23A2D9;fontSize=10;fontColor=#ffffff;align=center;strokeColor=#0E7DAD;metaEdit=1;resizable=0;" value="Valkey&lt;br&gt;&lt;i&gt;[Container: Database]&lt;/i&gt;&lt;br&gt;Seat hold (TTL lock) + cache de catálogo" vertex="1">
+        <mxCell id="U1VL2mUGIcac9nUAljFS-7" parent="1" style="shape=cylinder3;size=15;whiteSpace=wrap;html=1;boundedLbl=1;rounded=0;labelBackgroundColor=none;fillColor=#23A2D9;fontSize=10;fontColor=#ffffff;align=center;strokeColor=#0E7DAD;metaEdit=1;resizable=0;" value="Valkey&lt;br&gt;&lt;i&gt;[Container: Database]&lt;/i&gt;&lt;br&gt;Seat hold (TTL lock) + holds de convidado" vertex="1">
           <mxGeometry height="100" width="200" x="1150" y="585" as="geometry" />
         </mxCell>
-        <mxCell id="U1VL2mUGIcac9nUAljFS-8" parent="1" style="rounded=1;whiteSpace=wrap;html=1;labelBackgroundColor=none;fillColor=#8C8496;fontColor=#ffffff;align=center;arcSize=10;strokeColor=#736782;metaEdit=1;resizable=0;points=[[0.25,0,0],[0.5,0,0],[0.75,0,0],[1,0.25,0],[1,0.5,0],[1,0.75,0],[0.75,1,0],[0.5,1,0],[0.25,1,0],[0,0.75,0],[0,0.5,0],[0,0.25,0]];" value="Mercado Pago&lt;br&gt;&lt;i&gt;[Software System - External]&lt;/i&gt;&lt;br&gt;Gateway de pagamento (sandbox)" vertex="1">
+        <mxCell id="U1VL2mUGIcac9nUAljFS-8" parent="1" style="rounded=1;whiteSpace=wrap;html=1;labelBackgroundColor=none;fillColor=#8C8496;fontColor=#ffffff;align=center;arcSize=10;strokeColor=#736782;metaEdit=1;resizable=0;points=[[0.25,0,0],[0.5,0,0],[0.75,0,0],[1,0.25,0],[1,0.5,0],[1,0.75,0],[0.75,1,0],[0.5,1,0],[0.25,1,0],[0,0.75,0],[0,0.5,0],[0,0.25,0]];" value="Mercado Pago&lt;br&gt;&lt;i&gt;[Software System - External]&lt;/i&gt;&lt;br&gt;Gateway de pagamento (sandbox): Payments API + SDK JS" vertex="1">
           <mxGeometry height="100" width="180" x="1160" y="750" as="geometry" />
         </mxCell>
         <mxCell id="U1VL2mUGIcac9nUAljFS-9" edge="1" parent="1" source="U1VL2mUGIcac9nUAljFS-1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=11;endArrow=block;" target="U1VL2mUGIcac9nUAljFS-4" value="Usa [HTTPS]">
@@ -53,13 +53,30 @@
         <mxCell id="U1VL2mUGIcac9nUAljFS-13" edge="1" parent="1" source="U1VL2mUGIcac9nUAljFS-5" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=11;endArrow=block;exitX=1;exitY=0.3;exitDx=0;exitDy=0;entryX=0;entryY=0.3;entryDx=0;entryDy=0;" target="U1VL2mUGIcac9nUAljFS-6" value="Lê/escreve [SQL]">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="U1VL2mUGIcac9nUAljFS-14" edge="1" parent="1" source="U1VL2mUGIcac9nUAljFS-5" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=11;endArrow=block;exitX=1;exitY=0.7;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" target="U1VL2mUGIcac9nUAljFS-7" value="Seat hold + cache [Valkey protocol]">
+        <mxCell id="U1VL2mUGIcac9nUAljFS-14" edge="1" parent="1" source="U1VL2mUGIcac9nUAljFS-5" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=11;endArrow=block;exitX=1;exitY=0.7;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" target="U1VL2mUGIcac9nUAljFS-7" value="Seat hold + expiração (keyspace events) [Valkey protocol]">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="U1VL2mUGIcac9nUAljFS-15" edge="1" parent="1" source="U1VL2mUGIcac9nUAljFS-5" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=11;endArrow=block;dashed=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;entryPerimeter=0;" target="U1VL2mUGIcac9nUAljFS-8" value="Cria pagamento / recebe webhook [HTTPS]">
+        <mxCell id="U1VL2mUGIcac9nUAljFS-15" edge="1" parent="1" source="U1VL2mUGIcac9nUAljFS-5" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=11;endArrow=block;dashed=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;entryPerimeter=0;" target="U1VL2mUGIcac9nUAljFS-8" value="Cria pagamento (Payments API) / recebe webhook [HTTPS]">
           <mxGeometry relative="1" as="geometry">
             <Array as="points">
               <mxPoint x="870" y="800" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="c4_smtp" parent="1" style="rounded=1;whiteSpace=wrap;html=1;labelBackgroundColor=none;fillColor=#8C8496;fontColor=#ffffff;align=center;arcSize=10;strokeColor=#736782;metaEdit=1;resizable=0;points=[[0.25,0,0],[0.5,0,0],[0.75,0,0],[1,0.25,0],[1,0.5,0],[1,0.75,0],[0.75,1,0],[0.5,1,0],[0.25,1,0],[0,0.75,0],[0,0.5,0],[0,0.25,0]];" value="Servidor de e-mail&lt;br&gt;&lt;i&gt;[Software System - External]&lt;/i&gt;&lt;br&gt;SMTP (Mailpit em dev)" vertex="1">
+          <mxGeometry height="100" width="180" x="1160" y="900" as="geometry" />
+        </mxCell>
+        <mxCell id="c4_web_mp" edge="1" parent="1" source="U1VL2mUGIcac9nUAljFS-4" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=11;endArrow=block;dashed=1;exitX=0.3;exitY=1;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0;entryY=0.8;entryDx=0;entryDy=0;entryPerimeter=0;" target="U1VL2mUGIcac9nUAljFS-8" value="Tokeniza cartão (campos seguros do SDK JS) [HTTPS]">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="372" y="830" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="c4_api_smtp" edge="1" parent="1" source="U1VL2mUGIcac9nUAljFS-5" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=11;endArrow=block;dashed=1;exitX=0.75;exitY=1;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;entryPerimeter=0;" target="c4_smtp" value="Envia confirmação de compra [SMTP]">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="930" y="950" />
             </Array>
           </mxGeometry>
         </mxCell>

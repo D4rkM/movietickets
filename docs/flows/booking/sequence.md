@@ -1,8 +1,11 @@
 # Sequence: Reserva de assentos (booking)
 
-Fluxo real de ponta a ponta hoje: cliente já autenticado escolhe assentos numa sessão, revisa no checkout e "paga" (mock). Cobre `SessionSeatsPage`/`CheckoutPage` (Frontend) → `BookingController`/`SeatingController`/`BookingService` (Backend) → Valkey (Cache) → Postgres (Database).
+Fluxo de ponta a ponta hoje: visitante (convidado ou logado) abre o mapa de assentos, segura assentos no Valkey, faz login ao avançar pro pagamento, cria a reserva no checkout e paga. Cobre `SessionSeatsPage`/`CheckoutPage` (Frontend) → `SeatingController`/`BookingController`/`PaymentController` (Backend) → Valkey (Cache) → Postgres (Database).
 
-Sem hold via Valkey ainda — o `SeatingService` já lê chaves `seat-hold:*` no Cache pra decidir `held_by_other`/`held_by_me` (ver passo no seat map), mas nada escreve essas chaves hoje, então o Cache sempre volta vazio e esse ramo nunca dispara na prática (próxima story "Segurar assento").
+Detalhes em diagramas próprios:
+
+- convidado segurando assento e transferência no login: [`../public-catalog-login-gate/sequence.md`](../public-catalog-login-gate/sequence.md)
+- tentativa de pagamento e webhook: [`../checkout-transparente/sequence.md`](../checkout-transparente/sequence.md)
 
 ```mermaid
 sequenceDiagram
@@ -13,51 +16,61 @@ sequenceDiagram
     participant Database
 
     Cliente->>Frontend: abre /sessions/:id/seats
-    Frontend->>Backend: GET /sessions/:id/seats (Bearer token)
-    Backend->>Database: query sessão + sala + assentos + bookings confirmados
-    Database-->>Backend: assentos com status (free/booked)
+    Frontend->>Backend: GET /sessions/:id/seats (token de usuário ou de convidado)
+    Backend->>Database: assentos + booking_seats de bookings que travam assento (activeBookingCondition)
     Backend->>Cache: SCAN/MGET seat-hold:{sessionId}:*
-    Cache-->>Backend: hoje sempre vazio (nada escreve hold ainda)
-    Backend-->>Frontend: mapa de assentos
-    Cliente->>Frontend: seleciona 1+ assentos
-    Cliente->>Frontend: clica "Pagar (N assentos)"
+    Backend-->>Frontend: mapa (free / held_by_other / held_by_me / booked)
+    Frontend->>Backend: WebSocket /seating, join(sessionId)
+
+    Cliente->>Frontend: clica num assento
+    Frontend->>Backend: POST /sessions/:id/seats/:seatId/hold
+    Backend->>Cache: SET seat-hold:{sessionId}:{seatId} {dono} NX EX 600
+    alt já segurado por outro, reservado ou limite de 6
+        Backend-->>Frontend: 409
+    else livre
+        Backend-->>Frontend: 200 { status: "held", expiresInSeconds }
+        Backend-->>Frontend: seat:update held (pros outros na room)
+    end
+
+    Cliente->>Frontend: clica "Continuar"
+    opt convidado
+        Frontend->>Frontend: /login (holds transferidos pro usuário, ver diagrama próprio)
+    end
     Frontend->>Frontend: navega pra /checkout {sessionId, seatIds}
-
-    Frontend->>Backend: GET /sessions/:id/seats (recarrega pra pegar preço + dados atuais)
-    Backend-->>Frontend: mapa de assentos
     Cliente->>Frontend: escolhe inteira/meia por assento (+ documento se meia)
-    Cliente->>Frontend: clica "Pagar"
-
-    Frontend->>Backend: POST /sessions/:id/book { seats: [{seatId, ticketType, halfPriceDocument?}] }
-    Backend->>Database: BEGIN transaction
-    Backend->>Database: insert booking (status=pending)
-    loop cada assento
-        Backend->>Database: insert booking_seat (unique session_id+seat_id)
-    end
-    alt algum assento já reservado (unique violation, code 23505)
-        Database-->>Backend: erro
+    Frontend->>Backend: POST /sessions/:id/book { seats: [...] }
+    Backend->>Database: BEGIN, expira bookings pending vencidos em conflito (lazy)
+    Backend->>Database: insert booking (pending, expires_at = now() + 10 min) + booking_seats (unique session_id+seat_id)
+    alt assento já reservado (23505)
         Backend->>Database: ROLLBACK
-        Backend-->>Frontend: 409 Conflict
-        Frontend-->>Cliente: mostra erro, nada foi gravado
-    else todos os assentos livres
+        alt reserva pending do próprio usuário pros mesmos assentos
+            Backend-->>Frontend: 409 BOOKING_ALREADY_PENDING { bookingId } (front retoma essa reserva)
+        else
+            Backend-->>Frontend: 409
+        end
+    else ok
         Backend->>Database: COMMIT
-        Backend-->>Frontend: 201 + array [{bookingId, seatId, priceCents}, ...] (mesmo bookingId em todos)
-
-        Frontend->>Backend: POST /bookings/:bookingId/confirm
-        Backend->>Database: update booking set status=confirmed
-        Database-->>Backend: ok
-        Backend-->>Frontend: 200
-        Frontend-->>Cliente: "Ingresso confirmado!"
+        Backend->>Cache: DEL holds dos assentos reservados
+        Backend-->>Frontend: 201 [{ bookingId, seatId, priceCents, ... }]
     end
+
+    Frontend->>Backend: GET /bookings/:id/payment-summary
+    Backend-->>Frontend: valor, assentos, expiresAt
+    Note over Frontend,Database: pagamento: ver checkout-transparente/sequence.md
+    Backend-->>Frontend: approved → booking confirmed, seat:update booked, e-mail de confirmação
 ```
 
 ## Fora do fluxo feliz
 
-- **Token expirado** (`401` em qualquer chamada): front limpa o token e redireciona pra `/login`.
-- **Desistência**: botão "← Voltar" tanto em `SessionSeatsPage` quanto `CheckoutPage` abre um modal de confirmação ("Deseja mesmo cancelar a reserva?") antes de navegar — só sai da tela se o cliente confirmar. Em ambas as telas, confirmar cancela a reserva inteira e volta direto pro catálogo (`/movies`), sem chamar `/book`. Como não há hold hoje, não há nada pra limpar no banco/Valkey nesse cancelamento. Quando o hold TTL existir, esse fluxo vai precisar liberar a chave também.
+- **Token expirado** (`401` em rota de usuário): front limpa o token e redireciona pra `/login`.
+- **Hold expira** (TTL de 600s): o Valkey emite keyspace notification e o `HoldExpiryListener` faz broadcast `released`.
+- **Desistência**: "← Voltar" em `SessionSeatsPage`/`CheckoutPage` abre confirmação; confirmar chama `DELETE /sessions/:id/holds` (solta todos os holds do dono na sessão) e volta pro catálogo. Desmarcar um assento chama `DELETE /sessions/:id/seats/:seatId/hold`.
+- **Reserva expira sem pagamento**: booking `pending` passado do `expires_at` sem pagamento `pending`/`in_process` vira `expired`, os `booking_seats` são apagados e sai broadcast `released` — pelo `PendingBookingSweeper` (a cada 60s) ou de forma lazy na próxima reserva em conflito. Pagamento depois disso responde `409 BOOKING_EXPIRED` e o checkout mostra o aviso com volta ao mapa. Spec: `docs/flows/pending-booking-expiry/spec.md`.
+- **Cancelamento pelo cliente** (`POST /bookings/:id/cancel`, em "Meus ingressos"): booking `cancelled`, assentos liberados com broadcast `released`.
 
 ## Referências
 
 - `apps/web/src/features/seating/SessionSeatsPage.tsx`, `apps/web/src/features/checkout/CheckoutPage.tsx`
-- `apps/api/src/seating/seating.controller.ts`, `apps/api/src/seating/seating.service.ts`
-- `apps/api/src/booking/booking.controller.ts`, `apps/api/src/booking/booking-confirmation.controller.ts`, `apps/api/src/booking/booking.service.ts`
+- `apps/api/src/seating/seating.controller.ts`, `apps/api/src/seating/seating.service.ts`, `apps/api/src/seating/hold-expiry.listener.ts`
+- `apps/api/src/booking/booking.controller.ts`, `apps/api/src/booking/booking.service.ts`, `apps/api/src/booking/booking-lock.ts`, `apps/api/src/booking/pending-booking.sweeper.ts`
+- `apps/api/src/payment/payment.controller.ts`

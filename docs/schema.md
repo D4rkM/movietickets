@@ -1,6 +1,6 @@
 # Schema do banco (Postgres)
 
-Detalha as tabelas descritas em `docs/planning.md` — colunas, tipos, PK/FK. Sem SQL de migration ainda (entra junto com o scaffold do NestJS/TypeORM ou Prisma, o que for escolhido na implementação).
+Detalha as tabelas descritas em `docs/planning.md` — colunas, tipos, PK/FK, constraints. Fonte de verdade: `apps/api/src/db/schema.ts` (Drizzle ORM); migrations SQL geradas pelo `drizzle-kit` em `apps/api/drizzle/` (`0000` a `0004` hoje).
 
 Convenção: PK `id uuid`, `created_at timestamptz default now()` em todas as tabelas (omitido abaixo pra não repetir).
 
@@ -8,7 +8,7 @@ Convenção: PK `id uuid`, `created_at timestamptz default now()` em todas as ta
 
 Diagrama: [`schema-erd.mmd`](./schema-erd.mmd).
 
-`BOOKING_SEATS` tem `unique (session_id, seat_id)` — não representável na notação do diagrama, mas é a constraint que garante que dois `booking_seats` nunca reservem o mesmo assento na mesma sessão (detalhado na seção da tabela abaixo).
+`BOOKING_SEATS` tem `unique (session_id, seat_id)` — não representável na notação do diagrama, mas é a constraint que garante que dois `booking_seats` nunca reservem o mesmo assento na mesma sessão (detalhado na seção da tabela abaixo). Também ficam de fora do diagrama: o unique parcial de `payments.external_payment_id` e o trigger append-only de `payment_events`.
 
 ## users
 
@@ -79,7 +79,12 @@ Pedido/compra — pode conter vários assentos (via `booking_seats`).
 |---|---|---|
 | user_id | uuid FK → users.id | not null |
 | session_id | uuid FK → sessions.id | not null |
-| status | text | not null, default `'pending'` (`pending` \| `confirmed` \| `cancelled`) |
+| status | text | not null, default `'pending'` (`pending` \| `confirmed` \| `cancelled` \| `expired`) — texto livre, sem check constraint no banco |
+| expires_at | timestamptz | not null, default `now() + interval '10 minutes'` — prazo do booking `pending`; sempre calculado pelo relógio do banco. Só tem sentido enquanto `status = 'pending'` |
+| needs_refund_review | boolean | not null, default `false` — marcado uma vez quando um pagamento `approved` chega num booking já `expired` (estorno manual) |
+| stale_payment_alerted_at | timestamptz | nullable — marcado uma vez quando um booking `pending` tem pagamento em andamento (`pending`/`in_process`) há mais de 24h |
+
+Regra de trava de assento (`activeBookingCondition`, `apps/api/src/booking/booking-lock.ts`): um booking trava seus assentos se está `confirmed`, ou `pending` e (dentro do `expires_at` **ou** com pagamento `pending`/`in_process` em andamento). Booking `pending` vencido sem pagamento em andamento vira `expired` (pelo job periódico `PendingBookingSweeper` ou de forma lazy na criação de outro booking) e tem seus `booking_seats` apagados. Spec: `docs/flows/pending-booking-expiry/spec.md`.
 
 ## booking_seats
 
@@ -98,18 +103,46 @@ Constraint crítica: `unique (session_id, seat_id)` — garante que dois `bookin
 
 ## payments
 
+Uma linha **por tentativa de pagamento** (não mais 1:1 com booking — a unique em `booking_id` caiu na migration `0004`). Spec: `docs/flows/checkout-transparente/spec.md`.
+
 | coluna | tipo | notas |
 |---|---|---|
-| booking_id | uuid FK → bookings.id | not null, unique (1:1 com booking) |
-| provider | text | default `'mercado_pago'` |
-| external_payment_id | text | id retornado pelo Mercado Pago |
-| status | text | not null (`pending` \| `approved` \| `rejected` \| `refunded`) |
-| amount_cents | int | not null |
+| id | uuid PK | no checkout transparente é o `attemptId` gerado pelo cliente (também usado como `X-Idempotency-Key` no Mercado Pago); linhas criadas só pelo webhook (pagamento legado sem tentativa prévia) usam `gen_random_uuid()` |
+| booking_id | uuid FK → bookings.id | not null, index `payments_booking_id_idx` |
+| provider | text | not null, default `'mercado_pago'` |
+| external_payment_id | text | nullable — id do pagamento no Mercado Pago; unique parcial `payments_external_payment_id_uq` (`WHERE external_payment_id IS NOT NULL`) |
+| status | text | not null — estados internos `created` (gravado antes de chamar o MP), `request_failed` (MP recusou a requisição com 4xx), `abandoned` (tentativa `created` parada há mais de 2 min); demais vêm do MP: `pending`, `in_process`, `authorized`, `approved`, `rejected`, `cancelled`, `refunded`, `charged_back`, `in_mediation` |
+| status_detail | text | nullable — `status_detail` do MP (vira a mensagem pt-BR pro cliente) |
+| amount_cents | int | not null — sempre a soma de `booking_seats.price_cents`, nunca valor vindo do cliente |
+| installments | int | nullable |
+| payment_method_id | text | nullable (ex: `visa`, `master`) |
+| updated_at | timestamptz | not null, default `now()` |
+
+Regra de status: linha `approved` nunca volta pra um status anterior (só `refunded`/`charged_back`/`in_mediation` passam por cima). Pagamento `rejected`/`cancelled` não mexe no booking — ele continua `pending` e aceita nova tentativa até o `expires_at`.
+
+## payment_events
+
+Histórico de auditoria **append-only** dos pagamentos (migration `0004`).
+
+| coluna | tipo | notas |
+|---|---|---|
+| booking_id | uuid FK → bookings.id | not null |
+| payment_id | uuid FK → payments.id | nullable |
+| type | text | not null — `attempt_created`, `mp_response`, `mp_request_failed`, `attempt_abandoned`, `webhook_received`, `booking_confirmed` |
+| payload | jsonb | not null — só chaves de uma allowlist (`attempt_id`, `mp_payment_id`, `status`, `status_detail`, `amount_cents`, `installments`, `payment_method_id`, `source`, `error_code`); token, CPF, e-mail e nome do titular nunca entram |
+
+Index: `payment_events_booking_id_created_at_idx (booking_id, created_at)`.
+
+Trigger `payment_events_append_only` (`BEFORE UPDATE OR DELETE`, função `forbid_payment_events_mutation()`): qualquer `UPDATE`/`DELETE` na tabela falha com exceção.
 
 ## Fora do Postgres (Valkey)
 
-Hold temporário de assento **não é uma tabela** — vive só no Valkey como chave `seat-hold:{sessionId}:{seatId}` → `{userId}`, com TTL. Nunca é fonte de verdade definitiva; a constraint única em `booking_seats` é quem garante consistência de fato.
+Hold temporário de assento **não é uma tabela** — vive só no Valkey. Nunca é fonte de verdade definitiva; a constraint única em `booking_seats` é quem garante consistência de fato. Chaves (`apps/api/src/seating/hold-keys.ts`):
 
-## Nota sobre o card [Back] POST simples de reserva de assento (insert MVP)
+| chave | valor | notas |
+|---|---|---|
+| `seat-hold:{sessionId}:{seatId}` | dono do hold: `{userId}` ou `guest:{uuid}` (convidado) | `SET NX` com TTL de 600s; máx. 6 holds por dono por sessão. Expiração vira evento `released` via keyspace notifications (`HoldExpiryListener`) |
+| `guest-holds:{guestId}` | set de `{sessionId}:{seatId}` | índice dos holds de um convidado, pra transferir no login sem `SCAN` |
+| `guest-consumed:{guestId}` | marcador | token de convidado já usado numa transferência (uso único) |
 
-O insert cru desse card grava em **`bookings` (status `pending`) + um `booking_seats` linkando o assento** — não numa tabela `Booking` sozinha com `seat_id` embutido (isso não existe nesse modelo, já que um booking pode ter vários assentos). Sem constraint de conflito ativa nesse MVP inicial é aceitável, mas o insert já nasce nas tabelas certas.
+Não existe cache de catálogo no Valkey hoje (`GET /movies` lê direto do Postgres).
