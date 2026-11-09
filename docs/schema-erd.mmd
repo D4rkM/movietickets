@@ -8,7 +8,9 @@ erDiagram
     SESSIONS ||--o{ BOOKING_SEATS : "scopes uniqueness"
     BOOKINGS ||--o{ BOOKING_SEATS : includes
     SEATS ||--o{ BOOKING_SEATS : "reserved as"
-    BOOKINGS ||--|| PAYMENTS : "paid via"
+    BOOKINGS ||--o{ PAYMENTS : "payment attempts"
+    BOOKINGS ||--o{ PAYMENT_EVENTS : "audited by"
+    PAYMENTS |o--o{ PAYMENT_EVENTS : "logs"
 
     USERS {
         uuid id PK
@@ -56,6 +58,9 @@ erDiagram
         uuid user_id FK
         uuid session_id FK
         text status
+        timestamptz expires_at
+        boolean needs_refund_review
+        timestamptz stale_payment_alerted_at
     }
     BOOKING_SEATS {
         uuid id PK
@@ -67,10 +72,22 @@ erDiagram
         int price_cents
     }
     PAYMENTS {
-        uuid id PK
-        uuid booking_id FK "unique"
+        uuid id PK "attemptId"
+        uuid booking_id FK
         text provider
-        text external_payment_id
+        text external_payment_id UK "partial: not null"
         text status
+        text status_detail
         int amount_cents
+        int installments
+        text payment_method_id
+        timestamptz updated_at
+    }
+    PAYMENT_EVENTS {
+        uuid id PK
+        uuid booking_id FK
+        uuid payment_id FK "nullable"
+        text type
+        jsonb payload
+        timestamptz created_at
     }
