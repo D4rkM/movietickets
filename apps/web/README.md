@@ -20,21 +20,14 @@ cp apps/web/.env.example apps/web/.env
 pnpm dev:web
 ```
 
-Variáveis (build-time, lidas pelo Vite — reinicie/rebuilde depois de mudar):
+Variáveis (lidas pelo Vite na subida/build — reinicie `pnpm dev:web` depois de mudar):
 
-- `VITE_API_URL` — URL da API (padrão local `http://localhost:3000`).
-- `VITE_MP_PUBLIC_KEY` — Public Key **de teste** do Mercado Pago, da mesma aplicação do `MERCADOPAGO_ACCESS_TOKEN` da API, usada pelo SDK JS no checkout. Sem ela os campos de cartão não carregam.
+| Variável | Valor |
+|---|---|
+| `VITE_API_URL` | URL da API (`http://localhost:3000` local, túnel `api` com ngrok) |
+| `VITE_MP_PUBLIC_KEY` | Public Key **de teste** (`TEST-...`) da mesma aplicação do `MERCADOPAGO_ACCESS_TOKEN` da API. Vazia = campos de cartão não carregam |
 
-No build containerizado (`make up-full`) o `apps/web/.env` é ignorado: os `VITE_*` entram como build args vindos de um `.env` na raiz do repo (ou do shell), e é preciso rebuildar o `web` (`docker compose --profile full up -d --build web`) depois de mudar.
-
-### Com ngrok
-
-Pra abrir o front por URL pública (e receber o webhook do Mercado Pago), sobe os dois túneis com `make expose` (`api` → 3000, `web` → 5173) e ajusta:
-
-- `apps/web/.env` (ou `.env` da raiz, no Docker): `VITE_API_URL=<url-do-túnel-api>` e `VITE_MP_PUBLIC_KEY=<public-key-de-teste>`.
-- `apps/api/.env`: `CORS_ORIGIN=http://localhost:5173,<url-do-túnel-web>`, `WEB_URL=<url-do-túnel-web>`, `PUBLIC_API_URL=<url-do-túnel-api>` (base do webhook). No Docker, recria o `api` com `docker compose --profile full up -d --force-recreate api`.
-
-As URLs mudam a cada reinício do ngrok, então repete o ajuste (e o rebuild) toda vez. Passo a passo completo na seção "Rodando com ngrok" do README raiz.
+`apps/web/.env` só vale pro `pnpm dev:web`. No Docker (`make up-full`) essas variáveis vêm do `.env` da **raiz** do repo, como build args. Passo a passo, cartão de teste, ngrok e problemas comuns: [Configurar Mercado Pago (sandbox)](../../README.md#configurar-mercado-pago-sandbox) no README raiz.
 
 A API precisa estar rodando com CORS liberado pra origem do Vite (`CORS_ORIGIN` no `.env` da API, ver `apps/api/README.md`).
 

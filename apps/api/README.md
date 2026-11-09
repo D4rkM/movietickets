@@ -36,7 +36,8 @@ Ver `.env.example`. Principais:
 - `DATABASE_URL`, `VALKEY_URL` — Postgres e Valkey (Valkey precisa aceitar `CONFIG SET notify-keyspace-events`, usado pra detectar hold expirado).
 - `JWT_SECRET`, `JWT_EXPIRES_IN` (padrão `1h`) — token de usuário. O token de convidado tem validade fixa de 2h.
 - `CORS_ORIGIN` — origens liberadas, separadas por vírgula.
-- `MERCADOPAGO_ACCESS_TOKEN` — Access Token **de teste** do Mercado Pago; lido no boot (a API não sobe sem a variável definida).
+- `MERCADOPAGO_ACCESS_TOKEN` — Access Token **de teste** (`TEST-...`) do Mercado Pago; lido no boot (a API não sobe sem a variável definida). Ver [Configurar Mercado Pago (sandbox)](../../README.md#configurar-mercado-pago-sandbox).
+- `WEB_URL` — sem uso (sobra do Checkout Pro).
 - `PUBLIC_API_URL` — base do `notification_url` do webhook mandado ao Mercado Pago (URL pública/ngrok pra receber webhook localmente, ver README raiz).
 - `SMTP_HOST`, `SMTP_PORT`, `MAIL_FROM` — e-mail de confirmação de compra (Mailpit em dev, porta 1025).
 - `LOG_LEVEL`.
