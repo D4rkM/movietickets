@@ -17,7 +17,9 @@ COPY apps/web apps/web
 # VITE_API_URL reaches the build — Vite inlines it at build time, there's no
 # runtime env to set later. See docker-compose.yml's `web` service.
 ARG VITE_API_URL
+ARG VITE_MP_PUBLIC_KEY
 ENV VITE_API_URL=$VITE_API_URL
+ENV VITE_MP_PUBLIC_KEY=$VITE_MP_PUBLIC_KEY
 RUN pnpm --filter web build
 
 # `vite preview` (the static server used below) needs `vite` itself, which is

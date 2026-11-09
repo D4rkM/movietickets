@@ -12,6 +12,7 @@
     "test:e2e": "playwright test"
   },
   "dependencies": {
+    "@mercadopago/sdk-js": "0.0.3",
     "@tailwindcss/vite": "4.3.3",
     "react": "19.2.8",
     "react-dom": "19.2.8",
