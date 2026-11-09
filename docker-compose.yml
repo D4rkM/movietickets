@@ -60,9 +60,9 @@ services:
     # runtime environment — this is a compose-level, runtime-only mechanism
     # (unlike build ARGs, it never touches the image itself, so it doesn't
     # conflict with .dockerignore excluding .env from the build context).
-    # CORS_ORIGIN/WEB_URL/PUBLIC_API_URL deliberately come from here, not a
+    # CORS_ORIGIN/PUBLIC_API_URL deliberately come from here, not a
     # hardcoded `environment` entry below: they need to be the ngrok tunnel
-    # URLs while testing the Mercado Pago flow (see README), and a hardcoded
+    # URLs while testing the Mercado Pago webhook (see README), and a hardcoded
     # `environment` value always wins over env_file for the same key — which
     # silently broke that exact flow once (the webhook's notification_url was
     # always "http://localhost:3000", unreachable from Mercado Pago, no
@@ -118,9 +118,10 @@ services:
         # VITE_API_URL is a build-time-only Vite env var — `.env` files are
         # dockerignored on purpose (don't bake env files into images), so
         # `apps/web/.env` is invisible in here and must come in as a build
-        # arg instead. Defaults to the api service's published port for
-        # plain `make up-full`; export VITE_API_URL (e.g. to the api's ngrok
-        # tunnel URL) before `--build` to test through ngrok.
+        # arg instead, read from the repo root .env (see .env.example) or the
+        # shell. VITE_API_URL defaults to the api service's published port for
+        # plain `make up-full` (set it to the api's ngrok tunnel URL to test
+        # through ngrok); VITE_MP_PUBLIC_KEY is the Mercado Pago test public key.
         VITE_API_URL: ${VITE_API_URL:-http://localhost:3000}
         VITE_MP_PUBLIC_KEY: ${VITE_MP_PUBLIC_KEY:-}
     restart: unless-stopped
