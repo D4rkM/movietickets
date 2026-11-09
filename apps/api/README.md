@@ -2,7 +2,7 @@
 
 Back-end do movietickets — NestJS + Fastify.
 
-REST + WebSocket Gateway. Módulos: Catalog, Seating, Booking, Payment, Auth, Admin. CQRS light (sem event store) — ver `docs/planning.md`.
+REST + WebSocket Gateway. Módulos: Catalog, Seating, Booking, Payment, Auth, Admin, Notification. CQRS light (sem event store) — ver `docs/planning.md`. Job periódico (`@nestjs/schedule`) expira reservas pendentes vencidas.
 
 **Banco/ORM:** PostgreSQL via [Drizzle ORM](https://orm.drizzle.team/) (`postgres` driver). Schema em `src/db/schema.ts`, migrations geradas em `drizzle/`.
 
@@ -12,7 +12,34 @@ REST + WebSocket Gateway. Módulos: Catalog, Seating, Booking, Payment, Auth, Ad
 
 **CORS:** liberado só pra origem configurada em `CORS_ORIGIN` (`.env.example`, default `http://localhost:5173` — origem do `apps/web` em dev).
 
-Implementado até agora: **Auth MVP** (cadastro + login com JWT, `bcrypt` para hash de senha), **Seating** (`GET /sessions/:id/seats`, mapa de assento combinando Postgres + Valkey), **Booking** (insert MVP de reserva, sem hold/conflito ainda), **Admin** (CRUD de filmes, cinemas, salas e sessões em `/admin/*`, ver "Painel admin"). Demais módulos entram junto com suas features.
+## Rotas
+
+| Rota | Auth | Módulo |
+|---|---|---|
+| `POST /auth/register`, `POST /auth/login` (aceita `guestToken` opcional pra transferir holds do convidado) | pública | Auth |
+| `POST /auth/guest` — token de convidado (JWT `kind: "guest"`, 2h) | pública, rate limit de 10/min por IP (`@nestjs/throttler`) | Auth |
+| `GET /movies` (filtros por cidade/cinema/data) | pública | Catalog |
+| `GET /sessions/:id/seats`, `POST`/`DELETE /sessions/:id/seats/:seatId/hold`, `DELETE /sessions/:id/holds` | usuário ou convidado (`UserOrGuestAuthGuard`) | Seating |
+| `POST /sessions/:id/book` (vários assentos, atômico), `POST /sessions/:id/seats/:seatId/book` (um assento) | usuário | Booking |
+| `GET /bookings/mine`, `POST /bookings/:id/cancel`, `POST /bookings/:id/confirm` (confirmação mockada, sem gateway — só pra teste manual/e2e) | usuário | Booking |
+| `GET /bookings/:id/payment-summary`, `POST /bookings/:id/payments` (Checkout Transparente) | usuário | Payment |
+| `POST /payments/webhook` | pública (chamada pelo Mercado Pago) | Payment |
+| `/admin/movies`, `/admin/cinemas`, `/admin/rooms`, `/admin/sessions` (CRUD) | usuário com `role: "admin"` | Admin |
+| WebSocket namespace `/seating` (`join`/`leave`, evento `seat:update`) | usuário ou convidado (token no handshake) | Seating |
+
+"Usuário" = `JwtAuthGuard`, que recusa token de convidado com 401. Regras de negócio de cada feature em `docs/flows/<feature>/spec.md`; collection pra testar à mão em `docs/bruno/`.
+
+## Variáveis de ambiente
+
+Ver `.env.example`. Principais:
+
+- `DATABASE_URL`, `VALKEY_URL` — Postgres e Valkey (Valkey precisa aceitar `CONFIG SET notify-keyspace-events`, usado pra detectar hold expirado).
+- `JWT_SECRET`, `JWT_EXPIRES_IN` (padrão `1h`) — token de usuário. O token de convidado tem validade fixa de 2h.
+- `CORS_ORIGIN` — origens liberadas, separadas por vírgula.
+- `MERCADOPAGO_ACCESS_TOKEN` — Access Token **de teste** do Mercado Pago; lido no boot (a API não sobe sem a variável definida).
+- `PUBLIC_API_URL` — base do `notification_url` do webhook mandado ao Mercado Pago (URL pública/ngrok pra receber webhook localmente, ver README raiz).
+- `SMTP_HOST`, `SMTP_PORT`, `MAIL_FROM` — e-mail de confirmação de compra (Mailpit em dev, porta 1025).
+- `LOG_LEVEL`.
 
 ## Rodar
 
@@ -32,13 +59,14 @@ Ou direto:
 docker compose up -d           # Postgres + Valkey, a partir da raiz
 cp apps/api/.env.example apps/api/.env
 pnpm --filter api db:migrate   # aplica as migrations no Postgres local
-pnpm --filter api db:seed      # popula usuários + sessão de teste
+pnpm --filter api db:seed      # popula usuários + sessão de teste + catálogo
 pnpm dev:api
 ```
 
 `db:seed` é idempotente — roda quantas vezes quiser sem duplicar nada:
 - Usuários (`onConflictDoNothing` no email): `admin@movietickets.dev`, `cliente@movietickets.dev` e `cliente2@movietickets.dev`, senha `password123` pros três. Os dois clientes servem pra testar WebSocket/concorrência de assento com duas sessões logadas ao mesmo tempo.
-- Fixture de sessão (movie + cinema + room + 8 seats + session), pra testar `GET /sessions/:id/seats` manualmente sem precisar de endpoint de Catálogo/Admin ainda. O `id` da sessão criada é impresso no console ao rodar o seed.
+- Fixture de sessão (filme + cinema + sala de 13 fileiras com corredores + sessão futura), pra testar `GET /sessions/:id/seats` manualmente. O `id` da sessão criada é impresso no console ao rodar o seed.
+- Filmes extras de catálogo, cada um com cinema próprio (cidade aleatória), sala e uma sessão futura, pra popular `GET /movies` e os filtros. As datas de sessão são sorteadas de novo a cada execução, pra não saírem do catálogo.
 
 ### Rodar containerizado (sem Node/pnpm no host)
 
@@ -71,4 +99,8 @@ pnpm --filter api test               # unitários (com coverage, mínimo 75% —
 pnpm --filter api test:integration   # integração (roda migrations + testa contra Postgres real)
 ```
 
-`test:integration` espera `DATABASE_URL` e `JWT_SECRET` no ambiente (ver `.env.example`).
+`test:integration` aplica as migrations e roda contra o Postgres de `DATABASE_URL` e o Valkey de `VALKEY_URL` (os testes usam `JWT_SECRET=test-secret` se não houver um definido, e mockam o cliente do Mercado Pago). Os specs ficam em `test/*.e2e-spec.ts`; os de regra de negócio citam o AC da spec no título do `it`.
+
+## Migrations
+
+Schema em `src/db/schema.ts`. Depois de mudar o schema: `pnpm --filter api db:generate` (gera o SQL em `drizzle/`) e `pnpm --filter api db:migrate`. Detalhe das tabelas em `docs/schema.md`.
