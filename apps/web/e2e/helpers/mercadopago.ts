@@ -1,7 +1,7 @@
 import type { Page } from "@playwright/test";
 import { expect } from "@playwright/test";
 
-const API_URL = "http://localhost:3000";
+const API_URL = process.env.E2E_API_URL ?? "http://localhost:3000";
 
 export const STUB_CARD_TOKEN = "e2e-stub-card-token";
 
@@ -12,10 +12,22 @@ export const STUB_CARD_TOKEN = "e2e-stub-card-token";
  * same Core Methods surface the checkout page uses: secure fields become plain
  * inputs mounted in the same containers, typing a card number fires
  * `binChange`, and `createCardToken` resolves a fixed token.
+ *
+ * Mounting follows the real SDK's contract so the stub can't hide a broken
+ * mount: `mount` resolves a bare container id with `document.getElementById`
+ * (a "#..." selector or a missing container fails), a failure only warns and
+ * emits an async `error` event (it doesn't throw), `unmount` throws when the
+ * field isn't mounted, and creating a field type that is still mounted throws.
  */
 const FAKE_SDK_SCRIPT = `
 (() => {
+  const mountedTypes = new Set();
+
   function createField(type, options) {
+    if (mountedTypes.has(type)) {
+      throw new Error("[Fields] The field " + type + " has already been created");
+    }
+    let mounted = false;
     const handlers = {};
     const input = document.createElement("input");
     input.setAttribute("aria-label", options && options.placeholder ? options.placeholder : type);
@@ -28,13 +40,25 @@ const FAKE_SDK_SCRIPT = `
       (handlers.validityChange || []).forEach((h) => h({ isValid: true, errorMessages: [] }));
     });
     const field = {
-      mount(container) {
-        const el = typeof container === "string" ? document.querySelector(container) : container;
+      mount(containerId) {
+        if (mounted) throw new Error("Field '" + type + "' already mounted");
+        const el = document.getElementById(containerId);
+        if (!el) {
+          const message = "MercadoPago.js - Error when mounting field " + containerId + ": Container not found";
+          console.warn(message);
+          setTimeout(() => (handlers.error || []).forEach((h) => h({ field: type, error: message })));
+          return field;
+        }
         el.appendChild(input);
+        mounted = true;
+        mountedTypes.add(type);
         return field;
       },
       unmount() {
+        if (!mounted) throw new Error("Field '" + type + "' already unmounted");
         input.remove();
+        mounted = false;
+        mountedTypes.delete(type);
       },
       on(event, handler) {
         (handlers[event] = handlers[event] || []).push(handler);
