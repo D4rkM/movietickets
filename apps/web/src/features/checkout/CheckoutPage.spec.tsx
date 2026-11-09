@@ -150,9 +150,9 @@ describe("CheckoutPage (integration)", () => {
     expect(mp.createFieldSpy).toHaveBeenCalledWith("cardNumber", expect.any(Object));
     expect(mp.createFieldSpy).toHaveBeenCalledWith("expirationDate", expect.any(Object));
     expect(mp.createFieldSpy).toHaveBeenCalledWith("securityCode", expect.any(Object));
-    expect(mp.fields.cardNumber.mount).toHaveBeenCalledWith("#mp-card-number");
-    expect(mp.fields.expirationDate.mount).toHaveBeenCalledWith("#mp-expiration-date");
-    expect(mp.fields.securityCode.mount).toHaveBeenCalledWith("#mp-security-code");
+    expect(mp.fields.cardNumber.mount).toHaveBeenCalledWith("mp-card-number");
+    expect(mp.fields.expirationDate.mount).toHaveBeenCalledWith("mp-expiration-date");
+    expect(mp.fields.securityCode.mount).toHaveBeenCalledWith("mp-security-code");
 
     // AND the only inputs in the DOM are cardholder name, CPF, and e-mail (no input for card number, expiry, or CVV)
     expect(within(screen.getByTestId("mp-card-number")).queryByRole("textbox")).not.toBeInTheDocument();
@@ -320,6 +320,59 @@ describe("CheckoutPage (integration)", () => {
     // THEN our pt-BR message is displayed for that secure field and createCardToken is not called
     expect(screen.getByText("Número do cartão inválido.")).toBeInTheDocument();
     expect(mp.createCardTokenSpy).not.toHaveBeenCalled();
+  });
+
+  it("AC2: deve encontrar os containers no DOM ao montar os campos seguros, sem erro de carregamento", async () => {
+    // GIVEN a MercadoPago.js mock that, like the real SDK, resolves the container by id and fails when it is missing
+    const mp = createMockMercadoPago();
+    setupCheckoutApiMocks();
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    // WHEN the payment step mounts the secure fields
+    await advanceToPaymentStep();
+
+    // THEN each secure iframe lands inside its own container
+    await vi.waitFor(() => expect(mp.fields.securityCode.mount).toHaveBeenCalled());
+    expect(screen.getByTestId("mp-card-number").querySelector('iframe[data-mp-field="cardNumber"]')).not.toBeNull();
+    expect(screen.getByTestId("mp-expiration-date").querySelector('iframe[data-mp-field="expirationDate"]')).not.toBeNull();
+    expect(screen.getByTestId("mp-security-code").querySelector('iframe[data-mp-field="securityCode"]')).not.toBeNull();
+
+    // AND no load or validation error is shown before the user types anything
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(screen.queryByText(/Não foi possível carregar o campo do cartão/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/inválid[ao]\./)).not.toBeInTheDocument();
+    expect(consoleError).not.toHaveBeenCalled();
+    consoleError.mockRestore();
+  });
+
+  it("AC2: deve exibir erro de carregamento, e não 'inválido', quando o SDK falhar ao montar um campo seguro", async () => {
+    // GIVEN the payment step is mounted and all our own fields are valid
+    const mp = createMockMercadoPago();
+    setupCheckoutApiMocks();
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    await advanceToPaymentStep();
+    await fillValidPaymentForm(mp);
+
+    // WHEN the SDK reports a failure on the card number field
+    const sdkError = {
+      field: "cardNumber",
+      error: "MercadoPago.js - Error when mounting field mp-card-number: Container not found",
+    };
+    await mp.fields.cardNumber.emitError(sdkError);
+
+    // THEN the user sees the load error instead of an "invalid" message, and the real cause is logged
+    expect(screen.getByText("Não foi possível carregar o campo do cartão. Recarregue a página.")).toBeInTheDocument();
+    expect(screen.queryByText("Número do cartão inválido.")).not.toBeInTheDocument();
+    expect(consoleError).toHaveBeenCalledWith(expect.stringContaining("cardNumber"), sdkError);
+
+    // WHEN the user still tries to pay
+    await userEvent.click(screen.getByRole("button", { name: "Pagar" }));
+
+    // THEN the load error stays and no card token is requested
+    expect(screen.getByText("Não foi possível carregar o campo do cartão. Recarregue a página.")).toBeInTheDocument();
+    expect(screen.queryByText("Número do cartão inválido.")).not.toBeInTheDocument();
+    expect(mp.createCardTokenSpy).not.toHaveBeenCalled();
+    consoleError.mockRestore();
   });
 
   it("AC5: deve gerar token com createCardToken e enviar apenas os campos permitidos em POST /bookings/:id/payments", async () => {

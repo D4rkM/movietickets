@@ -12,11 +12,24 @@ export interface ValidityChangeEvent {
 }
 
 export interface MercadoPagoField {
-  mount(container: string | HTMLElement): MercadoPagoField | void;
+  /**
+   * Mounts the secure iframe inside the element with this id. The real SDK
+   * resolves it with `document.getElementById`, so it takes a bare id (no `#`
+   * selector, no HTMLElement). A missing container does not throw: the SDK logs
+   * a warning and emits an async `error` event with a "Container not found" message.
+   */
+  mount(containerId: string): MercadoPagoField | void;
+  /** Throws if the field is not currently mounted (e.g. its mount failed). */
   unmount?(): void;
   on(event: "binChange", handler: (event: BinChangeEvent) => void): MercadoPagoField | void;
   on(event: "validityChange", handler: (event: ValidityChangeEvent) => void): MercadoPagoField | void;
-  on(event: "error", handler: (event: unknown) => void): MercadoPagoField | void;
+  on(event: "error", handler: (event: SecureFieldErrorEvent) => void): MercadoPagoField | void;
+}
+
+/** Payload of the SDK `error` event, e.g. `{ field: "cardNumber", error: "MercadoPago.js - Error when mounting field ...: Container not found" }`. */
+export interface SecureFieldErrorEvent {
+  field?: string;
+  error?: string;
 }
 
 export interface MercadoPagoPaymentMethod {
