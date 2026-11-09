@@ -41,7 +41,24 @@
             "script": {
               "res": "if (res.body.accessToken) {\n  bru.setEnvVar(\"accessToken\", res.body.accessToken);\n}"
             },
-            "docs": "Login com um usuário já existente e salva o accessToken retornado na env var `accessToken`. Por padrão usa o admin criado pelo `pnpm --filter api db:seed` (admin@movietickets.dev / password123) — troque pra cliente@movietickets.dev pra testar como customer."
+            "docs": "Login com um usuário já existente e salva o accessToken retornado na env var `accessToken`. Por padrão usa o admin criado pelo `pnpm --filter api db:seed` (admin@movietickets.dev / password123) — troque pra cliente@movietickets.dev pra testar como customer.\n\nTransferência de holds de convidado: mande também `\"guestToken\": \"{{guestToken}}\"` no body (token do auth/Guest token). Depois de validar a senha, a API passa os holds do convidado pro usuário mantendo o TTL e devolve `transfer: { keptSeats, releasedSeats }`. Token de convidado inválido, expirado ou já usado não bloqueia o login, só pula a transferência (uso único)."
+          }
+        },
+        {
+          "type": "http-request",
+          "name": "Guest token",
+          "seq": 3,
+          "request": {
+            "url": "{{baseUrl}}/auth/guest",
+            "method": "POST",
+            "headers": [],
+            "params": [],
+            "body": { "mode": "none" },
+            "auth": { "mode": "none" },
+            "script": {
+              "res": "if (res.body.guestToken) {\n  bru.setEnvVar(\"guestToken\", res.body.guestToken);\n}"
+            },
+            "docs": "Emite um token de convidado (JWT `kind: \"guest\"`, `sub: \"guest:<uuid>\"`, validade de 2h) pra visitante sem login ver o mapa e segurar assentos. Rota pública com rate limit de 10 requisições por minuto por IP (`429` depois disso). Salva o token na env var `guestToken`.\n\nPra testar como convidado, use `{{guestToken}}` no lugar de `{{accessToken}}` no Bearer das rotas de seating. Rotas de booking, pagamento e ingressos recusam token de convidado com 401."
           }
         }
       ]
@@ -83,7 +100,7 @@
             "params": [],
             "body": { "mode": "none" },
             "auth": { "mode": "bearer", "bearer": { "token": "{{accessToken}}" } },
-            "docs": "Retorna o mapa de assentos de uma sessão: layout da sala + status de cada assento (free / held_by_other / held_by_me / booked).\n\nPré-requisitos:\n1. Rode Login (ou Register) primeiro pra popular accessToken.\n2. Rode `pnpm --filter api db:seed` (idempotente) — ele cria uma sessão de teste (filme + cinema + sala 2x4 = 8 assentos) e imprime o id dela no console. Cole esse id na env var sessionId.\n\nTesta sessão inexistente: troque sessionId por qualquer UUID aleatório, deve voltar 404."
+            "docs": "Retorna o mapa de assentos de uma sessão: layout da sala + status de cada assento (free / held_by_other / held_by_me / booked).\n\nPré-requisitos:\n1. Rode Login (ou auth/Guest token, trocando o Bearer por `{{guestToken}}` — rota pública, aceita convidado) primeiro.\n2. Rode `pnpm --filter api db:seed` (idempotente) — ele cria uma sessão de teste (filme + cinema + sala de 13 fileiras) e imprime o id dela no console. Cole esse id na env var sessionId.\n\nTesta sessão inexistente: troque sessionId por qualquer UUID aleatório, deve voltar 404."
           }
         },
         {
@@ -97,7 +114,35 @@
             "params": [],
             "body": { "mode": "none" },
             "auth": { "mode": "bearer", "bearer": { "token": "{{accessToken}}" } },
-            "docs": "Segura o assento temporariamente no Valkey (SETNX + TTL de 10min), pra reservar o tempo do checkout antes do booking definitivo. Retorna `{ seatId, status: \"held\", expiresInSeconds }`.\n\nComportamento:\n- Reenviar com o mesmo usuário e assento **renova o TTL** (não dá conflito).\n- 409 se o assento já estiver reservado, já estiver held por outro usuário, ou se esse usuário já estiver segurando 6 assentos nessa sessão (limite por usuário).\n- 404 se a sessão ou o assento não existir.\n- Também dispara um evento `seat:update` (`{ seatId, status: \"held\", heldByUserId }`) no WebSocket (`/seating`, room `session:{sessionId}`) pra quem estiver com o mapa de assentos aberto — não testável direto pelo Bruno (REST-only); ver seção WebSocket no README da collection.\n\nPré-requisitos:\n1. Rode Login pra popular accessToken.\n2. Rode seating/Get seat map pra pegar um `id` de assento livre, cole na env var seatId.\n\nTesta o limite: rode 6x trocando seatId por assentos diferentes, a 7ª deve voltar 409."
+            "docs": "Segura o assento temporariamente no Valkey (SETNX + TTL de 10min), pra reservar o tempo do checkout antes do booking definitivo. Retorna `{ seatId, status: \"held\", expiresInSeconds }`.\n\nComportamento:\n- Aceita token de usuário ou de convidado (o dono do hold vira o `sub` do token: id do usuário ou `guest:<uuid>`).\n- Reenviar com o mesmo usuário e assento **renova o TTL** (não dá conflito).\n- 409 se o assento já estiver reservado, já estiver held por outro usuário, ou se esse usuário já estiver segurando 6 assentos nessa sessão (limite por usuário).\n- 404 se a sessão ou o assento não existir.\n- Também dispara um evento `seat:update` (`{ seatId, status: \"held\", heldByUserId }`) no WebSocket (`/seating`, room `session:{sessionId}`) pra quem estiver com o mapa de assentos aberto — não testável direto pelo Bruno (REST-only); ver seção WebSocket no README da collection.\n\nPré-requisitos:\n1. Rode Login pra popular accessToken.\n2. Rode seating/Get seat map pra pegar um `id` de assento livre, cole na env var seatId.\n\nTesta o limite: rode 6x trocando seatId por assentos diferentes, a 7ª deve voltar 409."
+          }
+        },
+        {
+          "type": "http-request",
+          "name": "Release seat",
+          "seq": 3,
+          "request": {
+            "url": "{{baseUrl}}/sessions/{{sessionId}}/seats/{{seatId}}/hold",
+            "method": "DELETE",
+            "headers": [],
+            "params": [],
+            "body": { "mode": "none" },
+            "auth": { "mode": "bearer", "bearer": { "token": "{{accessToken}}" } },
+            "docs": "Solta o hold de `seatId` se ele for seu (compare-and-delete no Valkey). Retorna `{ seatId, released: true }`, ou `released: false` se o hold não existia ou era de outro dono. Quando solta, dispara `seat:update` `released` no WebSocket. Aceita token de usuário ou de convidado."
+          }
+        },
+        {
+          "type": "http-request",
+          "name": "Release all holds",
+          "seq": 4,
+          "request": {
+            "url": "{{baseUrl}}/sessions/{{sessionId}}/holds",
+            "method": "DELETE",
+            "headers": [],
+            "params": [],
+            "body": { "mode": "none" },
+            "auth": { "mode": "bearer", "bearer": { "token": "{{accessToken}}" } },
+            "docs": "Solta todos os holds seus nessa sessão (o que o front chama ao desistir do checkout). Retorna `{ releasedSeatIds: [...] }`. Aceita token de usuário ou de convidado."
           }
         }
       ]
@@ -109,7 +154,7 @@
       "items": [
         {
           "type": "http-request",
-          "name": "Book seat (MVP insert)",
+          "name": "Book seat (single)",
           "seq": 1,
           "request": {
             "url": "{{baseUrl}}/sessions/{{sessionId}}/seats/{{seatId}}/book",
@@ -121,9 +166,9 @@
               "json": "{\n  \"ticketType\": \"full\"\n}"
             },
             "auth": { "mode": "bearer", "bearer": { "token": "{{accessToken}}" } },
-            "docs": "Insert MVP: cria um booking `pending` + booking_seat linkando o assento escolhido. Sem hold/TTL, sem checagem de conflito — dois clientes conseguem reservar o mesmo assento nesse MVP (isso é fechado nas próximas stories).\n\n`ticketType`: `\"full\"` ou `\"half\"` (meia-entrada, 50% de desconto). Meia exige `halfPriceDocument` no body (400 se faltar).\n\nPré-requisitos:\n1. Rode Login pra popular accessToken.\n2. Rode seating/Get seat map pra pegar um `id` de assento livre na resposta, cole na env var seatId.\n\nTesta sessão inexistente: troque sessionId por qualquer UUID aleatório, deve voltar 404.",
+            "docs": "Reserva um assento só: cria um booking `pending` (com prazo `expires_at` de 10 min) + o booking_seat do assento. Mesma regra da reserva de vários assentos (é um atalho pra ela): 409 se o assento já estiver reservado por uma reserva que ainda trava assento. Se for uma reserva `pending` sua pros mesmos assentos, o 409 vem com `code: \"BOOKING_ALREADY_PENDING\"` e o `bookingId` dela.\n\n`ticketType`: `\"full\"` ou `\"half\"` (meia-entrada, 50% de desconto). Meia exige `halfPriceDocument` no body (400 se faltar).\n\nPré-requisitos:\n1. Rode Login pra popular accessToken (token de convidado → 401).\n2. Rode seating/Get seat map pra pegar um `id` de assento livre na resposta, cole na env var seatId.\n\nTesta sessão inexistente: troque sessionId por qualquer UUID aleatório, deve voltar 404.",
             "script": {
-              "res": "if (res.body.bookingId) {\n  bru.setEnvVar(\"bookingId\", res.body.bookingId);\n}"
+              "res": "if (res.body[0]?.bookingId) {\n  bru.setEnvVar(\"bookingId\", res.body[0].bookingId);\n}"
             }
           }
         },
@@ -158,7 +203,7 @@
               "json": "{\n  \"seats\": [\n    { \"seatId\": \"{{seatId}}\", \"ticketType\": \"full\" },\n    { \"seatId\": \"{{otherSeatId}}\", \"ticketType\": \"half\", \"halfPriceDocument\": \"1234567890\" }\n  ]\n}"
             },
             "auth": { "mode": "bearer", "bearer": { "token": "{{accessToken}}" } },
-            "docs": "Reserva vários assentos de uma vez sob **um único booking**, dentro de **uma transação Postgres**: ou todos os assentos entram, ou nenhum entra. É o que o checkout do front usa (em vez de chamar o endpoint de assento único em loop) — evita o cenário de metade dos assentos ficar `pending` no banco enquanto a UI só mostra erro.\n\nRetorna um array (um item por assento, todos com o mesmo `bookingId`). Se algum assento já estiver ocupado, retorna 409 e **nada** é gravado — nem os outros assentos da lista.\n\nPré-requisitos:\n1. Rode Login pra popular accessToken.\n2. Rode seating/Get seat map, cole dois `id` de assentos livres em seatId e otherSeatId.\n\nTesta conflito: rode duas vezes com o mesmo par de assentos — a segunda deve voltar 409, e nenhum assento novo aparece no GET do mapa de assentos.",
+            "docs": "Reserva vários assentos de uma vez sob **um único booking**, dentro de **uma transação Postgres**: ou todos os assentos entram, ou nenhum entra. É o que o checkout do front usa (em vez de chamar o endpoint de assento único em loop) — evita o cenário de metade dos assentos ficar `pending` no banco enquanto a UI só mostra erro.\n\nRetorna um array (um item por assento, todos com o mesmo `bookingId`). O booking nasce `pending` com prazo `expires_at` de 10 min (depois disso, sem pagamento em andamento, vira `expired` e libera os assentos). Se algum assento já estiver ocupado, retorna 409 e **nada** é gravado — nem os outros assentos da lista; se for uma reserva `pending` sua pros mesmos assentos, o 409 vem com `code: \"BOOKING_ALREADY_PENDING\"` e o `bookingId` dela (o checkout retoma essa reserva).\n\nPré-requisitos:\n1. Rode Login pra popular accessToken.\n2. Rode seating/Get seat map, cole dois `id` de assentos livres em seatId e otherSeatId.\n\nTesta conflito: rode duas vezes com o mesmo par de assentos — a segunda deve voltar 409, e nenhum assento novo aparece no GET do mapa de assentos.",
             "script": {
               "res": "if (res.body[0]?.bookingId) {\n  bru.setEnvVar(\"bookingId\", res.body[0].bookingId);\n}"
             }
@@ -175,7 +220,7 @@
             "params": [],
             "body": { "mode": "none" },
             "auth": { "mode": "bearer", "bearer": { "token": "{{accessToken}}" } },
-            "docs": "Confirmação mockada de pagamento: muda o booking de `pending` pra `confirmed`, o que faz o assento aparecer como `booked` no GET do mapa de assentos. Sem integração real com gateway de pagamento ainda.\n\nPré-requisitos:\n1. Rode booking/Book seat — o `bookingId` retornado é salvo automaticamente na env var.\n\nRetorna 404 se o booking não existir ou não for seu, 409 se já não estiver `pending`."
+            "docs": "Confirmação mockada de pagamento (sem gateway): muda o booking de `pending` pra `confirmed`, o que faz o assento aparecer como `booked` no mapa e dispara o e-mail de confirmação (Mailpit). O front não usa mais essa rota (paga pelo payment/Create payment); ela fica pra teste manual e e2e.\n\nPré-requisitos:\n1. Rode booking/Book seats — o `bookingId` retornado é salvo automaticamente na env var.\n\nRetorna 404 se o booking não existir ou não for seu, 409 `BOOKING_EXPIRED` se a reserva já venceu, 409 se já não estiver `pending`."
           }
         },
         {
@@ -191,6 +236,412 @@
             "auth": { "mode": "bearer", "bearer": { "token": "{{accessToken}}" } },
             "docs": "Lista os bookings `confirmed` do usuário autenticado (histórico de ingressos), com filme, sessão (horário, cinema, sala) e assentos de cada um. Bookings `pending` não aparecem aqui."
           }
+        },
+        {
+          "type": "http-request",
+          "name": "Cancel booking",
+          "seq": 6,
+          "request": {
+            "url": "{{baseUrl}}/bookings/{{bookingId}}/cancel",
+            "method": "POST",
+            "headers": [],
+            "params": [],
+            "body": { "mode": "none" },
+            "auth": { "mode": "bearer", "bearer": { "token": "{{accessToken}}" } },
+            "docs": "Cancelamento pelo cliente (botão \"Cancelar\" em Meus ingressos): booking vira `cancelled` e os assentos voltam a ficar livres (broadcast `seat:update` `released`). Retorna 404 se o booking não existir ou não for seu, 409 se já estiver `cancelled`/`expired`."
+          }
+        }
+      ]
+    },
+    {
+      "type": "folder",
+      "name": "payment",
+      "seq": 5,
+      "items": [
+        {
+          "type": "http-request",
+          "name": "Payment summary",
+          "seq": 1,
+          "request": {
+            "url": "{{baseUrl}}/bookings/{{bookingId}}/payment-summary",
+            "method": "GET",
+            "headers": [],
+            "params": [],
+            "body": { "mode": "none" },
+            "auth": { "mode": "bearer", "bearer": { "token": "{{accessToken}}" } },
+            "docs": "Resumo pro checkout transparente de uma reserva `pending` sua dentro do prazo: `amountCents` (soma de `booking_seats.price_cents`), `currency`, `description`, `seats` e `expiresAt`.\n\nErros: 404 se a reserva não existir ou for de outro usuário, 409 `BOOKING_EXPIRED` se venceu, 409 `BOOKING_NOT_PENDING` se já está `confirmed`/`cancelled`."
+          }
+        },
+        {
+          "type": "http-request",
+          "name": "Create payment (attempt)",
+          "seq": 2,
+          "request": {
+            "url": "{{baseUrl}}/bookings/{{bookingId}}/payments",
+            "method": "POST",
+            "headers": [],
+            "params": [],
+            "body": {
+              "mode": "json",
+              "json": "{\n  \"attemptId\": \"{{$randomUUID}}\",\n  \"token\": \"{{cardToken}}\",\n  \"paymentMethodId\": \"master\",\n  \"installments\": 1,\n  \"payer\": {\n    \"email\": \"cliente@movietickets.dev\",\n    \"identification\": { \"type\": \"CPF\", \"number\": \"12345678909\" }\n  }\n}"
+            },
+            "auth": { "mode": "bearer", "bearer": { "token": "{{accessToken}}" } },
+            "docs": "Uma tentativa de pagamento com cartão (Checkout Transparente, Payments API do Mercado Pago). O valor cobrado é sempre a soma da reserva, nunca vem do body. `attemptId` é um UUID gerado pelo cliente e vira a chave de idempotência no Mercado Pago: reenviar o mesmo `attemptId` devolve o mesmo resultado sem cobrar de novo; nova tentativa precisa de `attemptId` e `token` novos.\n\n`token` é o token de cartão gerado pelo SDK JS do Mercado Pago no browser (`createCardToken`) com a Public Key de teste, e só vale uma vez — por isso é mais prático testar pelo front. Pra testar pelo Bruno, gere um token de cartão de teste da mesma aplicação do `MERCADOPAGO_ACCESS_TOKEN` e cole na env var `cardToken`. `paymentMethodId` precisa bater com a bandeira do cartão (ex: `master`, `visa`).\n\nResposta 200: `{ attemptId, paymentId, status, statusDetail, message, bookingStatus }`. `approved` já confirma a reserva; `rejected` mantém a reserva `pending` (tente de novo até o `expires_at`); `in_process`/`pending` = em análise, confirmação vem pelo webhook.\n\nErros: 409 `BOOKING_EXPIRED`, `BOOKING_NOT_PENDING`, `PAYMENT_IN_PROGRESS` (outra tentativa em andamento) ou `ATTEMPT_ID_CONFLICT` (`attemptId` usado em outra reserva); 422 `PAYMENT_REQUEST_INVALID` (Mercado Pago recusou a requisição); 504 `PAYMENT_PROVIDER_TIMEOUT` (sem resposta, pode reenviar o mesmo `attemptId`)."
+          }
+        },
+        {
+          "type": "http-request",
+          "name": "Webhook (simulate)",
+          "seq": 3,
+          "request": {
+            "url": "{{baseUrl}}/payments/webhook",
+            "method": "POST",
+            "headers": [],
+            "params": [],
+            "body": {
+              "mode": "json",
+              "json": "{\n  \"type\": \"payment\",\n  \"data\": { \"id\": \"<mercado-pago-payment-id>\" }\n}"
+            },
+            "auth": { "mode": "none" },
+            "docs": "Simula a notificação do Mercado Pago. Rota pública, sempre 200. A API usa só o id do pagamento do body e **re-busca o pagamento na API do Mercado Pago** (o status nunca vem do body), então `data.id` precisa ser um id real de pagamento da sua aplicação de teste (o `paymentId` devolvido pelo Create payment). Também aceita os formatos IPN legados (`topic`/`resource` no body ou `?topic=payment&id=` na query)."
+          }
+        }
+      ]
+    },
+    {
+      "type": "folder",
+      "name": "admin",
+      "seq": 6,
+      "items": [
+        {
+          "type": "folder",
+          "name": "movies",
+          "seq": 1,
+          "items": [
+            {
+              "type": "http-request",
+              "name": "List movies",
+              "seq": 1,
+              "request": {
+                "url": "{{baseUrl}}/admin/movies",
+                "method": "GET",
+                "headers": [],
+                "params": [],
+                "body": { "mode": "none" },
+                "auth": { "mode": "bearer", "bearer": { "token": "{{accessToken}}" } },
+                "docs": "Lista movies. Exige token de admin (login com admin@movietickets.dev): sem token, token inválido ou de convidado → 401; customer → 403."
+              }
+            },
+            {
+              "type": "http-request",
+              "name": "Create movie",
+              "seq": 2,
+              "request": {
+                "url": "{{baseUrl}}/admin/movies",
+                "method": "POST",
+                "headers": [],
+                "params": [],
+                "body": {
+                  "mode": "json",
+                  "json": "{\n  \"title\": \"Filme de teste\",\n  \"synopsis\": \"Sinopse\",\n  \"durationMinutes\": 120,\n  \"rating\": \"12\"\n}"
+                },
+                "auth": { "mode": "bearer", "bearer": { "token": "{{accessToken}}" } },
+                "script": {
+                  "res": "if (res.body.id) {\n  bru.setEnvVar(\"movieId\", res.body.id);\n}"
+                },
+                "docs": "Cria um registro e salva o `id` retornado na env var `movieId`. Regras de validação em `docs/flows/admin-panel/spec.md`."
+              }
+            },
+            {
+              "type": "http-request",
+              "name": "Get movie",
+              "seq": 3,
+              "request": {
+                "url": "{{baseUrl}}/admin/movies/{{movieId}}",
+                "method": "GET",
+                "headers": [],
+                "params": [],
+                "body": { "mode": "none" },
+                "auth": { "mode": "bearer", "bearer": { "token": "{{accessToken}}" } },
+                "docs": "Detalhe por id (404 se não existir, 400 se não for UUID)."
+              }
+            },
+            {
+              "type": "http-request",
+              "name": "Update movie",
+              "seq": 4,
+              "request": {
+                "url": "{{baseUrl}}/admin/movies/{{movieId}}",
+                "method": "PATCH",
+                "headers": [],
+                "params": [],
+                "body": {
+                  "mode": "json",
+                  "json": "{\n  \"durationMinutes\": 130\n}"
+                },
+                "auth": { "mode": "bearer", "bearer": { "token": "{{accessToken}}" } },
+                "docs": "Atualização parcial: só os campos enviados mudam. Regras de bloqueio em `docs/flows/admin-panel/spec.md`."
+              }
+            },
+            {
+              "type": "http-request",
+              "name": "Delete movie",
+              "seq": 5,
+              "request": {
+                "url": "{{baseUrl}}/admin/movies/{{movieId}}",
+                "method": "DELETE",
+                "headers": [],
+                "params": [],
+                "body": { "mode": "none" },
+                "auth": { "mode": "bearer", "bearer": { "token": "{{accessToken}}" } },
+                "docs": "Exclui (204). 409 se houver dependência que impede a exclusão (ver spec do painel admin)."
+              }
+            }
+          ]
+        },
+        {
+          "type": "folder",
+          "name": "cinemas",
+          "seq": 2,
+          "items": [
+            {
+              "type": "http-request",
+              "name": "List cinemas",
+              "seq": 1,
+              "request": {
+                "url": "{{baseUrl}}/admin/cinemas",
+                "method": "GET",
+                "headers": [],
+                "params": [],
+                "body": { "mode": "none" },
+                "auth": { "mode": "bearer", "bearer": { "token": "{{accessToken}}" } },
+                "docs": "Lista cinemas. Exige token de admin (login com admin@movietickets.dev): sem token, token inválido ou de convidado → 401; customer → 403."
+              }
+            },
+            {
+              "type": "http-request",
+              "name": "Create cinema",
+              "seq": 2,
+              "request": {
+                "url": "{{baseUrl}}/admin/cinemas",
+                "method": "POST",
+                "headers": [],
+                "params": [],
+                "body": {
+                  "mode": "json",
+                  "json": "{\n  \"name\": \"Cine Teste\",\n  \"address\": \"Rua Exemplo, 100\",\n  \"city\": \"São Paulo\"\n}"
+                },
+                "auth": { "mode": "bearer", "bearer": { "token": "{{accessToken}}" } },
+                "script": {
+                  "res": "if (res.body.id) {\n  bru.setEnvVar(\"cinemaId\", res.body.id);\n}"
+                },
+                "docs": "Cria um registro e salva o `id` retornado na env var `cinemaId`. Regras de validação em `docs/flows/admin-panel/spec.md`."
+              }
+            },
+            {
+              "type": "http-request",
+              "name": "Get cinema",
+              "seq": 3,
+              "request": {
+                "url": "{{baseUrl}}/admin/cinemas/{{cinemaId}}",
+                "method": "GET",
+                "headers": [],
+                "params": [],
+                "body": { "mode": "none" },
+                "auth": { "mode": "bearer", "bearer": { "token": "{{accessToken}}" } },
+                "docs": "Detalhe por id (404 se não existir, 400 se não for UUID)."
+              }
+            },
+            {
+              "type": "http-request",
+              "name": "Update cinema",
+              "seq": 4,
+              "request": {
+                "url": "{{baseUrl}}/admin/cinemas/{{cinemaId}}",
+                "method": "PATCH",
+                "headers": [],
+                "params": [],
+                "body": {
+                  "mode": "json",
+                  "json": "{\n  \"address\": \"Rua Exemplo, 200\"\n}"
+                },
+                "auth": { "mode": "bearer", "bearer": { "token": "{{accessToken}}" } },
+                "docs": "Atualização parcial: só os campos enviados mudam. Regras de bloqueio em `docs/flows/admin-panel/spec.md`."
+              }
+            }
+          ]
+        },
+        {
+          "type": "folder",
+          "name": "rooms",
+          "seq": 3,
+          "items": [
+            {
+              "type": "http-request",
+              "name": "List rooms",
+              "seq": 1,
+              "request": {
+                "url": "{{baseUrl}}/admin/rooms",
+                "method": "GET",
+                "headers": [],
+                "params": [],
+                "body": { "mode": "none" },
+                "auth": { "mode": "bearer", "bearer": { "token": "{{accessToken}}" } },
+                "docs": "Lista rooms. Exige token de admin (login com admin@movietickets.dev): sem token, token inválido ou de convidado → 401; customer → 403. Aceita `?cinemaId=` pra filtrar por cinema."
+              }
+            },
+            {
+              "type": "http-request",
+              "name": "Create room",
+              "seq": 2,
+              "request": {
+                "url": "{{baseUrl}}/admin/rooms",
+                "method": "POST",
+                "headers": [],
+                "params": [],
+                "body": {
+                  "mode": "json",
+                  "json": "{\n  \"cinemaId\": \"{{cinemaId}}\",\n  \"name\": \"Sala 9\",\n  \"rows\": 8,\n  \"seatsPerRow\": 12\n}"
+                },
+                "auth": { "mode": "bearer", "bearer": { "token": "{{accessToken}}" } },
+                "script": {
+                  "res": "if (res.body.id) {\n  bru.setEnvVar(\"roomId\", res.body.id);\n}"
+                },
+                "docs": "Cria um registro e salva o `id` retornado na env var `roomId`. Regras de validação em `docs/flows/admin-panel/spec.md`."
+              }
+            },
+            {
+              "type": "http-request",
+              "name": "Get room",
+              "seq": 3,
+              "request": {
+                "url": "{{baseUrl}}/admin/rooms/{{roomId}}",
+                "method": "GET",
+                "headers": [],
+                "params": [],
+                "body": { "mode": "none" },
+                "auth": { "mode": "bearer", "bearer": { "token": "{{accessToken}}" } },
+                "docs": "Detalhe por id (404 se não existir, 400 se não for UUID)."
+              }
+            },
+            {
+              "type": "http-request",
+              "name": "Update room",
+              "seq": 4,
+              "request": {
+                "url": "{{baseUrl}}/admin/rooms/{{roomId}}",
+                "method": "PATCH",
+                "headers": [],
+                "params": [],
+                "body": {
+                  "mode": "json",
+                  "json": "{\n  \"name\": \"Sala 10\"\n}"
+                },
+                "auth": { "mode": "bearer", "bearer": { "token": "{{accessToken}}" } },
+                "docs": "Atualização parcial: só os campos enviados mudam. Regras de bloqueio em `docs/flows/admin-panel/spec.md`."
+              }
+            },
+            {
+              "type": "http-request",
+              "name": "Delete room",
+              "seq": 5,
+              "request": {
+                "url": "{{baseUrl}}/admin/rooms/{{roomId}}",
+                "method": "DELETE",
+                "headers": [],
+                "params": [],
+                "body": { "mode": "none" },
+                "auth": { "mode": "bearer", "bearer": { "token": "{{accessToken}}" } },
+                "docs": "Exclui (204). 409 se houver dependência que impede a exclusão (ver spec do painel admin)."
+              }
+            }
+          ]
+        },
+        {
+          "type": "folder",
+          "name": "sessions",
+          "seq": 4,
+          "items": [
+            {
+              "type": "http-request",
+              "name": "List sessions",
+              "seq": 1,
+              "request": {
+                "url": "{{baseUrl}}/admin/sessions",
+                "method": "GET",
+                "headers": [],
+                "params": [],
+                "body": { "mode": "none" },
+                "auth": { "mode": "bearer", "bearer": { "token": "{{accessToken}}" } },
+                "docs": "Lista sessions. Exige token de admin (login com admin@movietickets.dev): sem token, token inválido ou de convidado → 401; customer → 403. Por padrão só sessões futuras; `?includePast=true` inclui as passadas."
+              }
+            },
+            {
+              "type": "http-request",
+              "name": "Create session",
+              "seq": 2,
+              "request": {
+                "url": "{{baseUrl}}/admin/sessions",
+                "method": "POST",
+                "headers": [],
+                "params": [],
+                "body": {
+                  "mode": "json",
+                  "json": "{\n  \"movieId\": \"{{movieId}}\",\n  \"roomId\": \"{{roomId}}\",\n  \"startsAt\": \"2030-01-01T20:00:00.000Z\",\n  \"priceCents\": 3000\n}"
+                },
+                "auth": { "mode": "bearer", "bearer": { "token": "{{accessToken}}" } },
+                "script": {
+                  "res": "if (res.body.id) {\n  bru.setEnvVar(\"adminSessionId\", res.body.id);\n}"
+                },
+                "docs": "Cria um registro e salva o `id` retornado na env var `adminSessionId`. Regras de validação em `docs/flows/admin-panel/spec.md`."
+              }
+            },
+            {
+              "type": "http-request",
+              "name": "Get session",
+              "seq": 3,
+              "request": {
+                "url": "{{baseUrl}}/admin/sessions/{{adminSessionId}}",
+                "method": "GET",
+                "headers": [],
+                "params": [],
+                "body": { "mode": "none" },
+                "auth": { "mode": "bearer", "bearer": { "token": "{{accessToken}}" } },
+                "docs": "Detalhe por id (404 se não existir, 400 se não for UUID)."
+              }
+            },
+            {
+              "type": "http-request",
+              "name": "Update session",
+              "seq": 4,
+              "request": {
+                "url": "{{baseUrl}}/admin/sessions/{{adminSessionId}}",
+                "method": "PATCH",
+                "headers": [],
+                "params": [],
+                "body": {
+                  "mode": "json",
+                  "json": "{\n  \"priceCents\": 3500\n}"
+                },
+                "auth": { "mode": "bearer", "bearer": { "token": "{{accessToken}}" } },
+                "docs": "Atualização parcial: só os campos enviados mudam. Regras de bloqueio em `docs/flows/admin-panel/spec.md`."
+              }
+            },
+            {
+              "type": "http-request",
+              "name": "Delete session",
+              "seq": 5,
+              "request": {
+                "url": "{{baseUrl}}/admin/sessions/{{adminSessionId}}",
+                "method": "DELETE",
+                "headers": [],
+                "params": [],
+                "body": { "mode": "none" },
+                "auth": { "mode": "bearer", "bearer": { "token": "{{accessToken}}" } },
+                "docs": "Exclui (204). 409 se houver dependência que impede a exclusão (ver spec do painel admin)."
+              }
+            }
+          ]
         }
       ]
     }
@@ -204,7 +655,13 @@
         { "name": "seatId", "value": "", "type": "text", "enabled": true, "secret": false },
         { "name": "otherSeatId", "value": "", "type": "text", "enabled": true, "secret": false },
         { "name": "bookingId", "value": "", "type": "text", "enabled": true, "secret": false },
-        { "name": "accessToken", "value": "", "type": "text", "enabled": true, "secret": false }
+        { "name": "accessToken", "value": "", "type": "text", "enabled": true, "secret": false },
+        { "name": "guestToken", "value": "", "type": "text", "enabled": true, "secret": false },
+        { "name": "cardToken", "value": "", "type": "text", "enabled": true, "secret": false },
+        { "name": "movieId", "value": "", "type": "text", "enabled": true, "secret": false },
+        { "name": "cinemaId", "value": "", "type": "text", "enabled": true, "secret": false },
+        { "name": "roomId", "value": "", "type": "text", "enabled": true, "secret": false },
+        { "name": "adminSessionId", "value": "", "type": "text", "enabled": true, "secret": false }
       ]
     }
   ]
