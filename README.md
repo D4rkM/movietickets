@@ -159,6 +159,8 @@ pnpm test:e2e    # e2e do front (Playwright, apps/web/e2e)
 
 `make test-integration` aplica as migrations e roda contra o banco de `DATABASE_URL` (ver `apps/api/README.md`). O e2e do Playwright espera a API já rodando (`make up` + `make migrate` + `make seed` + `make dev-api`); ele sobe sozinho só o dev server do front e troca o SDK do Mercado Pago por um stub, então não precisa de credencial.
 
+Teste manual completo (checklist pra QA/PO/dev antes de release): [`docs/qa/roteiro-testes.md`](./docs/qa/roteiro-testes.md).
+
 Regra do projeto: toda feature nova precisa de teste unitário e, quando cruzar camadas (API+banco, API+cache), teste de integração também — ver `CLAUDE.md`.
 
 ## Contribuindo
