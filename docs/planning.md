@@ -52,6 +52,9 @@ movietickets/                    (raiz do monorepo)
 │   ├── c4/
 │   │   ├── context.drawio       (diagrama C4 Context, referenciado por context.md)
 │   │   └── container.drawio     (diagrama C4 Container, referenciado por container.md)
+│   ├── use-cases/
+│   │   ├── use-cases.drawio     (diagrama UML de casos de uso, referenciado por use-cases.md)
+│   │   └── use-cases.md         (tabela de casos de uso com specs/ACs + aproximação Mermaid)
 │   ├── bruno/                   (collection do Bruno pra testar a API manualmente)
 │   └── flows/                   (por feature: spec.md + sequence.md quando houver)
 │       ├── TEMPLATE.spec.md
