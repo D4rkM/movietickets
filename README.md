@@ -146,6 +146,36 @@ Só é necessário pra receber o webhook do Mercado Pago (`POST /payments/webhoo
 
 O free tier mostra uma página "Visit Site" na primeira navegação de cada túnel. As chamadas do front pra API já mandam o header `ngrok-skip-browser-warning` (`apiFetch` em `apps/web/src/lib/api-client.ts`); pra pular a página no browser, troque o User agent (DevTools → More tools → **Network conditions**) ou use uma extensão de header (ex: [ModHeader](https://chromewebstore.google.com/detail/modheader/idgpnmonknjnojddfkpgkljpfnnfcklj)) mandando `ngrok-skip-browser-warning: true`.
 
+## Observabilidade
+
+Traces, métricas e logs da API via [OpenTelemetry](https://opentelemetry.io/), enviados por OTLP pra um backend local num container só: [`grafana/otel-lgtm`](https://github.com/grafana/docker-otel-lgtm) (OTel Collector + Prometheus + Tempo + Loki + Grafana), no perfil `observability` do docker compose. Decisões e critérios em [`docs/flows/observability/spec.md`](./docs/flows/observability/spec.md).
+
+> A imagem `grafana/otel-lgtm` é só pra dev/demo (sem HA, retenção curta, senha padrão). Precisa de ~2 GB de RAM livres no Docker/Podman. Não exponha a porta do Grafana em rede pública.
+
+**Desligada por padrão.** A API só liga o OpenTelemetry quando `OTEL_EXPORTER_OTLP_ENDPOINT` está preenchida (e `OTEL_SDK_DISABLED` não é `true`). Sem isso, nada do SDK é carregado — testes, CI e o `make up-full` continuam iguais.
+
+Com a API no host (hot reload):
+
+```bash
+make obs-up      # Postgres + Valkey + Mailpit + Grafana LGTM
+# em apps/api/.env: OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
+make dev-api
+```
+
+Tudo containerizado:
+
+```bash
+make up-full-obs   # igual ao up-full, com a API exportando pro container lgtm
+```
+
+- Grafana: `http://localhost:3001` (`admin`/`admin`) — porta 3001 porque a 3000 é da API. Prometheus em `http://localhost:9090` (útil pra testar consultas).
+- No **Explore**: Tempo (traces), Prometheus (métricas — ex.: `http_server_request_duration_seconds_bucket`, `db_client_operation_duration_seconds_bucket`, `nodejs_eventloop_delay_p99_seconds`) e Loki (logs, `{service_name="movietickets-api"}`).
+- **Trace → log:** todo log emitido dentro de uma request sai com `trace_id`/`span_id`. Num span do Tempo, use "Logs for this span" (o datasource já vem ligado ao Loki por `trace_id`); no Loki, o campo `trace_id` abre o trace no Tempo.
+- O que é instrumentado: requests HTTP (rota em formato template, ex. `/sessions/:id/seats`), controllers do Nest, queries do Postgres (spans + `db.client.operation.duration`, com o SQL parametrizado, nunca os valores), comandos do Valkey (só o nome do comando), chamadas `fetch` ao Mercado Pago, eventos do Socket.io, logs do pino e runtime do Node (event loop, heap, GC). IP e user agent do cliente são removidos dos spans; `Authorization`, cookies, senha, tokens e dados do pagador são redigidos nos logs.
+- Variáveis `OTEL_*`: ver `apps/api/.env.example`. Amostragem padrão de 100% (`OTEL_TRACES_SAMPLER=parentbased_traceidratio`, `OTEL_TRACES_SAMPLER_ARG=1.0`) e export de métricas a cada 15 s; tudo sobrescrevível por env.
+- Dados persistem no volume `lgtm_data` com retenção de 7 dias. `make obs-down` para os containers e mantém os dados; pra zerar: `docker compose --profile observability down -v`.
+- Dashboards e alertas: editar no Grafana, exportar o JSON e commitar em `infra/observability/`. (Os dashboards e alertas provisionados do projeto ainda não entraram; por enquanto só o Explore.)
+
 ## Testes
 
 ```bash
@@ -157,7 +187,7 @@ pnpm test        # unitários de todos os apps (Jest na api, Vitest no web)
 pnpm test:e2e    # e2e do front (Playwright, apps/web/e2e)
 ```
 
-`make test-integration` aplica as migrations e roda contra o banco de `DATABASE_URL` (ver `apps/api/README.md`). O e2e do Playwright espera a API já rodando (`make up` + `make migrate` + `make seed` + `make dev-api`); ele sobe sozinho só o dev server do front e troca o SDK do Mercado Pago por um stub, então não precisa de credencial.
+`make test-integration` aplica as migrations e roda contra o banco de `DATABASE_URL` (ver `apps/api/README.md`). O smoke test de observabilidade (`test/observability-smoke.e2e-spec.ts`) sobe a API **compilada** como processo filho, então rode `pnpm --filter api build` antes (a CI já faz isso). O e2e do Playwright espera a API já rodando (`make up` + `make migrate` + `make seed` + `make dev-api`); ele sobe sozinho só o dev server do front e troca o SDK do Mercado Pago por um stub, então não precisa de credencial.
 
 Teste manual completo (checklist pra QA/PO/dev antes de release): [`docs/qa/roteiro-testes.md`](./docs/qa/roteiro-testes.md).
 

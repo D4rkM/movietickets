@@ -16,3 +16,4 @@ Diagramas de Component (por módulo da API) e os diagramas de sequência/classe 
 | Valkey | Seat hold com TTL (`seat-hold:*`), índice de holds de convidado e keyspace notifications pra avisar hold expirado. Sem cache de catálogo |
 | Mercado Pago (externo) | Payments API (criação do pagamento com `X-Idempotency-Key`, consulta no webhook) + SDK JS no browser |
 | Servidor de e-mail (externo) | SMTP do e-mail de confirmação (Mailpit em dev) |
+| Observabilidade (`grafana/otel-lgtm`, opcional) | Perfil `observability` do docker compose, só dev/demo: OTel Collector + Prometheus + Tempo + Loki + Grafana (`http://localhost:3001`). Recebe da API traces, métricas e logs por OTLP/HTTP (`:4318`); a API só exporta quando `OTEL_EXPORTER_OTLP_ENDPOINT` está configurada. Ver `docs/flows/observability/spec.md` |

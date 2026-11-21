@@ -83,6 +83,14 @@ services:
       SMTP_HOST: mailpit
       SMTP_PORT: 1025
       MAIL_FROM: MovieTickets <no-reply@movietickets.local>
+      # OpenTelemetry: empty by default, so plain `make up-full` keeps
+      # telemetry off (same override-env_file pattern as DATABASE_URL — the
+      # host-oriented http://localhost:4318 from apps/api/.env would be
+      # unreachable from here anyway). `make up-full-obs` sets it to
+      # http://lgtm:4318. See the `lgtm` service below.
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${API_OTEL_EXPORTER_OTLP_ENDPOINT:-}
+      OTEL_SERVICE_NAME: movietickets-api
+      OTEL_RESOURCE_ATTRIBUTES: deployment.environment.name=docker
     ports:
       - "3000:3000"
 
@@ -130,5 +138,37 @@ services:
     ports:
       - "5173:5173"
 
+  # Local observability backend (OTel Collector + Prometheus + Tempo + Loki +
+  # Grafana in one container), for dev/demo only — not a production setup.
+  # Not started by default: `make obs-up` (API on the host via `pnpm dev:api`
+  # with OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318 in apps/api/.env) or
+  # `make up-full-obs` (API container exporting to http://lgtm:4318).
+  # Grafana on host port 3001 (3000 is the API), login admin/admin. See
+  # docs/flows/observability/spec.md and the README's "Observabilidade".
+  lgtm:
+    image: grafana/otel-lgtm:0.39.0
+    profiles: ["observability"]
+    restart: unless-stopped
+    depends_on:
+      - mailpit
+    environment:
+      # Alert notifications go to Mailpit (decision D4), never a real inbox.
+      GF_SMTP_ENABLED: "true"
+      GF_SMTP_HOST: mailpit:1025
+      GF_SMTP_FROM_ADDRESS: grafana@movietickets.local
+      # 7-day retention on the persistent volume (decision D2); Tempo keeps
+      # the image default. `make obs-down` keeps the data — wipe it with
+      # `docker compose --profile observability down -v`.
+      PROMETHEUS_EXTRA_ARGS: --storage.tsdb.retention.time=7d
+      LOKI_EXTRA_ARGS: -store.retention=7d -compactor.retention-enabled=true -compactor.delete-request-store=filesystem
+    ports:
+      - "3001:3000" # Grafana
+      - "4317:4317" # OTLP gRPC
+      - "4318:4318" # OTLP HTTP (what the API uses)
+      - "9090:9090" # Prometheus, handy for debugging queries
+    volumes:
+      - lgtm_data:/data
+
 volumes:
   postgres_data:
+  lgtm_data:

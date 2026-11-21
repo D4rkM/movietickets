@@ -44,4 +44,10 @@ EXPOSE 3000
 # only guards against the var being unset, not empty, and compose's `:-`
 # default means it's always set (possibly to ""), so that check alone
 # wouldn't catch a missing token either.
-CMD ["sh", "-c", "if [ -z \"$MERCADOPAGO_ACCESS_TOKEN\" ]; then echo 'MERCADOPAGO_ACCESS_TOKEN not set — export it before starting the api/full profile' >&2; exit 1; fi; node dist/db/migrate.js && node dist/db/seed.js && node dist/main.js"]
+#
+# `--require ./dist/instrumentation.js` boots OpenTelemetry before the app
+# (off unless OTEL_EXPORTER_OTLP_ENDPOINT is set — see the `observability`
+# compose profile); migrate/seed stay uninstrumented on purpose. `exec` makes
+# node replace the shell, so `docker stop`'s SIGTERM reaches it and the
+# pending telemetry is flushed before exit (AC15 of the observability spec).
+CMD ["sh", "-c", "if [ -z \"$MERCADOPAGO_ACCESS_TOKEN\" ]; then echo 'MERCADOPAGO_ACCESS_TOKEN not set — export it before starting the api/full profile' >&2; exit 1; fi; node dist/db/migrate.js && node dist/db/seed.js && exec node --require ./dist/instrumentation.js dist/main.js"]
