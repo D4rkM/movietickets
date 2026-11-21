@@ -29,6 +29,9 @@ export function AdminLayout({ title, action, children }: AdminLayoutProps) {
             <Link to="/admin/sessions" className="hover:text-gray-900 hover:underline">
               Sessões
             </Link>
+            <Link to="/admin/refunds" className="hover:text-gray-900 hover:underline">
+              Estornos
+            </Link>
             <Link to="/movies" className="hover:text-gray-900 hover:underline">
               Catálogo
             </Link>
