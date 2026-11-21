@@ -12,6 +12,7 @@ import { AuthModule } from "../../src/auth/auth.module";
 import { CatalogModule } from "../../src/catalog/catalog.module";
 import { DrizzleModule } from "../../src/db/drizzle.module";
 import * as schema from "../../src/db/schema";
+import { PAYMENT_CLIENT, REFUND_CLIENT } from "../../src/mercadopago/mercadopago.providers";
 import { SeatingModule } from "../../src/seating/seating.module";
 import { VALKEY, ValkeyModule } from "../../src/valkey/valkey.module";
 import { buildFastifyApp } from "./build-app";
@@ -66,7 +67,12 @@ export async function startAdminApp(label: string): Promise<AdminTestContext> {
       CatalogModule,
       AdminModule,
     ],
-  }).compile();
+  })
+    .overrideProvider(PAYMENT_CLIENT)
+    .useValue({ create: jest.fn(), get: jest.fn() })
+    .overrideProvider(REFUND_CLIENT)
+    .useValue({ total: jest.fn() })
+    .compile();
 
   const sqlClient = postgres(process.env.DATABASE_URL!);
   const db = drizzle(sqlClient, { schema });
