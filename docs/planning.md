@@ -14,6 +14,7 @@ Projeto novo (sem código existente). Objetivo: clone simplificado do ingresso.c
 - **Comunicação front↔back:** REST no início. Revisar pra GraphQL (ou outro) só se aparecer necessidade concreta (ex.: over-fetching no mapa de assentos, múltiplos consumidores com necessidades diferentes) — não trocar de forma especulativa.
 - **Real-time (recomendado):** WebSocket via Nest Gateway (Socket.io) — broadcast de mudanças no mapa de assentos (held/released/booked) pra todos usuários vendo a mesma sessão. Sem isso, mapa de assento fica "stale" e usuário tenta escolher assento já pego — prejudica exatamente a feature que precisa funcionar bem.
 - **E-mail:** notificação de confirmação de compra, via `nodemailer` (SMTP). Dev local usa [Mailpit](https://github.com/axllent/mailpit) (serviço `mailpit` do `docker-compose.yml`, sobe junto com `make up`) — SMTP fake na porta 1025 + UI web em `http://localhost:8025`, e-mail nunca sai da rede local. Provedor real de produção (SES, SendGrid etc.) fica em aberto, decide quando o projeto for pra produção de verdade.
+- **Observabilidade:** OpenTelemetry na API (traces, métricas e logs correlacionados) exportando pro `grafana/otel-lgtm` (Collector + Prometheus + Tempo + Loki + Grafana) num perfil opcional do docker compose, com dashboards e alertas versionados — **em spec (milestone Prova)**, `docs/flows/observability/spec.md`
 - **Testes e2e (front):** [Playwright](https://playwright.dev/) (`apps/web/e2e/`, `pnpm --filter web test:e2e`) — sobe o browser de verdade batendo num backend real (Postgres + Valkey, mesmo setup usado pelos testes de integração do back), validando fluxo completo (não só componente isolado). Complementa os `*.e2e-spec.ts` do back (`apps/api/test/`, real Postgres/Valkey/WebSocket) e o Vitest + RTL do front (unitário/componente). Casos que só fazem sentido com browser real: duas abas vendo o mapa de assento atualizar via WebSocket, hold expirando de verdade, concorrência de clique em assento.
 
 ## Localização e escopo desta primeira execução
@@ -61,6 +62,7 @@ movietickets/                    (raiz do monorepo)
 │       ├── admin-panel/
 │       ├── booking/
 │       ├── checkout-transparente/
+│       ├── observability/
 │       ├── pending-booking-expiry/
 │       └── public-catalog-login-gate/
 ├── docker-compose.yml           (Postgres + Valkey + Mailpit; profile `full` sobe api + web + Drizzle Studio)
