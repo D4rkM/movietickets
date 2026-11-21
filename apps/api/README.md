@@ -2,7 +2,7 @@
 
 Back-end do movietickets — NestJS + Fastify.
 
-REST + WebSocket Gateway. Módulos: Catalog, Seating, Booking, Payment, Auth, Admin, Notification. CQRS light (sem event store) — ver `docs/planning.md`. Job periódico (`@nestjs/schedule`) expira reservas pendentes vencidas.
+REST + WebSocket Gateway. Módulos: Catalog, Seating, Booking, Payment, Refund, Auth, Admin, Notification (+ MercadoPagoModule com os clientes do SDK, compartilhado por Payment e Refund). CQRS light (sem event store) — ver `docs/planning.md`. Job periódico (`@nestjs/schedule`) expira reservas pendentes vencidas.
 
 **Banco/ORM:** PostgreSQL via [Drizzle ORM](https://orm.drizzle.team/) (`postgres` driver). Schema em `src/db/schema.ts`, migrations geradas em `drizzle/`.
 
@@ -21,10 +21,12 @@ REST + WebSocket Gateway. Módulos: Catalog, Seating, Booking, Payment, Auth, Ad
 | `GET /movies` (filtros por cidade/cinema/data) | pública | Catalog |
 | `GET /sessions/:id/seats`, `POST`/`DELETE /sessions/:id/seats/:seatId/hold`, `DELETE /sessions/:id/holds` | usuário ou convidado (`UserOrGuestAuthGuard`) | Seating |
 | `POST /sessions/:id/book` (vários assentos, atômico), `POST /sessions/:id/seats/:seatId/book` (um assento) | usuário | Booking |
-| `GET /bookings/mine`, `POST /bookings/:id/cancel`, `POST /bookings/:id/confirm` (confirmação mockada, sem gateway — só pra teste manual/e2e) | usuário | Booking |
+| `GET /bookings/mine` (confirmadas + canceladas/expiradas com estorno), `POST /bookings/:id/confirm` (confirmação mockada, sem gateway — só pra teste manual/e2e) | usuário | Booking |
+| `POST /bookings/:id/cancel` (cancela e estorna o pagamento aprovado no Mercado Pago, até 2h antes da sessão) | usuário | Refund |
 | `GET /bookings/:id/payment-summary`, `POST /bookings/:id/payments` (Checkout Transparente) | usuário | Payment |
 | `POST /payments/webhook` | pública (chamada pelo Mercado Pago) | Payment |
 | `/admin/movies`, `/admin/cinemas`, `/admin/rooms`, `/admin/sessions` (CRUD) | usuário com `role: "admin"` | Admin |
+| `GET /admin/refunds/review` (fila de revisão de estorno), `POST /admin/bookings/:id/refund` | usuário com `role: "admin"` | Admin + Refund |
 | WebSocket namespace `/seating` (`join`/`leave`, evento `seat:update`) | usuário ou convidado (token no handshake) | Seating |
 
 "Usuário" = `JwtAuthGuard`, que recusa token de convidado com 401. Regras de negócio de cada feature em `docs/flows/<feature>/spec.md`; collection pra testar à mão em `docs/bruno/`.

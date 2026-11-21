@@ -90,6 +90,9 @@ export const bookings = pgTable("bookings", {
   needsRefundReview: boolean("needs_refund_review").notNull().default(false),
   // Set once when a pending booking's in-flight payment is older than 24h.
   stalePaymentAlertedAt: timestamp("stale_payment_alerted_at", { withTimezone: true }),
+  // Seat labels (e.g. "A1") snapshotted when the booking is cancelled, right
+  // before its booking_seats rows are deleted to free the seats.
+  cancelledSeatLabels: text("cancelled_seat_labels").array(),
 });
 
 export const bookingSeats = pgTable(
@@ -156,6 +159,40 @@ export const paymentEvents = pgTable(
   (table) => [index("payment_events_booking_id_created_at_idx").on(table.bookingId, table.createdAt)],
 );
 
+export const refunds = pgTable(
+  "refunds",
+  {
+    // Also the X-Idempotency-Key sent to Mercado Pago for this refund request.
+    id: uuid("id").primaryKey().defaultRandom(),
+    bookingId: uuid("booking_id")
+      .notNull()
+      .references(() => bookings.id),
+    paymentId: uuid("payment_id")
+      .notNull()
+      .references(() => payments.id),
+    externalRefundId: text("external_refund_id"),
+    // "requested" | "failed" (ours) or Mercado Pago's refund status: "in_process" | "approved" | "rejected".
+    status: text("status").notNull(),
+    amountCents: integer("amount_cents").notNull(),
+    // "customer_cancellation" | "expired_booking_review" | "external" | "session_cancelled" (reserved).
+    reason: text("reason").notNull(),
+    requestedBy: uuid("requested_by").references(() => users.id),
+    errorCode: text("error_code"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("refunds_booking_id_idx").on(table.bookingId),
+    uniqueIndex("refunds_external_refund_id_uq")
+      .on(table.externalRefundId)
+      .where(sql`${table.externalRefundId} IS NOT NULL`),
+    // At most one active or completed refund per payment: last barrier against a double refund.
+    uniqueIndex("refunds_active_per_payment_uq")
+      .on(table.paymentId)
+      .where(sql`${table.status} IN ('requested', 'in_process', 'approved')`),
+  ],
+);
+
 export const moviesRelations = relations(movies, ({ many }) => ({
   sessions: many(sessions),
 }));
@@ -184,6 +221,7 @@ export const bookingsRelations = relations(bookings, ({ one, many }) => ({
   seats: many(bookingSeats),
   payments: many(payments),
   paymentEvents: many(paymentEvents),
+  refunds: many(refunds),
 }));
 
 export const bookingSeatsRelations = relations(bookingSeats, ({ one }) => ({
@@ -195,6 +233,11 @@ export const bookingSeatsRelations = relations(bookingSeats, ({ one }) => ({
 export const paymentsRelations = relations(payments, ({ one, many }) => ({
   booking: one(bookings, { fields: [payments.bookingId], references: [bookings.id] }),
   events: many(paymentEvents),
+}));
+
+export const refundsRelations = relations(refunds, ({ one }) => ({
+  booking: one(bookings, { fields: [refunds.bookingId], references: [bookings.id] }),
+  payment: one(payments, { fields: [refunds.paymentId], references: [payments.id] }),
 }));
 
 export const paymentEventsRelations = relations(paymentEvents, ({ one }) => ({
@@ -231,3 +274,6 @@ export type NewPayment = typeof payments.$inferInsert;
 
 export type PaymentEvent = typeof paymentEvents.$inferSelect;
 export type NewPaymentEvent = typeof paymentEvents.$inferInsert;
+
+export type Refund = typeof refunds.$inferSelect;
+export type NewRefund = typeof refunds.$inferInsert;

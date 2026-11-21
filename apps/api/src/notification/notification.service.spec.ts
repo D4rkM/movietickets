@@ -63,4 +63,32 @@ describe("NotificationService", () => {
       expect(message.text).toContain("R$"); // pt-BR currency formatting
     });
   });
+
+  describe("sendRefundRequestedEmail", () => {
+    const refund = {
+      to: "user@example.com",
+      bookingId: "booking-1",
+      movieTitle: "Dune",
+      cinemaName: "Cine Centro",
+      roomName: "Sala 3",
+      startsAt: new Date("2026-10-20T20:00:00Z"),
+      seatLabels: ["A1", "A2"],
+      amountCents: 5000,
+    };
+
+    it("should send the refund email to the booking owner with movie, seats, amount and the card statement notice", async () => {
+      // ACT
+      await service.sendRefundRequestedEmail(refund);
+
+      // ASSERT
+      expect(mockTransport.sendMail).toHaveBeenCalledTimes(1);
+      const message = mockTransport.sendMail.mock.calls[0][0];
+      expect(message.to).toBe("user@example.com");
+      expect(message.subject).toBe("Estorno solicitado: Dune");
+      expect(message.text).toContain("booking-1");
+      expect(message.text).toContain("A1, A2");
+      expect(message.text).toMatch(/R\$\s50,00/);
+      expect(message.text).toContain("fatura do cartão");
+    });
+  });
 });

@@ -10,7 +10,7 @@ import { BookingService } from "../booking/booking.service";
 import { DRIZZLE } from "../db/drizzle.module";
 import * as schema from "../db/schema";
 import { CreatePaymentDto } from "./dto/create-payment.dto";
-import { PAYMENT_CLIENT } from "./mercadopago.providers";
+import { PAYMENT_CLIENT } from "../mercadopago/mercadopago.providers";
 import { PaymentController } from "./payment.controller";
 import {
   AttemptIdConflictException,
@@ -24,6 +24,7 @@ import {
   canTransitionPaymentStatus,
   paymentStatusMessage,
 } from "./payment.helpers";
+import { RefundService } from "../refund/refund.service";
 import { PaymentService } from "./payment.service";
 
 describe("PaymentService & payment helpers", () => {
@@ -36,6 +37,7 @@ describe("PaymentService & payment helpers", () => {
   };
   const mockPaymentClient = { create: jest.fn(), get: jest.fn() };
   const mockBookingService = { confirmPaidBooking: jest.fn() };
+  const mockRefundService = { applyRefundedPayment: jest.fn() };
   const mockConfig = { get: jest.fn((_key: string, fallback: string) => fallback) };
 
   let service: PaymentService;
@@ -74,6 +76,7 @@ describe("PaymentService & payment helpers", () => {
         { provide: DRIZZLE, useValue: mockDb },
         { provide: PAYMENT_CLIENT, useValue: mockPaymentClient },
         { provide: BookingService, useValue: mockBookingService },
+        { provide: RefundService, useValue: mockRefundService },
         { provide: ConfigService, useValue: mockConfig },
       ],
     }).compile();
@@ -301,6 +304,39 @@ describe("PaymentService & payment helpers", () => {
       expect(payload).not.toHaveProperty("cardholderName");
       expect(payload).not.toHaveProperty("payer");
     });
+
+    // Refund spec (docs/flows/refund/spec.md) AC25
+    it("should keep the refund keys and the admin source while discarding customer and admin personal data", () => {
+      // ARRANGE
+      const rawInput = {
+        attempt_id: "attempt-1",
+        amount_cents: 5000,
+        source: "admin" as const,
+        refund_id: "refund-1",
+        mp_refund_id: "777",
+        refund_status: "approved",
+        reason: "expired_booking_review",
+        email: "cliente@example.com",
+        adminEmail: "admin@example.com",
+        name: "Maria Silva",
+        cpf: "12345678909",
+        requested_by: "admin-user-id",
+      };
+
+      // ACT
+      const payload = buildPaymentEventPayload(rawInput);
+
+      // ASSERT
+      expect(payload).toEqual({
+        attempt_id: "attempt-1",
+        amount_cents: 5000,
+        source: "admin",
+        refund_id: "refund-1",
+        mp_refund_id: "777",
+        refund_status: "approved",
+        reason: "expired_booking_review",
+      });
+    });
   });
 
   describe("canTransitionPaymentStatus (per-row regression guard)", () => {
@@ -400,7 +436,7 @@ describe("PaymentService & payment helpers", () => {
       },
     );
 
-    it.each(["authorized", "refunded", "charged_back", "in_mediation", "unknown"])(
+    it.each(["authorized", "charged_back", "in_mediation", "unknown"])(
       "should keep the booking untouched and log a warning when status is %s",
       async (status) => {
         // ARRANGE
@@ -422,6 +458,83 @@ describe("PaymentService & payment helpers", () => {
         warnSpy.mockRestore();
       },
     );
+
+    // Refund spec (docs/flows/refund/spec.md): refunded now has an effect
+    it("should hand a refunded payment and its refunds over to RefundService", async () => {
+      // ARRANGE
+      const tx = { insert: jest.fn(), update: jest.fn() };
+      const notify = jest.fn();
+      mockRefundService.applyRefundedPayment.mockResolvedValue(notify);
+      const refunds = [{ id: 777, status: "approved", amount: 30 }];
+
+      // ACT
+      const result = await service.applyPaymentStatus(
+        tx as never,
+        "booking-1",
+        { id: "attempt-1", externalPaymentId: "4242", status: "refunded", amountCents: 3000, refunds },
+        "webhook",
+      );
+
+      // ASSERT
+      expect(mockRefundService.applyRefundedPayment).toHaveBeenCalledWith(tx, {
+        bookingId: "booking-1",
+        paymentId: "attempt-1",
+        paymentStatus: "refunded",
+        amountCents: 3000,
+        refunds,
+      });
+      expect(result).toBe(notify);
+      expect(mockBookingService.confirmPaidBooking).not.toHaveBeenCalled();
+    });
+
+    it("should reconcile refunds of an approved payment instead of re-running the approval", async () => {
+      // ARRANGE
+      const tx = { insert: jest.fn(), update: jest.fn() };
+      mockRefundService.applyRefundedPayment.mockResolvedValue(jest.fn());
+      const refunds = [{ id: 777, status: "rejected" }];
+
+      // ACT
+      await service.applyPaymentStatus(
+        tx as never,
+        "booking-1",
+        { id: "attempt-1", externalPaymentId: "4242", status: "approved", amountCents: 3000, refunds },
+        "webhook",
+      );
+
+      // ASSERT
+      expect(mockRefundService.applyRefundedPayment).toHaveBeenCalledWith(
+        tx,
+        expect.objectContaining({ paymentStatus: "approved", refunds }),
+      );
+      expect(mockBookingService.confirmPaidBooking).not.toHaveBeenCalled();
+    });
+
+    it("should only log a warning for a partial refund made outside the API", async () => {
+      // ARRANGE
+      const tx = { insert: jest.fn(), update: jest.fn() };
+      const warnSpy = jest.spyOn(Logger.prototype, "warn").mockImplementation(() => undefined);
+
+      // ACT
+      await service.applyPaymentStatus(
+        tx as never,
+        "booking-1",
+        {
+          id: "attempt-1",
+          externalPaymentId: "4242",
+          status: "approved",
+          statusDetail: "partially_refunded",
+          amountCents: 3000,
+          refunds: [{ id: 1, status: "approved", amount: 10 }],
+        },
+        "webhook",
+      );
+
+      // ASSERT
+      expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("Partial refund"));
+      expect(mockRefundService.applyRefundedPayment).not.toHaveBeenCalled();
+      expect(mockBookingService.confirmPaidBooking).not.toHaveBeenCalled();
+      warnSpy.mockRestore();
+    });
   });
 
   describe("getPaymentSummary", () => {

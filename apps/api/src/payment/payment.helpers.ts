@@ -16,9 +16,13 @@ export const ALLOWED_PAYMENT_EVENT_PAYLOAD_KEYS = [
   "payment_method_id",
   "source",
   "error_code",
+  "refund_id",
+  "mp_refund_id",
+  "refund_status",
+  "reason",
 ] as const;
 
-export type PaymentEventSource = "sync" | "webhook";
+export type PaymentEventSource = "sync" | "webhook" | "admin";
 
 export interface PaymentEventPayload {
   attempt_id?: string | null;
@@ -30,6 +34,10 @@ export interface PaymentEventPayload {
   payment_method_id?: string | null;
   source?: PaymentEventSource | null;
   error_code?: string | null;
+  refund_id?: string | null;
+  mp_refund_id?: string | null;
+  refund_status?: string | null;
+  reason?: string | null;
 }
 
 export const POST_APPROVAL_STATUSES = new Set([

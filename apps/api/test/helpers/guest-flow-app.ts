@@ -1,4 +1,4 @@
-import { ValidationPipe } from "@nestjs/common";
+import { ModuleMetadata, ValidationPipe } from "@nestjs/common";
 import { ConfigModule } from "@nestjs/config";
 import { JwtService } from "@nestjs/jwt";
 import { NestFastifyApplication } from "@nestjs/platform-fastify";
@@ -10,7 +10,7 @@ import { AuthModule } from "../../src/auth/auth.module";
 import { BookingModule } from "../../src/booking/booking.module";
 import { DrizzleModule } from "../../src/db/drizzle.module";
 import * as schema from "../../src/db/schema";
-import { PAYMENT_CLIENT } from "../../src/payment/mercadopago.providers";
+import { PAYMENT_CLIENT, REFUND_CLIENT } from "../../src/mercadopago/mercadopago.providers";
 import { PaymentModule } from "../../src/payment/payment.module";
 import { SeatingModule } from "../../src/seating/seating.module";
 import { VALKEY, ValkeyModule } from "../../src/valkey/valkey.module";
@@ -27,11 +27,14 @@ export interface GuestFlowApp {
 }
 
 /**
- * Boots the full auth + seating + booking + payment stack against the real
+ * Boots the full auth + seating + booking + payment (+ refund, imported by
+ * payment) stack against the real
  * Postgres/Valkey, listening on a random port so WebSocket clients can
  * connect. Mercado Pago clients are stubbed: no test here ever reaches them.
  */
-export async function startGuestFlowApp(): Promise<GuestFlowApp> {
+export async function startGuestFlowApp(
+  options: { extraImports?: NonNullable<ModuleMetadata["imports"]> } = {},
+): Promise<GuestFlowApp> {
   process.env.JWT_SECRET ??= "test-secret";
 
   const moduleRef = await Test.createTestingModule({
@@ -43,10 +46,13 @@ export async function startGuestFlowApp(): Promise<GuestFlowApp> {
       SeatingModule,
       BookingModule,
       PaymentModule,
+      ...(options.extraImports ?? []),
     ],
   })
     .overrideProvider(PAYMENT_CLIENT)
     .useValue({ create: jest.fn(), get: jest.fn() })
+    .overrideProvider(REFUND_CLIENT)
+    .useValue({ total: jest.fn() })
     .compile();
 
   const sqlClient = postgres(process.env.DATABASE_URL!);

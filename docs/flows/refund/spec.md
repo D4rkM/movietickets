@@ -50,14 +50,24 @@ Esta spec liga o cancelamento ao estorno total no Mercado Pago (Refunds API), cr
 - **Idempotência**: mesma chave devolve o recurso já criado; com o processamento original ainda em andamento a API responde 409. Fonte já citada na spec de checkout (documentação da Wallet Connect, `.../idempotency/responses`).
 - **Webhooks**: a notificação é só um sinal, é preciso buscar o recurso e processar de forma idempotente porque o mesmo evento pode chegar mais de uma vez; responder 200/201 em até 22 s, senão há reenvio. Fonte: https://www.mercadopago.com.br/developers/pt/docs/checkout-api-orders/notifications (guia da Orders API; o comportamento de re-busca + idempotência já é o que o nosso webhook faz).
 
-### Fatos não verificados (confirmar no sandbox antes de implementar)
+### Fatos verificados no sandbox (2026-11-21)
 
-- **Notificação no estorno**: a documentação consultada não diz explicitamente que um reembolso pela Payments API dispara notificação `type=payment` pro `notification_url` do pagamento. A spec assume que sim (o status do pagamento muda pra `refunded`). Se não disparar, a reconciliação vem pela resposta síncrona e pela ação "reconciliar" do admin (AC21).
-- **Status do reembolso na resposta síncrona com cartão no sandbox**: se volta `approved` direto ou `in_process`. A spec trata os dois.
-- **HTTP status exato** de cada código de erro do `POST .../refunds` (a página não deixa claro qual código é 400 e qual é 404) e o status de sucesso (200 ou 201). A spec trata "qualquer 4xx sem reembolso criado" de forma igual.
-- **Prazo de 180 dias e saldo em conta** valem pra Payments API legada: documentados só na página da Orders API.
-- **Saldo no sandbox**: se o usuário vendedor de teste precisa de saldo disponível pra estornar (pode exigir `add_money_test_user`). Se faltar saldo, o erro esperado é 4xx → AC9.
-- **Estorno rejeitado depois de `in_process`**: como aparece no `Payment.get` (`refunds[i].status = "rejected"` com pagamento ainda `approved`?). AC17 assume esse formato.
+Verificados com chamadas diretas à API (credencial `TEST-`, cartão de teste Mastercard aprovado, R$ 10,00), na implementação do back:
+
+- **Status do reembolso na resposta síncrona com cartão**: `POST /v1/payments/{id}/refunds` respondeu **HTTP 201** com o reembolso já `approved` (`amount` = valor total). O fluxo `in_process` continua tratado (pode ocorrer fora do sandbox).
+- **Replay com a mesma `X-Idempotency-Key`**: respondeu **HTTP 200** com o mesmo reembolso (mesmo `id`, `approved`), sem criar outro.
+- **Segundo estorno total com chave nova** num pagamento já estornado: **HTTP 400**, `cause[0].code = 2063` ("The action requested is not valid for the current payment state"), não `4296`. Cai no 4xx → AC9.
+- **Pagamento inexistente**: **HTTP 404**, `cause[0].code = 2000` ("Payment not found").
+- **Sem `X-Idempotency-Key`**: **HTTP 400** ("Header X-Idempotency-Key can't be null").
+- **Pagamento depois do estorno** (`GET /v1/payments/{id}`): `status = refunded`, `status_detail = refunded`, `transaction_amount_refunded` = valor, e `refunds[]` com o item `{ id, status: "approved", amount }`, no formato que o webhook usa.
+- **Saldo no sandbox**: o estorno logo depois da aprovação funcionou sem adicionar saldo ao vendedor de teste.
+- No SDK Node, o erro (`MercadoPagoError`) expõe a lista `cause` da resposta como `causes` (plural); o back lê as duas formas.
+
+### Fatos não verificados
+
+- **Notificação no estorno**: não verificado se um reembolso pela Payments API dispara notificação `type=payment` pro `notification_url` do pagamento (exige URL pública; o pagamento do teste acima não tinha `notification_url`). A spec assume que sim (o status do pagamento muda pra `refunded`). Se não disparar, a reconciliação vem pela resposta síncrona e pela ação "reconciliar" do admin (AC22).
+- **Prazo de 180 dias** vale pra Payments API legada: documentado só na página da Orders API.
+- **Estorno rejeitado depois de `in_process`**: como aparece no `Payment.get` (`refunds[i].status = "rejected"` com pagamento ainda `approved`?). AC18 assume esse formato.
 
 ## Decisões desta spec
 

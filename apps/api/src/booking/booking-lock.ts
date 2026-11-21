@@ -83,3 +83,21 @@ export function groupSeatsByBooking(rows: { bookingId: string; seatId: string }[
   }
   return grouped;
 }
+
+/** A confirmed booking can only be cancelled (and refunded) until this many minutes before its session starts. */
+export const CANCELLATION_DEADLINE_MINUTES = 120;
+
+const MS_PER_MINUTE = 60 * 1000;
+
+/** Last instant a booking for a session starting at `startsAt` can still be cancelled. */
+export function cancellableUntil(startsAt: Date): Date {
+  return new Date(startsAt.getTime() - CANCELLATION_DEADLINE_MINUTES * MS_PER_MINUTE);
+}
+
+/**
+ * True once `now` reaches the cancellation deadline (`starts_at - 120 min`).
+ * Callers pass the DB clock's `now()`, never the API instance's.
+ */
+export function isPastCancellationDeadline(startsAt: Date, now: Date): boolean {
+  return cancellableUntil(startsAt).getTime() <= now.getTime();
+}

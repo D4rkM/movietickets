@@ -19,6 +19,18 @@ export interface BookingConfirmationEmail {
   totalCents: number;
 }
 
+export interface RefundRequestedEmail {
+  to: string;
+  bookingId: string;
+  movieTitle: string;
+  cinemaName: string;
+  roomName: string;
+  startsAt: Date;
+  /** Seat labels such as "A1", from the cancellation snapshot. */
+  seatLabels: string[];
+  amountCents: number;
+}
+
 const CENTS_PER_UNIT = 100;
 
 function formatSeat(seat: BookingConfirmationSeat): string {
@@ -54,6 +66,23 @@ export class NotificationService {
         `Sessão: ${booking.startsAt.toLocaleString("pt-BR")}`,
         `Assentos: ${seatList}`,
         `Total: ${formatPriceBRL(booking.totalCents)}`,
+      ].join("\n"),
+    });
+  }
+
+  async sendRefundRequestedEmail(refund: RefundRequestedEmail): Promise<void> {
+    await this.transport.sendMail({
+      from: this.from,
+      to: refund.to,
+      subject: `Estorno solicitado: ${refund.movieTitle}`,
+      text: [
+        `O estorno da sua reserva #${refund.bookingId} foi solicitado.`,
+        `Filme: ${refund.movieTitle}`,
+        `Local: ${refund.cinemaName} - ${refund.roomName}`,
+        `Sessão: ${refund.startsAt.toLocaleString("pt-BR")}`,
+        `Assentos: ${refund.seatLabels.join(", ")}`,
+        `Valor estornado: ${formatPriceBRL(refund.amountCents)}`,
+        "O valor volta na fatura do cartão conforme o prazo do seu banco.",
       ].join("\n"),
     });
   }

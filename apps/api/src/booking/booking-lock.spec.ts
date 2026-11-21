@@ -2,8 +2,11 @@ import { SQL } from "drizzle-orm";
 import { PgDialect } from "drizzle-orm/pg-core";
 import {
   activeBookingCondition,
+  CANCELLATION_DEADLINE_MINUTES,
+  cancellableUntil,
   expirableBookingCondition,
   groupSeatsByBooking,
+  isPastCancellationDeadline,
   notPastDeadline,
   pastDeadline,
   PENDING_BOOKING_TTL_MINUTES,
@@ -119,5 +122,40 @@ describe("booking-lock", () => {
 
     // ASSERT
     expect([...grouped.entries()]).toEqual(expected);
+  });
+
+  // Refund spec (docs/flows/refund/spec.md) AC5 / D1
+  describe("cancellation deadline", () => {
+    const now = new Date("2026-11-20T16:00:00.000Z");
+    const MINUTE_MS = 60 * 1000;
+
+    it.each([
+      ["3 hours away", 180, false],
+      ["2 hours and 1 minute away", 121, false],
+      ["exactly 2 hours away", 120, true],
+      ["1 hour away", 60, true],
+      ["already started", -10, true],
+    ])("should tell whether a session starting %s is past the cancellation deadline", (_case, minutesAway, expected) => {
+      // ARRANGE
+      const startsAt = new Date(now.getTime() + minutesAway * MINUTE_MS);
+
+      // ACT
+      const past = isPastCancellationDeadline(startsAt, now);
+
+      // ASSERT
+      expect(past).toBe(expected);
+    });
+
+    it("should place the cancellation deadline 2 hours before the session starts", () => {
+      // ARRANGE
+      const startsAt = new Date("2026-11-20T20:00:00.000Z");
+
+      // ACT
+      const deadline = cancellableUntil(startsAt);
+
+      // ASSERT
+      expect(deadline.toISOString()).toBe("2026-11-20T18:00:00.000Z");
+      expect(CANCELLATION_DEADLINE_MINUTES).toBe(120);
+    });
   });
 });

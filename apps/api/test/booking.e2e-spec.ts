@@ -3,17 +3,20 @@ import { ConfigModule } from "@nestjs/config";
 import { JwtService } from "@nestjs/jwt";
 import { NestFastifyApplication } from "@nestjs/platform-fastify";
 import { Test } from "@nestjs/testing";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { drizzle, PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import { AuthModule } from "../src/auth/auth.module";
 import { BookingModule } from "../src/booking/booking.module";
 import { DrizzleModule } from "../src/db/drizzle.module";
 import * as schema from "../src/db/schema";
+import { PAYMENT_CLIENT, REFUND_CLIENT } from "../src/mercadopago/mercadopago.providers";
+import { RefundModule } from "../src/refund/refund.module";
 import { SeatingModule } from "../src/seating/seating.module";
 import { ValkeyModule } from "../src/valkey/valkey.module";
 import { buildFastifyApp } from "./helpers/build-app";
 import { findMailpitMessage } from "./helpers/mailpit";
+import { deletePaymentsOfSessions } from "./helpers/pending-booking";
 
 describe("Booking (e2e)", () => {
   let app: NestFastifyApplication;
@@ -44,8 +47,15 @@ describe("Booking (e2e)", () => {
         AuthModule,
         BookingModule,
         SeatingModule,
+        // POST /bookings/:id/cancel lives in RefundModule (docs/flows/refund/spec.md).
+        RefundModule,
       ],
-    }).compile();
+    })
+      .overrideProvider(PAYMENT_CLIENT)
+      .useValue({ create: jest.fn(), get: jest.fn() })
+      .overrideProvider(REFUND_CLIENT)
+      .useValue({ total: jest.fn() })
+      .compile();
 
     cleanupClient = postgres(process.env.DATABASE_URL!);
     db = drizzle(cleanupClient, { schema });
@@ -89,11 +99,14 @@ describe("Booking (e2e)", () => {
 
     [{ id: sessionId }] = await db
       .insert(schema.sessions)
-      .values({ movieId, roomId, startsAt: new Date(), priceCents: 3000 })
+      // Far enough ahead to stay within the 2-hour cancellation deadline.
+      .values({ movieId, roomId, startsAt: sql`now() + interval '1 day'`, priceCents: 3000 })
       .returning({ id: schema.sessions.id });
   });
 
   afterAll(async () => {
+    // Cancellations append booking_cancelled to payment_events (FK to bookings).
+    await deletePaymentsOfSessions(db, [sessionId]);
     await db.delete(schema.bookingSeats).where(eq(schema.bookingSeats.sessionId, sessionId));
     await db.delete(schema.bookings).where(eq(schema.bookings.sessionId, sessionId));
     await db.delete(schema.sessions).where(eq(schema.sessions.id, sessionId));
@@ -419,9 +432,9 @@ describe("Booking (e2e)", () => {
       headers: { authorization: `Bearer ${accessToken}` },
     });
 
-    // THEN it returns 200 with status "cancelled", and the seat map reflects it as free again
+    // THEN it returns 200 with status "cancelled" and no refund (no real payment), and the seat map reflects it as free again
     expect(cancelResponse.statusCode).toBe(200);
-    expect(cancelResponse.json()).toEqual({ bookingId, status: "cancelled" });
+    expect(cancelResponse.json()).toEqual({ bookingId, status: "cancelled", refund: null });
 
     const seatMapResponse = await app.inject({
       method: "GET",
@@ -430,6 +443,18 @@ describe("Booking (e2e)", () => {
     });
     const seat = seatMapResponse.json().seats.find((s: { id: string }) => s.id === seatId);
     expect(seat.status).toBe("free");
+
+    // AND the seat can be booked again (its booking_seats row was released, refund spec AC6)
+    const rebookResponse = await app.inject({
+      method: "POST",
+      url: `/sessions/${sessionId}/seats/${seatId}/book`,
+      headers: { authorization: `Bearer ${accessToken}` },
+      payload: { ticketType: "full" },
+    });
+    expect(rebookResponse.statusCode).toBe(201);
+    const rebookedId = rebookResponse.json().bookingId;
+    await db.delete(schema.bookingSeats).where(eq(schema.bookingSeats.bookingId, rebookedId));
+    await db.delete(schema.bookings).where(eq(schema.bookings.id, rebookedId));
   });
 
   it("should show a cancelled booking's seat as free, not still held, even inside the original hold's TTL window", async () => {
@@ -475,8 +500,8 @@ describe("Booking (e2e)", () => {
     expect(seat.status).toBe("free");
   });
 
-  it("should reject cancelling a booking that isn't confirmed", async () => {
-    // GIVEN a booking that was already cancelled (the previous test's)
+  it("should answer the current state when cancelling a booking that is already cancelled", async () => {
+    // GIVEN a booking that was already cancelled (an earlier test's)
 
     // WHEN the client tries to cancel it again
     const response = await app.inject({
@@ -485,8 +510,26 @@ describe("Booking (e2e)", () => {
       headers: { authorization: `Bearer ${accessToken}` },
     });
 
-    // THEN it returns 409
+    // THEN it replays 200 with the current state instead of failing
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ bookingId, status: "cancelled", refund: null });
+  });
+
+  it("should reject cancelling a booking that isn't confirmed", async () => {
+    // GIVEN a pending booking of the user
+    const [pendingBooking] = await db.insert(schema.bookings).values({ userId, sessionId, status: "pending" }).returning();
+
+    // WHEN the client tries to cancel it
+    const response = await app.inject({
+      method: "POST",
+      url: `/bookings/${pendingBooking.id}/cancel`,
+      headers: { authorization: `Bearer ${accessToken}` },
+    });
+
+    // THEN it returns 409 BOOKING_NOT_CANCELLABLE
     expect(response.statusCode).toBe(409);
+    expect(response.json()).toMatchObject({ code: "BOOKING_NOT_CANCELLABLE" });
+    await db.delete(schema.bookings).where(eq(schema.bookings.id, pendingBooking.id));
   });
 
   it("should reject GET /bookings/mine without a valid token", async () => {
@@ -499,7 +542,7 @@ describe("Booking (e2e)", () => {
     expect(response.statusCode).toBe(401);
   });
 
-  it("should list only the user's confirmed bookings, with session and seat details", async () => {
+  it("should list the user's confirmed bookings, but not pending ones, with session and seat details", async () => {
     // GIVEN a confirmed booking and a pending booking for the same user
     const [otherSeat] = await db
       .insert(schema.seats)

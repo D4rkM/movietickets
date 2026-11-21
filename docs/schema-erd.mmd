@@ -11,6 +11,9 @@ erDiagram
     BOOKINGS ||--o{ PAYMENTS : "payment attempts"
     BOOKINGS ||--o{ PAYMENT_EVENTS : "audited by"
     PAYMENTS |o--o{ PAYMENT_EVENTS : "logs"
+    BOOKINGS ||--o{ REFUNDS : "refund requests"
+    PAYMENTS ||--o{ REFUNDS : "refunded by"
+    USERS |o--o{ REFUNDS : "requested by"
 
     USERS {
         uuid id PK
@@ -61,6 +64,7 @@ erDiagram
         timestamptz expires_at
         boolean needs_refund_review
         timestamptz stale_payment_alerted_at
+        text_array cancelled_seat_labels "nullable"
     }
     BOOKING_SEATS {
         uuid id PK
@@ -90,4 +94,16 @@ erDiagram
         text type
         jsonb payload
         timestamptz created_at
+    }
+    REFUNDS {
+        uuid id PK "idempotency key"
+        uuid booking_id FK
+        uuid payment_id FK
+        text external_refund_id UK "partial: not null"
+        text status
+        int amount_cents
+        text reason
+        uuid requested_by FK "nullable"
+        text error_code
+        timestamptz updated_at
     }

@@ -7,7 +7,7 @@ import { asc, eq, inArray, sql } from "drizzle-orm";
 import { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import { BookingService } from "../../src/booking/booking.service";
 import * as schema from "../../src/db/schema";
-import { PAYMENT_CLIENT } from "../../src/payment/mercadopago.providers";
+import { PAYMENT_CLIENT, REFUND_CLIENT } from "../../src/mercadopago/mercadopago.providers";
 import { callAs } from "./guest-flow";
 
 type Db = PostgresJsDatabase<typeof schema>;
@@ -242,7 +242,7 @@ export async function deadlineWindowSeconds(db: Db, bookingId: string): Promise<
 }
 
 /**
- * Deletes payment_events and payments of the given sessions' bookings.
+ * Deletes refunds, payment_events and payments of the given sessions' bookings.
  * `payment_events` has an append-only row trigger, so test cleanup disables
  * row triggers for the cleanup transaction only via `session_replication_role = replica`.
  */
@@ -253,6 +253,7 @@ export async function deletePaymentsOfSessions(db: Db, sessionIds: string[]): Pr
       .select({ id: schema.bookings.id })
       .from(schema.bookings)
       .where(inArray(schema.bookings.sessionId, sessionIds));
+    await tx.delete(schema.refunds).where(inArray(schema.refunds.bookingId, bookingIds));
     await tx.delete(schema.paymentEvents).where(inArray(schema.paymentEvents.bookingId, bookingIds));
     await tx.delete(schema.payments).where(inArray(schema.payments.bookingId, bookingIds));
   });
@@ -276,11 +277,12 @@ export async function runExpiresAtBackfillFor(db: Db, bookingId: string): Promis
 
 export interface MercadoPagoMocks {
   payment: { create: jest.Mock; get: jest.Mock };
+  refund: { total: jest.Mock };
 }
 
-/** The stubbed Mercado Pago client wired by startGuestFlowApp. */
+/** The stubbed Mercado Pago clients wired by startGuestFlowApp. */
 export function mercadoPagoMocks(app: NestFastifyApplication): MercadoPagoMocks {
-  return { payment: app.get(PAYMENT_CLIENT) };
+  return { payment: app.get(PAYMENT_CLIENT), refund: app.get(REFUND_CLIENT) };
 }
 
 let nextPaymentId = Math.floor(Date.now() / 1000);
