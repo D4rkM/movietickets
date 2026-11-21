@@ -810,8 +810,8 @@ describe("Checkout transparente (e2e)", () => {
       watcher.close();
     });
 
-    it("AC26: deve registrar status refunded no webhook sem mudar a reserva e emitir log warn", async () => {
-      // GIVEN uma reserva confirmada com pagamento aprovado
+    it("AC26: deve registrar status refunded no webhook e, sem estorno nosso, cancelar a reserva como estorno externo", async () => {
+      // GIVEN uma reserva confirmada com pagamento aprovado e nenhum estorno pedido pela API
       const [seatId] = await fixture.addSeats(1);
       const bookingId = await insertBooking(ctx.db, {
         userId: owner.id,
@@ -827,10 +827,11 @@ describe("Checkout transparente (e2e)", () => {
       // WHEN chega um webhook com status refunded
       await deliverPaymentWebhook(ctx.app, mp, bookingId, "refunded", 8107);
 
-      // THEN grava o status refunded na tentativa, mantém a reserva confirmed e registra um log warn
+      // THEN grava o status refunded na tentativa e, pela spec de estorno (AC17/D7), cancela a reserva com log warn
       warnings.restore();
       expect((await readPaymentAttempt(ctx.db, attemptId))?.status).toBe("refunded");
-      expect((await readBooking(ctx.db, bookingId)).status).toBe("confirmed");
+      expect((await readBooking(ctx.db, bookingId)).status).toBe("cancelled");
+      expect(await seatIdsOf(ctx.db, bookingId)).toEqual([]);
       expect(warnings.mentioning(bookingId)).toHaveLength(1);
     });
 

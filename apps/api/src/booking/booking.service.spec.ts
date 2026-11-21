@@ -1,6 +1,7 @@
 import { ConflictException, Logger, NotFoundException } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import { SQL } from "drizzle-orm";
+import { createFakeDb } from "../../test/helpers/fake-db";
 import { DRIZZLE } from "../db/drizzle.module";
 import { NotificationService } from "../notification/notification.service";
 import { SeatingGateway } from "../seating/seating.gateway";
@@ -459,73 +460,53 @@ describe("BookingService", () => {
     expect(result).toEqual({ bookingId: "booking-1", status: "confirmed" });
   });
 
-  it("should throw NotFoundException when cancelling a booking that doesn't exist", async () => {
-    // ARRANGE
-    mockDb.query.bookings.findFirst.mockResolvedValue(undefined);
+  describe("cancelConfirmedBooking", () => {
+    it("should snapshot the seat labels, cancel the booking, delete its seats and broadcast them released after commit", async () => {
+      // ARRANGE
+      const tx = createFakeDb();
+      tx.queue(
+        [
+          { seatId: "seat-1", rowLabel: "A", seatNumber: 1 },
+          { seatId: "seat-2", rowLabel: "A", seatNumber: 2 },
+        ],
+        [{ sessionId: "session-1" }],
+        [{ seatId: "seat-1" }, { seatId: "seat-2" }],
+      );
 
-    // ACT
-    const result = service.cancelBooking("missing-booking", "user-1");
+      // ACT
+      const result = await service.cancelConfirmedBooking(tx as never, "booking-1");
 
-    // ASSERT
-    await expect(result).rejects.toThrow(NotFoundException);
-  });
-
-  it("should throw NotFoundException when cancelling another user's booking", async () => {
-    // ARRANGE
-    mockDb.query.bookings.findFirst.mockResolvedValue({
-      id: "booking-1",
-      userId: "someone-else",
-      status: "confirmed",
+      // ASSERT
+      expect(result).toMatchObject({
+        cancelled: true,
+        seatLabels: ["A1", "A2"],
+        releasedSeatIds: ["seat-1", "seat-2"],
+      });
+      expect(tx.calls.find((call) => call.method === "set")?.args[0]).toEqual({
+        status: "cancelled",
+        cancelledSeatLabels: ["A1", "A2"],
+      });
+      expect(tx.delete).toHaveBeenCalledTimes(1);
+      expect(mockGateway.broadcastSeatUpdate).not.toHaveBeenCalled();
+      await result.notify();
+      expect(mockGateway.broadcastSeatUpdate).toHaveBeenCalledTimes(2);
+      expect(mockGateway.broadcastSeatUpdate).toHaveBeenCalledWith("session-1", { seatId: "seat-1", status: "released" });
+      expect(mockGateway.broadcastSeatUpdate).toHaveBeenCalledWith("session-1", { seatId: "seat-2", status: "released" });
     });
 
-    // ACT
-    const result = service.cancelBooking("booking-1", "user-1");
+    it("should change nothing when the booking is no longer confirmed", async () => {
+      // ARRANGE
+      const tx = createFakeDb();
+      tx.queue([{ seatId: "seat-1", rowLabel: "A", seatNumber: 1 }], []);
 
-    // ASSERT
-    await expect(result).rejects.toThrow(NotFoundException);
-  });
+      // ACT
+      const result = await service.cancelConfirmedBooking(tx as never, "booking-1");
+      await result.notify();
 
-  it("should throw ConflictException when the booking is not confirmed", async () => {
-    // ARRANGE
-    mockDb.query.bookings.findFirst.mockResolvedValue({
-      id: "booking-1",
-      userId: "user-1",
-      status: "pending",
-    });
-
-    // ACT
-    const result = service.cancelBooking("booking-1", "user-1");
-
-    // ASSERT
-    await expect(result).rejects.toThrow(ConflictException);
-  });
-
-  it("should flip a confirmed booking to cancelled and broadcast its seats back to released", async () => {
-    // ARRANGE
-    mockDb.query.bookings.findFirst.mockResolvedValue({
-      id: "booking-1",
-      userId: "user-1",
-      status: "confirmed",
-    });
-    const where = jest.fn().mockReturnValue({
-      returning: jest.fn().mockResolvedValue([{ id: "booking-1", status: "cancelled", sessionId: "session-1" }]),
-    });
-    mockDb.update.mockReturnValue({ set: jest.fn().mockReturnValue({ where }) });
-    mockDb.query.bookingSeats.findMany.mockResolvedValue([{ seatId: "seat-1" }, { seatId: "seat-2" }]);
-
-    // ACT
-    const result = await service.cancelBooking("booking-1", "user-1");
-
-    // ASSERT
-    expect(result).toEqual({ bookingId: "booking-1", status: "cancelled" });
-    expect(mockGateway.broadcastSeatUpdate).toHaveBeenCalledTimes(2);
-    expect(mockGateway.broadcastSeatUpdate).toHaveBeenCalledWith("session-1", {
-      seatId: "seat-1",
-      status: "released",
-    });
-    expect(mockGateway.broadcastSeatUpdate).toHaveBeenCalledWith("session-1", {
-      seatId: "seat-2",
-      status: "released",
+      // ASSERT
+      expect(result).toMatchObject({ cancelled: false, seatLabels: [], releasedSeatIds: [] });
+      expect(tx.delete).not.toHaveBeenCalled();
+      expect(mockGateway.broadcastSeatUpdate).not.toHaveBeenCalled();
     });
   });
 
@@ -658,54 +639,106 @@ describe("BookingService", () => {
     await expect(promise).rejects.not.toThrow(BookingAlreadyPendingException);
   });
 
-  it("should only return confirmed bookings, mapped with session and seat details", async () => {
-    // ARRANGE
-    mockDb.query.bookings.findMany.mockResolvedValue([
-      {
-        id: "booking-1",
-        status: "confirmed",
-        session: {
-          id: "session-1",
-          startsAt: new Date("2026-01-01T20:00:00.000Z"),
-          priceCents: 2500,
-          movie: { title: "Dune" },
-          room: { name: "Sala 1", cinema: { name: "Cine A", city: "Recife" } },
-        },
-        seats: [{ seat: { rowLabel: "A", seatNumber: 1 } }],
-      },
-      {
-        id: "booking-2",
-        status: "pending",
-        session: {
-          id: "session-2",
-          startsAt: new Date(),
-          priceCents: 1000,
-          movie: { title: "Other" },
-          room: { name: "Sala 2", cinema: { name: "Cine B", city: "Recife" } },
-        },
-        seats: [],
-      },
-    ]);
+  describe("getMyBookings", () => {
+    const session = {
+      id: "session-1",
+      startsAt: new Date("2026-01-01T20:00:00.000Z"),
+      priceCents: 2500,
+      movie: { title: "Dune" },
+      room: { name: "Sala 1", cinema: { name: "Cine A", city: "Recife" } },
+    };
+    const expectedSession = {
+      id: "session-1",
+      startsAt: "2026-01-01T20:00:00.000Z",
+      priceCents: 2500,
+      movie: { title: "Dune" },
+      room: { name: "Sala 1" },
+      cinema: { name: "Cine A", city: "Recife" },
+    };
 
-    // ACT
-    const result = await service.getMyBookings("user-1");
-
-    // ASSERT
-    expect(result).toEqual([
-      {
-        bookingId: "booking-1",
-        status: "confirmed",
-        session: {
-          id: "session-1",
-          startsAt: "2026-01-01T20:00:00.000Z",
-          priceCents: 2500,
-          movie: { title: "Dune" },
-          room: { name: "Sala 1" },
-          cinema: { name: "Cine A", city: "Recife" },
+    it("should map a confirmed booking with its seats, total, cancellation deadline and no refund", async () => {
+      // ARRANGE
+      mockDb.query.bookings.findMany.mockResolvedValue([
+        {
+          id: "booking-1",
+          status: "confirmed",
+          cancelledSeatLabels: null,
+          session,
+          seats: [
+            { priceCents: 2500, seat: { rowLabel: "A", seatNumber: 1 } },
+            { priceCents: 1250, seat: { rowLabel: "A", seatNumber: 2 } },
+          ],
+          refunds: [],
         },
-        seats: [{ rowLabel: "A", seatNumber: 1 }],
-      },
-    ]);
+      ]);
+
+      // ACT
+      const result = await service.getMyBookings("user-1");
+
+      // ASSERT
+      expect(result).toEqual([
+        {
+          bookingId: "booking-1",
+          status: "confirmed",
+          session: expectedSession,
+          seats: [
+            { rowLabel: "A", seatNumber: 1 },
+            { rowLabel: "A", seatNumber: 2 },
+          ],
+          amountCents: 3750,
+          cancellableUntil: "2026-01-01T18:00:00.000Z",
+          refund: null,
+        },
+      ]);
+    });
+
+    it("should map a cancelled booking from its seat snapshot and last refund", async () => {
+      // ARRANGE
+      mockDb.query.bookings.findMany.mockResolvedValue([
+        {
+          id: "booking-1",
+          status: "cancelled",
+          cancelledSeatLabels: ["B10", "B11"],
+          session,
+          seats: [],
+          refunds: [
+            { status: "in_process", amountCents: 5000, createdAt: new Date("2026-01-01T12:00:00.000Z") },
+            { status: "failed", amountCents: 5000, createdAt: new Date("2026-01-01T11:00:00.000Z") },
+          ],
+        },
+      ]);
+
+      // ACT
+      const result = await service.getMyBookings("user-1");
+
+      // ASSERT
+      expect(result).toEqual([
+        expect.objectContaining({
+          bookingId: "booking-1",
+          status: "cancelled",
+          seats: [
+            { rowLabel: "B", seatNumber: 10 },
+            { rowLabel: "B", seatNumber: 11 },
+          ],
+          amountCents: 5000,
+          refund: { status: "pending", amountCents: 5000, requestedAt: "2026-01-01T12:00:00.000Z" },
+        }),
+      ]);
+    });
+
+    it("should hide cancelled or expired bookings that never had a refund", async () => {
+      // ARRANGE
+      mockDb.query.bookings.findMany.mockResolvedValue([
+        { id: "booking-1", status: "cancelled", cancelledSeatLabels: ["A1"], session, seats: [], refunds: [] },
+        { id: "booking-2", status: "expired", cancelledSeatLabels: null, session, seats: [], refunds: [] },
+      ]);
+
+      // ACT
+      const result = await service.getMyBookings("user-1");
+
+      // ASSERT
+      expect(result).toEqual([]);
+    });
   });
 
   describe("pending booking expiry", () => {

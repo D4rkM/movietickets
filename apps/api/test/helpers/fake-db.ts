@@ -29,6 +29,7 @@ const CHAIN_METHODS = [
   "values",
   "returning",
   "set",
+  "onConflictDoNothing",
 ];
 
 export function createFakeDb(): FakeDb {

@@ -9,6 +9,7 @@ import {
 } from "../booking/booking-expired.exception";
 import { pastDeadline } from "../booking/booking-lock";
 import { BookingService } from "../booking/booking.service";
+import { ProviderRefund, RefundDbTransaction, RefundService } from "../refund/refund.service";
 import { DRIZZLE } from "../db/drizzle.module";
 import { isUniqueViolation } from "../db/pg-errors";
 import * as schema from "../db/schema";
@@ -84,12 +85,11 @@ export interface PaymentAttemptSnapshot {
   amountCents: number;
   installments?: number | null;
   paymentMethodId?: string | null;
+  /** `refunds[]` of the re-fetched Mercado Pago payment (webhook only). */
+  refunds?: ProviderRefund[];
 }
 
-type DbTransaction = Pick<
-  PostgresJsDatabase<typeof schema>,
-  "select" | "insert" | "update" | "query"
->;
+type DbTransaction = RefundDbTransaction;
 
 const SILENT_NON_APPROVED_STATUSES = new Set([
   "rejected",
@@ -117,6 +117,7 @@ export class PaymentService {
     @Inject(DRIZZLE) private readonly db: PostgresJsDatabase<typeof schema>,
     @Inject(PAYMENT_CLIENT) private readonly paymentClient: Payment,
     private readonly bookingService: BookingService,
+    private readonly refundService: RefundService,
     config: ConfigService,
   ) {
     this.publicApiUrl = config.get<string>("PUBLIC_API_URL", "http://localhost:3000");
@@ -582,6 +583,7 @@ export class PaymentService {
           amountCents,
           installments: installments ?? attempt?.installments ?? null,
           paymentMethodId: paymentMethodId ?? attempt?.paymentMethodId ?? null,
+          refunds: payment.refunds ?? [],
         },
         "webhook",
       );
@@ -594,13 +596,37 @@ export class PaymentService {
    * Shared effect of a Mercado Pago payment status on the booking, used by both
    * the synchronous `Payment.create` response (`tx2`) and the webhook.
    * Returns a post-commit notification callback (broadcast + confirmation email).
+   *
+   * Refunds (docs/flows/refund/spec.md): `refunded`, or `approved` still
+   * carrying refunds (one in process or rejected), go to
+   * `RefundService.applyRefundedPayment`; `approved/partially_refunded` (a
+   * partial refund made outside the API) is only logged.
    */
   async applyPaymentStatus(
-    tx: Pick<DbTransaction, "insert" | "update">,
+    tx: DbTransaction,
     bookingId: string,
     paymentRow: PaymentAttemptSnapshot,
     source: PaymentEventSource = "sync",
   ): Promise<() => Promise<void>> {
+    if (paymentRow.status === "approved" && paymentRow.statusDetail === "partially_refunded") {
+      this.logger.warn(
+        `Partial refund made outside the API, ignored: bookingId=${bookingId} ` +
+          `paymentId=${paymentRow.id ?? "unknown"} externalPaymentId=${paymentRow.externalPaymentId ?? "unknown"}`,
+      );
+      return async () => undefined;
+    }
+
+    const refunds = paymentRow.refunds ?? [];
+    if (paymentRow.status === "refunded" || (paymentRow.status === "approved" && refunds.length > 0)) {
+      return this.refundService.applyRefundedPayment(tx, {
+        bookingId,
+        paymentId: paymentRow.id,
+        paymentStatus: paymentRow.status,
+        amountCents: paymentRow.amountCents,
+        refunds,
+      });
+    }
+
     if (paymentRow.status === "approved") {
       const confirmation = await this.bookingService.confirmPaidBooking(
         bookingId,

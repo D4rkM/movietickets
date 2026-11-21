@@ -10,7 +10,7 @@ import { AuthModule } from "../../src/auth/auth.module";
 import { BookingModule } from "../../src/booking/booking.module";
 import { DrizzleModule } from "../../src/db/drizzle.module";
 import * as schema from "../../src/db/schema";
-import { PAYMENT_CLIENT } from "../../src/mercadopago/mercadopago.providers";
+import { PAYMENT_CLIENT, REFUND_CLIENT } from "../../src/mercadopago/mercadopago.providers";
 import { PaymentModule } from "../../src/payment/payment.module";
 import { SeatingModule } from "../../src/seating/seating.module";
 import { VALKEY, ValkeyModule } from "../../src/valkey/valkey.module";
@@ -27,7 +27,8 @@ export interface GuestFlowApp {
 }
 
 /**
- * Boots the full auth + seating + booking + payment stack against the real
+ * Boots the full auth + seating + booking + payment (+ refund, imported by
+ * payment) stack against the real
  * Postgres/Valkey, listening on a random port so WebSocket clients can
  * connect. Mercado Pago clients are stubbed: no test here ever reaches them.
  */
@@ -47,6 +48,8 @@ export async function startGuestFlowApp(): Promise<GuestFlowApp> {
   })
     .overrideProvider(PAYMENT_CLIENT)
     .useValue({ create: jest.fn(), get: jest.fn() })
+    .overrideProvider(REFUND_CLIENT)
+    .useValue({ total: jest.fn() })
     .compile();
 
   const sqlClient = postgres(process.env.DATABASE_URL!);

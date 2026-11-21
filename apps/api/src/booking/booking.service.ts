@@ -1,5 +1,5 @@
 import { ConflictException, Inject, Injectable, Logger, NotFoundException } from "@nestjs/common";
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import { DRIZZLE } from "../db/drizzle.module";
 import { isUniqueViolation } from "../db/pg-errors";
@@ -12,7 +12,9 @@ import {
   BookingAlreadyPendingException,
   BookingExpiredException,
 } from "./booking-expired.exception";
+import { parseSeatLabel, toCustomerRefundStatus } from "../refund/refund-status";
 import {
+  cancellableUntil,
   expirableBookingCondition,
   groupSeatsByBooking,
   notPastDeadline,
@@ -54,6 +56,17 @@ export interface ConfirmBookingResult {
 }
 
 type DbExecutor = Pick<PostgresJsDatabase<typeof schema>, "update">;
+
+export type BookingCancellationExecutor = Pick<PostgresJsDatabase<typeof schema>, "select" | "update" | "delete">;
+
+export interface BookingCancellation {
+  /** False when the booking wasn't `confirmed` anymore (nothing changed). */
+  cancelled: boolean;
+  seatLabels: string[];
+  releasedSeatIds: string[];
+  /** Post-commit `released` broadcast, one per freed seat. */
+  notify: () => Promise<void>;
+}
 
 @Injectable()
 export class BookingService {
@@ -298,36 +311,49 @@ export class BookingService {
   }
 
   /**
-   * Self-service cancellation: only a confirmed booking's owner can cancel
-   * it. Flips the booking to `cancelled` (its seats stop counting as booked,
-   * per `activeBookingCondition`) and broadcasts each seat back to "released" so other clients
-   * watching that session's seat map see them free up in real time.
+   * Cancels a `confirmed` booking inside the caller's transaction and frees its
+   * seats the same way expiry does: snapshots the seat labels into
+   * `bookings.cancelled_seat_labels`, then deletes its `booking_seats` rows (so
+   * the unique `(session_id, seat_id)` constraint no longer blocks re-booking).
+   * Conditional on `status = 'confirmed'`, so a second call is a no-op.
+   *
+   * The returned `notify` broadcasts `released` per freed seat and must be
+   * awaited by the caller only after `tx` commits.
    */
-  async cancelBooking(bookingId: string, userId: string): Promise<ConfirmBookingResult> {
-    const booking = await this.db.query.bookings.findFirst({
-      where: eq(schema.bookings.id, bookingId),
-    });
-    if (!booking || booking.userId !== userId) {
-      throw new NotFoundException("Reserva não encontrada");
-    }
-    if (booking.status !== "confirmed") {
-      throw new ConflictException(`Reserva já está com status "${booking.status}"`);
-    }
+  async cancelConfirmedBooking(tx: BookingCancellationExecutor, bookingId: string): Promise<BookingCancellation> {
+    const seatRows = await tx
+      .select({
+        seatId: schema.bookingSeats.seatId,
+        rowLabel: schema.seats.rowLabel,
+        seatNumber: schema.seats.seatNumber,
+      })
+      .from(schema.bookingSeats)
+      .innerJoin(schema.seats, eq(schema.seats.id, schema.bookingSeats.seatId))
+      .where(eq(schema.bookingSeats.bookingId, bookingId))
+      .orderBy(asc(schema.seats.rowLabel), asc(schema.seats.seatNumber));
+    const seatLabels = seatRows.map((row) => `${row.rowLabel}${row.seatNumber}`);
 
-    const [updated] = await this.db
+    const [cancelled] = await tx
       .update(schema.bookings)
-      .set({ status: "cancelled" })
-      .where(eq(schema.bookings.id, bookingId))
-      .returning();
-
-    const cancelledSeats = await this.db.query.bookingSeats.findMany({
-      where: eq(schema.bookingSeats.bookingId, bookingId),
-    });
-    for (const seat of cancelledSeats) {
-      this.gateway.broadcastSeatUpdate(updated.sessionId, { seatId: seat.seatId, status: "released" });
+      .set({ status: "cancelled", cancelledSeatLabels: seatLabels })
+      .where(and(eq(schema.bookings.id, bookingId), eq(schema.bookings.status, "confirmed")))
+      .returning({ sessionId: schema.bookings.sessionId });
+    if (!cancelled) {
+      return { cancelled: false, seatLabels: [], releasedSeatIds: [], notify: async () => undefined };
     }
 
-    return { bookingId: updated.id, status: updated.status };
+    const released = await tx
+      .delete(schema.bookingSeats)
+      .where(eq(schema.bookingSeats.bookingId, bookingId))
+      .returning({ seatId: schema.bookingSeats.seatId });
+    const releasedSeatIds = released.map((row) => row.seatId);
+
+    const notify = async () => {
+      for (const seatId of releasedSeatIds) {
+        this.gateway.broadcastSeatUpdate(cancelled.sessionId, { seatId, status: "released" });
+      }
+    };
+    return { cancelled: true, seatLabels, releasedSeatIds, notify };
   }
 
   private findBookingWithDeadline(bookingId: string) {
@@ -445,34 +471,59 @@ export class BookingService {
     }
   }
 
-  /** Lists the authenticated user's confirmed bookings, most recent first. */
+  /**
+   * Lists the authenticated user's bookings, most recent first: every
+   * `confirmed` one, plus `cancelled`/`expired` ones that have at least one
+   * refund (a cancelled booking that was never paid for stays hidden).
+   */
   async getMyBookings(userId: string): Promise<MyBooking[]> {
     const bookings = await this.db.query.bookings.findMany({
-      where: eq(schema.bookings.userId, userId),
+      where: and(
+        eq(schema.bookings.userId, userId),
+        inArray(schema.bookings.status, ["confirmed", "cancelled", "expired"]),
+      ),
       orderBy: desc(schema.bookings.createdAt),
       with: {
         session: { with: { movie: true, room: { with: { cinema: true } } } },
         seats: { with: { seat: true } },
+        refunds: { orderBy: (refunds, { desc: descending }) => [descending(refunds.createdAt)] },
       },
     });
 
     return bookings
-      .filter((booking) => booking.status === "confirmed")
-      .map((booking) => ({
-        bookingId: booking.id,
-        status: booking.status,
-        session: {
-          id: booking.session.id,
-          startsAt: booking.session.startsAt.toISOString(),
-          priceCents: booking.session.priceCents,
-          movie: { title: booking.session.movie.title },
-          room: { name: booking.session.room.name },
-          cinema: { name: booking.session.room.cinema.name, city: booking.session.room.cinema.city },
-        },
-        seats: booking.seats.map((bookingSeat) => ({
-          rowLabel: bookingSeat.seat.rowLabel,
-          seatNumber: bookingSeat.seat.seatNumber,
-        })),
-      }));
+      .filter((booking) => booking.status === "confirmed" || booking.refunds.length > 0)
+      .map((booking) => {
+        const lastRefund = booking.refunds[0];
+        const hasSeatRows = booking.seats.length > 0;
+        return {
+          bookingId: booking.id,
+          status: booking.status,
+          session: {
+            id: booking.session.id,
+            startsAt: booking.session.startsAt.toISOString(),
+            priceCents: booking.session.priceCents,
+            movie: { title: booking.session.movie.title },
+            room: { name: booking.session.room.name },
+            cinema: { name: booking.session.room.cinema.name, city: booking.session.room.cinema.city },
+          },
+          seats: hasSeatRows
+            ? booking.seats.map((bookingSeat) => ({
+                rowLabel: bookingSeat.seat.rowLabel,
+                seatNumber: bookingSeat.seat.seatNumber,
+              }))
+            : (booking.cancelledSeatLabels ?? []).map(parseSeatLabel),
+          amountCents: hasSeatRows
+            ? booking.seats.reduce((sum, bookingSeat) => sum + bookingSeat.priceCents, 0)
+            : (lastRefund?.amountCents ?? 0),
+          cancellableUntil: cancellableUntil(booking.session.startsAt).toISOString(),
+          refund: lastRefund
+            ? {
+                status: toCustomerRefundStatus(lastRefund.status),
+                amountCents: lastRefund.amountCents,
+                requestedAt: lastRefund.createdAt.toISOString(),
+              }
+            : null,
+        };
+      });
   }
 }
