@@ -1,4 +1,4 @@
-import { API_URL, apiFetch, assertAuthorized } from "../../lib/api-client";
+import { API_URL, apiFetch, assertAuthorized, readErrorBody } from "../../lib/api-client";
 import type { TicketType } from "../seating/types";
 
 /** Error `code` the backend sends on a 409 when the pending booking is past its deadline. */
@@ -65,27 +65,6 @@ export interface PaymentAttemptResult {
   statusDetail: string | null;
   message: string;
   bookingStatus: string;
-}
-
-interface ErrorBody {
-  code?: string;
-  message?: string;
-}
-
-/** Reads `code` and `message` from an error response body, tolerating empty or non-JSON bodies. */
-async function readErrorBody(response: Response): Promise<ErrorBody> {
-  try {
-    const body: unknown = await response.json();
-    if (typeof body === "object" && body !== null) {
-      return {
-        code: "code" in body && typeof body.code === "string" ? body.code : undefined,
-        message: "message" in body && typeof body.message === "string" ? body.message : undefined,
-      };
-    }
-  } catch {
-    // Non-JSON error body: fall back to status-based handling.
-  }
-  return {};
 }
 
 /** Fetches the server-calculated summary and total for a pending booking. */
