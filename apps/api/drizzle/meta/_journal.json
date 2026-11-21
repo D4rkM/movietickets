@@ -36,6 +36,13 @@
       "when": 1794174631153,
       "tag": "0004_serious_frightful_four",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1795280979592,
+      "tag": "0005_stormy_magdalene",
+      "breakpoints": true
     }
   ]
 }
