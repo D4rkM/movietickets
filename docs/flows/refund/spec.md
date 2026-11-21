@@ -2,7 +2,7 @@
 
 > Os números de AC desta spec são locais à feature (`AC1`, `AC2`, ...) e não têm relação com nenhuma outra numeração externa.
 >
-> ACs marcadas com `[Dn]` dependem de uma decisão ainda em aberto (ver "Decisões em aberto"). Foram escritas com o padrão recomendado; se a decisão mudar, só elas precisam ser ajustadas.
+> Referências `(Dn)` em ACs e seções apontam pra decisão aprovada correspondente em "Decisões desta spec" → "Decisões aprovadas (D1–D8)".
 
 ## Contexto
 
@@ -25,13 +25,13 @@ Esta spec liga o cancelamento ao estorno total no Mercado Pago (Refunds API), cr
 - Webhook: `refunded` passa a ter efeito (idempotente, mesmo caminho da resposta síncrona); decisão explícita pra `charged_back`/`in_mediation`.
 - Liberação de assento no cancelamento (apaga `booking_seats`, corrige o bug acima) com broadcast `released`.
 - "Meus ingressos" mostra ingressos cancelados com o status do estorno.
-- E-mail de estorno solicitado, best-effort (reusa o `NotificationService`). `[D5]`
+- E-mail de estorno solicitado, best-effort (reusa o `NotificationService`). (D5)
 - Serviço de estorno reutilizável (`RefundService`), pensado pra ser chamado depois pela feature de cancelamento de sessão pelo admin.
 
 ## Fora de escopo
 
 - Admin cancelar uma sessão inteira que já vendeu ingresso (soft delete + estorno em lote). Fica pra feature futura separada, que já está prevista em `docs/flows/admin-panel/spec.md` ("Fora de escopo"). O `RefundService` desta spec é a peça que ela vai reusar (motivo `session_cancelled` já reservado, ver "Tabela `refunds`").
-- Estorno parcial por assento (cancelar só alguns assentos de uma reserva). `[D2]`
+- Estorno parcial por assento (cancelar só alguns assentos de uma reserva). (D2)
 - Tratamento de contestação/chargeback (disputa, envio de documentação, `in_mediation`). Só registramos o status (ver "Webhook").
 - Pix, boleto e qualquer meio que não seja cartão de crédito (o checkout hoje só aceita cartão).
 - Cancelar reserva `pending` pelo cliente (continua 409, quem libera é a expiração).
@@ -60,6 +60,17 @@ Esta spec liga o cancelamento ao estorno total no Mercado Pago (Refunds API), cr
 - **Estorno rejeitado depois de `in_process`**: como aparece no `Payment.get` (`refunds[i].status = "rejected"` com pagamento ainda `approved`?). AC17 assume esse formato.
 
 ## Decisões desta spec
+
+### Decisões aprovadas (D1–D8)
+
+- **D1 Prazo de cancelamento com estorno**: até 2 horas antes do início da sessão, constante `CANCELLATION_DEADLINE_MINUTES = 120`. Dá tempo de revender o assento. Alternativa descartada: até o início, 24h ou sem prazo. ACs: AC5, AC27.
+- **D2 Estorno parcial por assento**: fora de escopo, só estorno total da reserva. Exigiria cancelar parte dos `booking_seats`, vários estornos por pagamento e tratar `partially_refunded`. Alternativa descartada: cancelar assentos avulsos com `amount` parcial.
+- **D3 Assentos de reserva cancelada**: apagar `booking_seats` como na expiração + snapshot em `bookings.cancelled_seat_labels`. Mesmo padrão da expiração, sem mexer na constraint central do double-booking. Alternativa descartada: coluna `booking_seats.released_at` com índice único parcial no lugar da constraint. ACs: AC2, AC26, AC32.
+- **D4 MP recusa o estorno (4xx ou `rejected`) no cancelamento do cliente**: a reserva continua `confirmed`, o cliente vê o erro e o ingresso continua válido (pode tentar de novo). O cliente nunca fica sem ingresso e sem dinheiro ao mesmo tempo. Alternativa descartada: cancelar mesmo assim e mandar o estorno `failed` pra fila do admin. ACs: AC9, AC10.
+- **D5 E-mail de estorno**: dentro do escopo, best-effort síncrono reusando o `NotificationService`, um e-mail quando o estorno é aceito. Alternativa descartada: só o selo em "Meus ingressos". AC31.
+- **D6 `charged_back` / `in_mediation`**: só registrar o status e logar `warn`, reserva sem mudança (como hoje). Disputa pode ser revertida a favor do vendedor. Alternativa descartada: invalidar o ingresso. AC19.
+- **D7 Estorno feito fora da nossa API (painel do MP) em reserva confirmada**: cancelar a reserva e liberar os assentos, registrando estorno `external`. Dinheiro devolvido não pode deixar ingresso válido. Alternativa descartada: só registrar e logar `warn`. AC17.
+- **D8 Estorno `requested` parado**: 2 minutos, igual à tentativa `created` do checkout (timeout de 15 s + retries do SDK nunca passam disso). AC11, AC20.
 
 ### Estado da reserva: reusa `cancelled`/`expired`, estado do dinheiro fica em `refunds`
 
@@ -94,7 +105,7 @@ Uma linha por **pedido de estorno** de um pagamento (`payments` aprovado). Escol
 - Como o estorno é sempre total, esse índice também garante que o webhook consegue achar a linha só pelo `payment_id` (o `metadata` do reembolso no MP é o do pagamento, não dá pra mandar o nosso id por lá).
 - Migration Drizzle: próxima numeração livre (`0005_*` hoje). Só cria a tabela e índices; nenhum dado existente muda.
 
-### Prazo de cancelamento `[D1]`
+### Prazo de cancelamento (D1)
 
 - Constante `CANCELLATION_DEADLINE_MINUTES = 120` (ao lado das constantes de `booking-lock.ts`).
 - Cancelamento permitido quando `sessions.starts_at - make_interval(mins => 120) > now()`, sempre com o relógio do banco (mesmo motivo da spec de expiração: clock skew entre instâncias).
@@ -110,19 +121,19 @@ Ordem de escrita, mesmo padrão tx1 → HTTP → tx2 do `createPayment` (sem tra
    - `SELECT ... FROM bookings WHERE id = $1 FOR UPDATE` (serializa cancelamentos da mesma reserva).
    - Dono diferente ou inexistente → 404.
    - Status `cancelled` do próprio usuário → **replay**: responde 200 com o estado atual (reserva + último estorno), sem chamar o MP. Status `pending`/`expired` → 409 `BOOKING_NOT_CANCELLABLE`.
-   - Status `confirmed` com prazo vencido → 409 `CANCELLATION_DEADLINE_PASSED`. `[D1]`
+   - Status `confirmed` com prazo vencido → 409 `CANCELLATION_DEADLINE_PASSED`. (D1)
    - Busca o pagamento aprovado da reserva (`payments.status = 'approved'`). Sem pagamento aprovado (reserva confirmada pelo mock `POST /bookings/:id/confirm` ou pelo seed) → cancela direto nesta transação, sem estorno (ver "Liberação do assento"), e responde `refund: null`.
    - Se já existe estorno `requested` desse pagamento:
      - com `updated_at > now() - 2 min` → 409 `REFUND_IN_PROGRESS` (outra requisição está no meio da chamada ao MP);
      - mais velho → segue pro passo 2 com o **mesmo** `refunds.id` como chave (replay seguro no MP).
    - Se já existe estorno `in_process` → 409 `REFUND_IN_PROGRESS` (só o webhook ou a reconciliação do admin finalizam).
    - Senão insere `refunds` (`status = 'requested'`, `reason = 'customer_cancellation'`, `requested_by = userId`, `amount_cents = payments.amount_cents`) + evento `refund_requested`. Commit.
-   - A reserva **continua `confirmed`** e os assentos continuam travados até o MP aceitar o estorno. `[D4]`
+   - A reserva **continua `confirmed`** e os assentos continuam travados até o MP aceitar o estorno. (D4)
 2. **Chamada ao MP**: `paymentRefundClient.total({ payment_id: payments.external_payment_id, requestOptions: { idempotencyKey: refunds.id, timeout: 15_000 } })`, fora de transação.
 3. **tx2** (resposta), pela função compartilhada `applyRefundStatus` (ver abaixo):
-   - `approved` ou `in_process` → estorno aceito: atualiza `refunds` (`external_refund_id`, `status`) + evento `refund_response`; reserva vira `cancelled` e os `booking_seats` são apagados. Depois do commit: broadcast `released` por assento e e-mail. `[D5]`
-   - `rejected` → `refunds.status = 'rejected'` + `refund_response`; reserva continua `confirmed`; responde 422 `REFUND_REJECTED`. `[D4]`
-   - MP respondeu 4xx (sem reembolso criado) → `refunds.status = 'failed'`, `error_code` + evento `refund_request_failed`; reserva continua `confirmed`; responde 422 `REFUND_REQUEST_INVALID`. `[D4]`
+   - `approved` ou `in_process` → estorno aceito: atualiza `refunds` (`external_refund_id`, `status`) + evento `refund_response`; reserva vira `cancelled` e os `booking_seats` são apagados. Depois do commit: broadcast `released` por assento e e-mail. (D5)
+   - `rejected` → `refunds.status = 'rejected'` + `refund_response`; reserva continua `confirmed`; responde 422 `REFUND_REJECTED`. (D4)
+   - MP respondeu 4xx (sem reembolso criado) → `refunds.status = 'failed'`, `error_code` + evento `refund_request_failed`; reserva continua `confirmed`; responde 422 `REFUND_REQUEST_INVALID`. (D4)
    - MP respondeu 409 (mesma chave ainda processando) → nada gravado, responde 409 `REFUND_IN_PROGRESS`.
    - Sem resposta (timeout/rede) → nada gravado, a linha fica `requested`, responde 504 `REFUND_PROVIDER_TIMEOUT`. Chamar o cancelamento de novo depois de 2 min re-tenta com a mesma chave.
 - Resposta 200:
@@ -153,7 +164,7 @@ Ordem de escrita, mesmo padrão tx1 → HTTP → tx2 do `createPayment` (sem tra
 - O assento é liberado **na mesma transação** em que a reserva vira `cancelled`: quando o MP aceita o estorno (`approved`/`in_process`), ou na hora pra reserva sem pagamento aprovado.
 - `DELETE FROM booking_seats WHERE booking_id = $1 RETURNING seat_id`, igual a expiração faz. Corrige o bug do "Contexto" (assento aparecia livre mas dava 409 ao reservar).
 - Depois do commit: `SeatingGateway.broadcastSeatUpdate(sessionId, { seatId, status: "released" })` por assento apagado.
-- Os assentos e o valor que o cliente precisa ver em "Meus ingressos" depois do cancelamento passam a vir de um snapshot: coluna nova `bookings.cancelled_seat_labels text[] NULL`, preenchida na mesma transação com os rótulos (`A1`, `A2`) antes do `DELETE`. `[D3]`
+- Os assentos e o valor que o cliente precisa ver em "Meus ingressos" depois do cancelamento passam a vir de um snapshot: coluna nova `bookings.cancelled_seat_labels text[] NULL`, preenchida na mesma transação com os rótulos (`A1`, `A2`) antes do `DELETE`. (D3)
 - Hold no Valkey: não existe mais hold desses assentos (apagado na criação da reserva). Nada muda na Valkey.
 
 ### Função compartilhada `applyRefundStatus`
@@ -197,10 +208,10 @@ Rotas novas em `AdminRefundsController` (`apps/api/src/admin/refunds/`), `@UseGu
 
 | `status` do pagamento (via `Payment.get`) | O que fazemos |
 |---|---|
-| `refunded` | Pra cada item de `payment.refunds[]`: acha a linha em `refunds` por `external_refund_id`; senão pela linha ativa (`requested`/`in_process`) do mesmo `payment_id` (resposta síncrona perdida) e grava o `external_refund_id`; aplica `applyRefundStatus` com o status do item. Evento `refund_confirmed` quando a linha chega em `approved`. Se não existe nenhuma linha (estorno feito no painel do MP): insere `refunds` com `reason = 'external'`, `status = 'approved'`, loga `warn`, e aplica o efeito `[D7]`: reserva `confirmed` → `cancelled` + libera assentos; reserva com `needs_refund_review` → limpa a flag. |
+| `refunded` | Pra cada item de `payment.refunds[]`: acha a linha em `refunds` por `external_refund_id`; senão pela linha ativa (`requested`/`in_process`) do mesmo `payment_id` (resposta síncrona perdida) e grava o `external_refund_id`; aplica `applyRefundStatus` com o status do item. Evento `refund_confirmed` quando a linha chega em `approved`. Se não existe nenhuma linha (estorno feito no painel do MP): insere `refunds` com `reason = 'external'`, `status = 'approved'`, loga `warn`, e aplica o efeito (D7): reserva `confirmed` → `cancelled` + libera assentos; reserva com `needs_refund_review` → limpa a flag. |
 | `approved` com algum `refunds[i].status = 'rejected'` | aplica `applyRefundStatus` → `rejected` (AC17). Sem estorno no `refunds[]`, segue o fluxo de aprovação de hoje. |
 | `approved` / `partially_refunded` | só `warn` (estorno parcial feito fora da nossa API, fora de escopo). |
-| `charged_back`, `in_mediation` | como hoje: grava o status, reserva sem mudança, log `warn`. `[D6]` |
+| `charged_back`, `in_mediation` | como hoje: grava o status, reserva sem mudança, log `warn`. (D6) |
 
 - Tudo na mesma transação do webhook (upsert da tentativa + `webhook_received` + efeitos). Broadcast e e-mail depois do commit, pelo mesmo padrão `notify` de `confirmPaidBooking`.
 - Redelivery é idempotente: `applyRefundStatus` ignora mesmo status; só `webhook_received` é gravado de novo (é histórico).
@@ -238,14 +249,14 @@ Campos novos em `MyBooking`:
 ```
 
 - `amountCents`: soma de `booking_seats.price_cents`, ou `refunds.amount_cents` do último estorno quando os assentos já foram apagados. Corrige o "Total" do `TicketsPage`, que hoje calcula `priceCents * seats.length` e erra com meia-entrada.
-- `seats`: de `booking_seats` (confirmada) ou de `cancelled_seat_labels` (cancelada). `[D3]`
+- `seats`: de `booking_seats` (confirmada) ou de `cancelled_seat_labels` (cancelada). (D3)
 - `refund.status` simplificado pro cliente: `requested`/`in_process` → `pending`; `approved` → `completed`; `failed`/`rejected` → `failed`. Último estorno da reserva; `null` se não houver.
 - Em reserva `confirmed` com último estorno `failed`/`rejected`, o ingresso continua válido e o front mostra o aviso de falha junto com o botão de cancelar (o cliente pode tentar de novo).
 
 ### Front
 
 - `TicketsPage` (`apps/web/src/features/tickets/TicketsPage.tsx`):
-  - Diálogo de confirmação passa a dizer o valor e o prazo: "Ao cancelar, o valor de R$ 50,00 será estornado integralmente no cartão usado na compra. O estorno aparece na fatura conforme o prazo do seu banco. Cancelamento permitido até 20/11/2026 18:00 (2 horas antes da sessão)." `[D1]`
+  - Diálogo de confirmação passa a dizer o valor e o prazo: "Ao cancelar, o valor de R$ 50,00 será estornado integralmente no cartão usado na compra. O estorno aparece na fatura conforme o prazo do seu banco. Cancelamento permitido até 20/11/2026 18:00 (2 horas antes da sessão)." (D1)
   - Depois de `cancellableUntil`, o botão "Cancelar" some e aparece "Cancelamento encerrado (até 2 horas antes da sessão)".
   - Cancelamento com sucesso não remove mais o ingresso da lista: ele passa a aparecer como cancelado, com o selo do estorno.
   - Selos: `pending` → "Estorno em andamento"; `completed` → "Estorno concluído"; `failed` → "Não foi possível estornar. Nossa equipe vai analisar." (ou, em reserva ainda `confirmed`, "Não foi possível estornar. Seu ingresso continua válido.").
@@ -257,7 +268,7 @@ Campos novos em `MyBooking`:
   - Botão "Estornar" com confirmação ("Estornar R$ 50,00 para cliente@x.com?"). Desabilitado enquanto envia. Com estorno `in_process` o botão vira "Atualizar status" (mesmo endpoint, reconcilia).
   - Depois da resposta, recarrega a fila; erros mostram o `message` do back.
 
-### E-mail `[D5]`
+### E-mail (D5)
 
 - `NotificationService.sendRefundRequestedEmail` (nodemailer, mesmo transporte do e-mail de confirmação), síncrono e best-effort: chamado depois do commit da tx2 quando o estorno é aceito (`approved`/`in_process`), pros motivos `customer_cancellation` e `expired_booking_review`. Falha de SMTP só gera `warn`, não desfaz nada.
 - Conteúdo: filme, sessão, assentos (do snapshot), valor estornado e "o valor volta na fatura do cartão conforme o prazo do seu banco".
@@ -278,12 +289,12 @@ Campos novos em `MyBooking`:
 - **AC2**: com o estorno `approved` na resposta do Mercado Pago, responde 200 com `status: "cancelled"` e `refund.status: "completed"`; a reserva fica `cancelled`, `booking_seats` dela são apagados (com snapshot dos rótulos), `refunds.status = "approved"` com `external_refund_id`, eventos `refund_response`, `refund_confirmed` e `booking_cancelled`, e sai `seat:update` `released` por assento na room da sessão.
 - **AC3**: depois do cancelamento com estorno, outro usuário consegue reservar o mesmo assento (201), e o mapa mostra o assento `free` antes disso.
 - **AC4**: com o estorno `in_process` na resposta, a reserva fica `cancelled` e os assentos liberados como na AC2, `refunds.status = "in_process"`, e a resposta traz `refund.status: "pending"`.
-- **AC5** `[D1]`: cancelar quando faltam 2 horas ou menos pro início da sessão (relógio do banco) responde 409 `CANCELLATION_DEADLINE_PASSED`, sem chamar o Mercado Pago e sem mudar nada.
+- **AC5** (D1): cancelar quando faltam 2 horas ou menos pro início da sessão (relógio do banco) responde 409 `CANCELLATION_DEADLINE_PASSED`, sem chamar o Mercado Pago e sem mudar nada.
 - **AC6**: cancelar reserva `confirmed` sem pagamento aprovado (confirmação mock ou seed) cancela e libera os assentos sem chamar o Mercado Pago, responde `refund: null` e grava `booking_cancelled`.
 - **AC7**: reserva de outro usuário ou inexistente → 404; reserva `pending` ou `expired` → 409 `BOOKING_NOT_CANCELLABLE`.
 - **AC8**: cancelar de novo uma reserva já `cancelled` do próprio usuário responde 200 com o estado atual, sem chamar o Mercado Pago e sem criar outra linha em `refunds`.
-- **AC9** `[D4]`: Mercado Pago recusando a requisição com 4xx → 422 `REFUND_REQUEST_INVALID`; `refunds.status = "failed"` com `error_code` e evento `refund_request_failed`; a reserva continua `confirmed` com os assentos; um novo cancelamento cria outra linha em `refunds` e chama o Mercado Pago com chave nova.
-- **AC10** `[D4]`: estorno `rejected` na resposta → 422 `REFUND_REJECTED`, `refunds.status = "rejected"`, reserva continua `confirmed` com os assentos.
+- **AC9** (D4): Mercado Pago recusando a requisição com 4xx → 422 `REFUND_REQUEST_INVALID`; `refunds.status = "failed"` com `error_code` e evento `refund_request_failed`; a reserva continua `confirmed` com os assentos; um novo cancelamento cria outra linha em `refunds` e chama o Mercado Pago com chave nova.
+- **AC10** (D4): estorno `rejected` na resposta → 422 `REFUND_REJECTED`, `refunds.status = "rejected"`, reserva continua `confirmed` com os assentos.
 - **AC11**: sem resposta do Mercado Pago → 504 `REFUND_PROVIDER_TIMEOUT`, a linha continua `requested` e a reserva `confirmed`; um novo cancelamento antes de 2 minutos → 409 `REFUND_IN_PROGRESS` sem chamar o Mercado Pago; depois de 2 minutos chama o Mercado Pago com a **mesma** chave de idempotência e não cria outra linha.
 - **AC12**: dois cancelamentos simultâneos da mesma reserva: o Mercado Pago é chamado uma vez só e existe uma única linha em `refunds`; a outra requisição recebe 409 `REFUND_IN_PROGRESS` ou o replay 200 da AC8. Mercado Pago respondendo 409 (mesma chave ainda processando) → 409 `REFUND_IN_PROGRESS`.
 - **AC13**: o banco recusa uma segunda linha `requested`/`in_process`/`approved` em `refunds` pro mesmo pagamento (índice único parcial), mesmo inserida fora do serviço.
@@ -293,9 +304,9 @@ Campos novos em `MyBooking`:
 - **AC14**: webhook de pagamento `refunded` com estorno `in_process` (ou `requested` com resposta síncrona perdida) leva `refunds` pra `approved`, grava `external_refund_id` se faltava, grava `refund_confirmed`, e `payments.status` da tentativa vira `refunded`. Se a reserva ainda estava `confirmed` (resposta síncrona perdida), ela é cancelada e os assentos liberados com `released`.
 - **AC15**: o mesmo webhook `refunded` entregue de novo não muda nada além de gravar outro `webhook_received`: nenhum `refund_confirmed` extra, nenhum broadcast, nenhum e-mail.
 - **AC16**: webhook `refunded` processado ao mesmo tempo que a tx2 da resposta síncrona (ou que a reconciliação do admin) termina com `refunds` em `approved`, uma única transição e um único `refund_confirmed`.
-- **AC17** `[D7]`: webhook `refunded` sem nenhuma linha em `refunds` (estorno feito no painel do Mercado Pago) cria linha `reason = "external"`, `status = "approved"`, loga `warn`; reserva `confirmed` vira `cancelled` com assentos liberados; reserva `expired` com `needs_refund_review` tem a flag limpa.
+- **AC17** (D7): webhook `refunded` sem nenhuma linha em `refunds` (estorno feito no painel do Mercado Pago) cria linha `reason = "external"`, `status = "approved"`, loga `warn`; reserva `confirmed` vira `cancelled` com assentos liberados; reserva `expired` com `needs_refund_review` tem a flag limpa.
 - **AC18**: webhook mostrando estorno `rejected` pra um estorno que já tinha sido aceito (`in_process`) leva `refunds` pra `rejected`, marca `needs_refund_review = true` na reserva (que continua `cancelled`) e loga `warn`.
-- **AC19** `[D6]`: webhook `charged_back` ou `in_mediation` grava o status da tentativa, não muda reserva nem `refunds`, e loga `warn` (comportamento atual mantido).
+- **AC19** (D6): webhook `charged_back` ou `in_mediation` grava o status da tentativa, não muda reserva nem `refunds`, e loga `warn` (comportamento atual mantido).
 
 ### Admin (API)
 
@@ -311,18 +322,18 @@ Campos novos em `MyBooking`:
 
 ### Meus ingressos (API)
 
-- **AC26** `[D3]`: `GET /bookings/mine` devolve as reservas `confirmed` e as `cancelled`/`expired` que têm estorno, com `amountCents`, `cancellableUntil`, `seats` (do snapshot quando cancelada) e `refund` (`pending`/`completed`/`failed` mapeado do último estorno, ou `null`); reserva cancelada sem pagamento não aparece.
+- **AC26** (D3): `GET /bookings/mine` devolve as reservas `confirmed` e as `cancelled`/`expired` que têm estorno, com `amountCents`, `cancellableUntil`, `seats` (do snapshot quando cancelada) e `refund` (`pending`/`completed`/`failed` mapeado do último estorno, ou `null`); reserva cancelada sem pagamento não aparece.
 
 ### Front
 
-- **AC27** `[D1]`: em "Meus ingressos", o diálogo de cancelamento mostra o valor total do ingresso, diz que o estorno é integral no cartão da compra e mostra a data/hora limite (`cancellableUntil`); depois do limite o botão "Cancelar" não aparece e aparece o texto de cancelamento encerrado.
+- **AC27** (D1): em "Meus ingressos", o diálogo de cancelamento mostra o valor total do ingresso, diz que o estorno é integral no cartão da compra e mostra a data/hora limite (`cancellableUntil`); depois do limite o botão "Cancelar" não aparece e aparece o texto de cancelamento encerrado.
 - **AC28**: cancelar com sucesso mantém o ingresso na lista como cancelado com o selo do estorno; 409/422 mostram o `message` do back; 504 mostra a mensagem e "Tentar de novo" chama o mesmo endpoint.
 - **AC29**: o selo do ingresso mostra "Estorno em andamento", "Estorno concluído" ou a mensagem de falha conforme `refund.status`.
 - **AC30**: a página `/admin/refunds` lista a fila com motivo em pt-BR e botão "Estornar" com confirmação; com estorno em andamento o botão vira "Atualizar status"; depois da ação a fila recarrega; erro mostra o `message` do back.
 
 ### E-mail
 
-- **AC31** `[D5]`: estorno aceito (`approved`/`in_process`) na resposta síncrona envia um e-mail de estorno solicitado ao dono da reserva (Mailpit em dev), com filme, sessão, assentos e valor; falha de SMTP não muda a resposta nem o estado; webhook e estorno `external` não enviam e-mail.
+- **AC31** (D5): estorno aceito (`approved`/`in_process`) na resposta síncrona envia um e-mail de estorno solicitado ao dono da reserva (Mailpit em dev), com filme, sessão, assentos e valor; falha de SMTP não muda a resposta nem o estado; webhook e estorno `external` não enviam e-mail.
 
 ### Migration
 
@@ -331,7 +342,7 @@ Campos novos em `MyBooking`:
 ## Modelo de dados / API (impacto)
 
 - `refunds`: tabela nova.
-- `bookings`: coluna nova `cancelled_seat_labels text[] NULL` `[D3]`. `needs_refund_review` ganha escritores novos (rejeição depois de aceito) e passa a ser limpa por código (estorno concluído).
+- `bookings`: coluna nova `cancelled_seat_labels text[] NULL` (D3). `needs_refund_review` ganha escritores novos (rejeição depois de aceito) e passa a ser limpa por código (estorno concluído).
 - `booking_seats`: passa a ser apagado também no cancelamento (já era na expiração).
 - `payments`: sem mudança de schema; `refunded` agora tem efeito.
 - `payment_events`: tipos novos e chaves novas na lista branca; `source = "admin"`.
@@ -359,20 +370,7 @@ Campos novos em `MyBooking`:
 - **Saldo insuficiente na conta do vendedor**: o MP recusa (4xx) → AC9; o ingresso continua válido e o cliente vê a falha. Em produção isso vira chamado; fora de escopo automatizar.
 - **Estorno rejeitado depois de liberar o assento**: o assento pode ter sido revendido. A reserva continua `cancelled` e o caso vai pra fila do admin (`needs_refund_review`, AC18). Não reativamos a reserva.
 - **Cancelamento perto do prazo**: a checagem do prazo é na tx1; se a chamada ao MP demorar e passar do limite, o cancelamento conclui mesmo assim (o pedido foi feito dentro do prazo).
-- **Chargeback**: só registramos o status; o ingresso continua válido. Cliente que contestou pode usar o ingresso. Aceito nesta versão `[D6]`.
-
-## Decisões em aberto (precisam de aprovação)
-
-| # | Decisão | Opções | Padrão recomendado (usado nas ACs) |
-|---|---|---|---|
-| D1 | Prazo de cancelamento com estorno | (a) até 2h antes do início; (b) até o início; (c) outro valor (ex: 24h); (d) sem prazo | **(a) 2 horas antes**, constante `CANCELLATION_DEADLINE_MINUTES = 120`. Dá tempo de revender o assento e é próximo do que cinemas costumam praticar. ACs: AC5, AC27. |
-| D2 | Estorno parcial por assento | (a) fora de escopo, só estorno total da reserva; (b) cancelar assentos avulsos com `amount` parcial | **(a) fora**. O MP suporta (`amount`), mas exigiria cancelar parte dos `booking_seats`, vários estornos por pagamento (o índice único parcial muda) e tratar `partially_refunded`. Não é trivial. |
-| D3 | Como guardar os assentos de uma reserva cancelada (pra "Meus ingressos" e e-mail) | (a) apagar `booking_seats` como na expiração + snapshot `bookings.cancelled_seat_labels`; (b) manter `booking_seats` com coluna `released_at` e trocar a constraint única por índice único parcial `WHERE released_at IS NULL` | **(a)**: mesmo padrão já aceito na expiração, não mexe na constraint central do double-booking. (b) guarda histórico mais rico mas muda a garantia mais crítica do sistema. ACs: AC2, AC26, AC32. |
-| D4 | O que acontece quando o MP recusa o estorno (4xx ou `rejected`) no cancelamento do cliente | (a) reserva continua `confirmed`, cliente vê erro e o ingresso continua válido (pode tentar de novo); (b) reserva vira `cancelled` mesmo assim, assento liberado, estorno `failed` vai pra fila do admin | **(a)**: o cliente nunca fica sem ingresso e sem dinheiro ao mesmo tempo. Custo: o assento só libera quando o MP aceita. ACs: AC9, AC10. |
-| D5 | E-mail de estorno | (a) dentro, best-effort síncrono reusando `NotificationService`, um e-mail quando o estorno é aceito; (b) fora de escopo (só o selo em "Meus ingressos") | **(a)**: custo baixo (mesmo transporte e padrão do e-mail de confirmação) e o cliente precisa de comprovante. AC31. |
-| D6 | `charged_back` / `in_mediation` | (a) só registrar e `warn` (como hoje); (b) invalidar o ingresso (reserva `cancelled`, libera assento) | **(a)**: disputa pode ser revertida a favor do vendedor (`charged_back`/`reimbursed`); invalidar ingresso por um status intermediário é arriscado. AC19. |
-| D7 | Estorno feito fora da nossa API (painel do MP) em reserva confirmada | (a) cancelar a reserva e liberar os assentos, registrando estorno `external`; (b) só registrar e `warn`, reserva continua `confirmed` | **(a)**: dinheiro devolvido não pode deixar ingresso válido. AC17. |
-| D8 | Tempo pra considerar um estorno `requested` "parado" | 2 min (igual à tentativa `created` do checkout) ou outro | **2 minutos**: com timeout de 15 s e os retries do SDK, nenhuma chamada passa disso. AC11, AC20. |
+- **Chargeback**: só registramos o status; o ingresso continua válido. Cliente que contestou pode usar o ingresso. Aceito nesta versão (D6).
 
 ## Rastreabilidade com testes
 

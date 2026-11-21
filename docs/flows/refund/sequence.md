@@ -1,6 +1,6 @@
 # Sequence: Estorno de pagamento
 
-Cancelamento com estorno pelo cliente, estorno pela fila de revisão do admin e conclusão pelo webhook. Spec: [`spec.md`](./spec.md). Os diagramas usam os padrões recomendados das decisões em aberto (prazo de 2h, reserva continua `confirmed` se o estorno falha).
+Cancelamento com estorno pelo cliente, estorno pela fila de revisão do admin e conclusão pelo webhook. Spec: [`spec.md`](./spec.md). Os diagramas seguem as decisões aprovadas da spec (prazo de 2h, reserva continua `confirmed` se o estorno falha).
 
 ## 1. Cliente cancela ingresso pago
 
