@@ -14,7 +14,7 @@ export async function loginAsAdmin(page: Page): Promise<void> {
 
 export async function openAdminFromProfileMenu(page: Page): Promise<void> {
   await page.getByRole("button", { name: /Admin/i }).click();
-  await page.getByRole("link", { name: "Admin" }).click();
+  await page.getByRole("link", { name: "Admin", exact: true }).click();
   await expect(page).toHaveURL(/\/admin$/);
 }
 

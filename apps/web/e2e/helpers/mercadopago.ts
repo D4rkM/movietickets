@@ -1,7 +1,6 @@
 import type { Page } from "@playwright/test";
 import { expect } from "@playwright/test";
-
-const API_URL = process.env.E2E_API_URL ?? "http://localhost:3000";
+import { E2E_API_URL as API_URL } from "./api";
 
 export const STUB_CARD_TOKEN = "e2e-stub-card-token";
 
