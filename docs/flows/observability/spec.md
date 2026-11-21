@@ -30,7 +30,7 @@ O objetivo é demonstrável no ambiente local/demo (milestone Prova): rodar o fl
 - Instrumentar os scripts `db:migrate`/`db:seed` (`tsx`), o Drizzle Studio e o container do `web`.
 - Trocar o driver do banco (`postgres` → `pg`) só pra ganhar instrumentação automática.
 - SLOs formais / error budget. Os alertas daqui são limiares simples.
-- Alertas com roteamento real (PagerDuty, Slack). Notificação só por e-mail no Mailpit local (ver "Decisões em aberto").
+- Alertas com roteamento real (PagerDuty, Slack). Notificação só por e-mail no Mailpit local (ver D4).
 
 ## Dependências e relação com outras specs
 
@@ -127,7 +127,7 @@ Verificados em 2026-11-20 contra o registry do npm, o código-fonte publicado (u
 |---|---|---|
 | `@opentelemetry/instrumentation-http` | Span SERVER por request + `http.server.request.duration` (RED). Cliente HTTP também. | `ignoreIncomingRequestHook` pra `OPTIONS` (preflight de CORS). Sem captura de headers (padrão). |
 | `@fastify/otel` | Nome de rota (`http.route`) no span e na métrica; spans de hooks do Fastify. | `registerOnInitialization: true`; `instrumentHooks: false` (os hooks do Nest/Fastify viram ruído; manter só request + handler). Proibido `requestHook` que grave usuário. |
-| `@opentelemetry/instrumentation-nestjs-core` | Spans de controller/handler e guards do Nest. | Padrão. Ver "Decisões em aberto" (pode sair se poluir o trace). |
+| `@opentelemetry/instrumentation-nestjs-core` | Spans de controller/handler e guards do Nest. | Padrão. Ver D6 (pode sair se poluir o trace). |
 | `@opentelemetry/instrumentation-undici` | Chamadas `fetch` ao Mercado Pago (`Payment.create`, `Payment.get`, webhook) com `http.client.request.duration` por `server.address`. | Sem captura de headers (o `Authorization: Bearer <access token>` do MP não pode sair). |
 | `@opentelemetry/instrumentation-ioredis` | Comandos no Valkey. | `dbStatementSerializer: (cmd) => cmd` (só o nome do comando; as chaves têm ids de sessão/assento/convidado e os valores têm id de usuário). `requireParentSpan: true` (padrão). |
 | `@opentelemetry/instrumentation-socket.io` | Spans de `emit`/eventos do gateway `/seating`. | Padrão. |
@@ -183,8 +183,20 @@ Detalhe da opção A (`apps/api/src/telemetry/drizzle-tracing.ts`):
 - Nunca em log, atributo de span, evento de span ou atributo de métrica: senha, JWT (usuário ou convidado, incluindo `guestToken` do login e `auth.token` do handshake do Socket.io), header `Authorization`, `Cookie`/`Set-Cookie`, token de cartão do Mercado Pago, dados do pagador (`payer.email`, `payer.identification`), access token do Mercado Pago, `DATABASE_URL`/`VALKEY_URL` com credenciais, parâmetros de query SQL, valores e chaves do Valkey.
 - `redact` do pino (`app.module.ts`) passa de `["req.headers.authorization", "req.body.password"]` pra incluir também: `req.headers.cookie`, `res.headers["set-cookie"]`, `req.body.guestToken`, `req.body.token`, `req.body.payer`. Como a instrumentação pino exporta o mesmo registro serializado, o redact vale pro Loki também (U5, coberto por teste).
 - Instrumentações HTTP/undici sem captura de headers (padrão; não configurar `headersToSpanAttributes`).
-- IP do cliente e user agent são dado pessoal (LGPD): remover `client.address`, `network.peer.address` e `user_agent.original` dos spans antes do export (U8). Ver "Decisões em aberto".
+- IP do cliente e user agent são dado pessoal (LGPD): remover `client.address`, `network.peer.address` e `user_agent.original` dos spans antes do export (U8). Ver D5.
 - Grafana do perfil `observability` é local (porta só no host, senha padrão). Não expor o container em rede pública.
+
+### Decisões aprovadas (D1–D9)
+
+- **D1. Amostragem de traces:** `parentbased_traceidratio` com `OTEL_TRACES_SAMPLER_ARG=1.0` em local/docker (100%, volume é baixo e todo fluxo de demo aparece). Fica configurável por env pra baixar pra `0.1` num ambiente com carga. Alternativa descartada: `parentbased_always_on` fixo (sem ajuste de taxa por env).
+- **D2. Retenção / persistência:** volume `lgtm_data` com 7 dias: `PROMETHEUS_EXTRA_ARGS=--storage.tsdb.retention.time=7d` e `LOKI_EXTRA_ARGS=-store.retention=7d -compactor.retention-enabled=true -compactor.delete-request-store=filesystem` (exemplo oficial do README). Tempo no padrão da imagem. `make obs-down` não apaga o volume; documentar `docker compose --profile observability down -v` pra zerar. Alternativas descartadas: efêmero (sem volume, perde tudo a cada restart) e retenção longa (desnecessária pra demo).
+- **D3. `/metrics` (Prometheus pull):** só OTLP push. Um caminho só, sem porta extra nem endpoint público pra proteger. Se aparecer um consumidor que só faz scrape, ligar por env (`OTEL_METRICS_EXPORTER=prometheus,otlp`) sem mudar código. Alternativa descartada: expor `/metrics` na porta 9464 desde já.
+- **D4. Notificação de alerta:** e-mail no Mailpit (já está no compose, demonstra o fluxo completo sem credencial externa). Alternativas descartadas: só UI do Grafana; Slack/PagerDuty (exigem credencial externa).
+- **D5. IP e user agent nos spans:** remover no SDK (`client.address`, `network.peer.address`, `user_agent.original`); se o hook `onEnding` não existir na 3.0.0 (U8), remover no Collector com config montada. Alternativa descartada: manter esses atributos.
+- **D6. `@opentelemetry/instrumentation-nestjs-core`:** incluir, olhar um trace real e tirar se os spans de guard/handler só duplicarem os do `@fastify/otel`. Alternativa descartada: deixar de fora desde o início.
+- **D7. Limiares dos alertas:** os da tabela de alertas (5% de 5xx em 5 min, p95 > 1 s por 10 min, > 50% de recusa com mínimo de 5 pagamentos em 15 min, qualquer pagamento parado > 24 h, sweeper sem sucesso por 5 min).
+- **D8. Envio de logs ao Loki:** instrumentação pino via OTLP: um caminho só pros três sinais, funciona igual no host e no container, já vem com `trace_id`. Alternativa descartada: coletar stdout do container (Promtail/Alloy).
+- **D9. Métricas de estorno:** esperar a spec de estornos pra fixar nome e enum de status; nesta entrega ficam só reservadas na tabela. Alternativa descartada: entrar agora com nomes provisórios.
 
 ## Design
 
@@ -233,7 +245,7 @@ Serviço novo `lgtm` no `docker-compose.yml`:
 
 - `image: grafana/otel-lgtm:0.39.0`, `profiles: ["observability"]`, `restart: unless-stopped`.
 - Portas: `3001:3000` (Grafana), `4317:4317`, `4318:4318` (OTLP, pra `pnpm dev:api` no host mandar pra `http://localhost:4318`), `9090:9090` (Prometheus, opcional, útil pra depurar consultas).
-- Volume nomeado `lgtm_data:/data` (persistência entre restarts; ver retenção em "Decisões em aberto").
+- Volume nomeado `lgtm_data:/data` (persistência entre restarts; ver retenção em D2).
 - Volumes `:ro` com os arquivos do repo (abaixo).
 - `environment`: `GF_SMTP_ENABLED=true`, `GF_SMTP_HOST=mailpit:1025`, `GF_SMTP_FROM_ADDRESS=grafana@movietickets.local` (alerta chega no Mailpit), `GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH` apontando pro dashboard APM, `PROMETHEUS_EXTRA_ARGS`/`LOKI_EXTRA_ARGS` com a retenção decidida.
 - `depends_on: mailpit`.
@@ -277,7 +289,7 @@ Montagens: `infra/observability/grafana/provisioning/dashboards/movietickets.yam
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | `http://localhost:4318` (só com `make obs-up`) | `http://lgtm:4318` via `API_OTEL_EXPORTER_OTLP_ENDPOINT` | Vazio/ausente = telemetria desligada. |
 | `OTEL_SERVICE_NAME` | `movietickets-api` | `movietickets-api` | |
 | `OTEL_RESOURCE_ATTRIBUTES` | `deployment.environment.name=local` | `deployment.environment.name=docker` | `service.version` opcional. |
-| `OTEL_TRACES_SAMPLER` / `_ARG` | `parentbased_traceidratio` / `1.0` | idem | Ver "Decisões em aberto". |
+| `OTEL_TRACES_SAMPLER` / `_ARG` | `parentbased_traceidratio` / `1.0` | idem | Ver D1. |
 | `OTEL_METRIC_EXPORT_INTERVAL` | `15000` | `15000` | Padrão do SDK é 60 s; 15 s deixa os painéis e os alertas de 5 min mais responsivos. |
 | `OTEL_SDK_DISABLED` | — | — | `true` força desligado mesmo com endpoint. |
 
@@ -468,24 +480,10 @@ Notas:
 ## Riscos
 
 - **Patch no Drizzle quebrar num upgrade.** Mitigação: versão exata, teste unitário que falha se o protótipo mudar (AC4), e o patch não derruba a API se o método não existir (loga warn e segue sem spans de banco).
-- **Overhead.** Com amostragem 100% e export a cada 15 s o custo é aceitável pra demo; em carga real, reduzir amostragem (ver "Decisões em aberto"). Sem endpoint, custo zero (SDK não carrega).
+- **Overhead.** Com amostragem 100% e export a cada 15 s o custo é aceitável pra demo; em carga real, reduzir amostragem (ver D1). Sem endpoint, custo zero (SDK não carrega).
 - **Dados sensíveis vazando por instrumentação nova.** Mitigação: lista explícita de instrumentações, sem captura de headers, AC7 com teste.
 - **Porta 3000 duplicada.** Grafana publicado em `3001` no host.
 - **Imagem pesada.** O `grafana/otel-lgtm` precisa de ~2 GB de RAM (o README da imagem cita 2G como padrão no Apple Container); por isso fica num perfil opcional.
-
-## Decisões em aberto (precisam de aprovação)
-
-| # | Decisão | Opções | Recomendação |
-|---|---|---|---|
-| D1 | Amostragem de traces | `parentbased_always_on` (100%) / `parentbased_traceidratio` com 0.1 | **`parentbased_traceidratio` com `OTEL_TRACES_SAMPLER_ARG=1.0` em local/docker** (100%, volume é baixo e todo fluxo de demo aparece). Fica configurável por env pra baixar pra `0.1` num ambiente com carga. |
-| D2 | Retenção / persistência | Efêmero (sem volume) / volume com retenção curta / longa | **Volume `lgtm_data` com 7 dias**: `PROMETHEUS_EXTRA_ARGS=--storage.tsdb.retention.time=7d` e `LOKI_EXTRA_ARGS=-store.retention=7d -compactor.retention-enabled=true -compactor.delete-request-store=filesystem` (exemplo oficial do README). Tempo no padrão da imagem. `make obs-down` não apaga o volume; documentar `docker compose --profile observability down -v` pra zerar. |
-| D3 | Expor também `/metrics` (Prometheus pull) | Só OTLP push / OTLP + `/metrics` via `OTEL_METRICS_EXPORTER=prometheus,otlp` (porta 9464) | **Só OTLP push.** Um caminho só, sem porta extra nem endpoint público pra proteger. Se aparecer um consumidor que só faz scrape, ligar por env sem mudar código. |
-| D4 | Notificação de alerta | Só UI do Grafana / e-mail no Mailpit / Slack etc. | **E-mail no Mailpit** (já está no compose, demonstra o fluxo completo sem credencial externa). |
-| D5 | Remover IP e user agent dos spans | Manter / remover no SDK (`onEnding`) / remover no Collector | **Remover no SDK** (`client.address`, `network.peer.address`, `user_agent.original`); se o hook não existir na 3.0.0 (U8), remover no Collector com config montada. |
-| D6 | `@opentelemetry/instrumentation-nestjs-core` | Incluir / deixar de fora | **Incluir**, olhar um trace real e tirar se os spans de guard/handler só duplicarem o do `@fastify/otel`. |
-| D7 | Limiares dos alertas | Os da tabela / outros | **Os da tabela** (5% de 5xx em 5 min, p95 > 1 s por 10 min, > 50% de recusa com mínimo de 5 pagamentos em 15 min, qualquer pagamento parado > 24 h, sweeper sem sucesso por 5 min). |
-| D8 | Envio de logs ao Loki | Pela instrumentação pino (OTLP) / coletar stdout do container (Promtail/Alloy) | **Instrumentação pino via OTLP**: um caminho só pros três sinais, funciona igual no host e no container, já vem com `trace_id`. |
-| D9 | Métricas de estorno | Entrar agora com nomes provisórios / esperar a spec de estornos | **Esperar a spec de estornos** pra fixar nome e enum de status; nesta entrega ficam só reservadas na tabela. |
 
 ## Rastreabilidade com testes
 
