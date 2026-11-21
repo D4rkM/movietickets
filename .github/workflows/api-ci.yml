@@ -53,6 +53,8 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter api lint
       - run: pnpm --filter api test
+      # The observability smoke test runs the compiled API (dist/) as a child process.
+      - run: pnpm --filter api build
       - run: pnpm --filter api test:integration
         env:
           DATABASE_URL: postgres://movietickets:movietickets@localhost:5432/movietickets
