@@ -7,7 +7,7 @@ import { asc, eq, inArray, sql } from "drizzle-orm";
 import { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import { BookingService } from "../../src/booking/booking.service";
 import * as schema from "../../src/db/schema";
-import { PAYMENT_CLIENT } from "../../src/payment/mercadopago.providers";
+import { PAYMENT_CLIENT } from "../../src/mercadopago/mercadopago.providers";
 import { callAs } from "./guest-flow";
 
 type Db = PostgresJsDatabase<typeof schema>;

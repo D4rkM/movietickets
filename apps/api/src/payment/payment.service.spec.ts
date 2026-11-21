@@ -10,7 +10,7 @@ import { BookingService } from "../booking/booking.service";
 import { DRIZZLE } from "../db/drizzle.module";
 import * as schema from "../db/schema";
 import { CreatePaymentDto } from "./dto/create-payment.dto";
-import { PAYMENT_CLIENT } from "./mercadopago.providers";
+import { PAYMENT_CLIENT } from "../mercadopago/mercadopago.providers";
 import { PaymentController } from "./payment.controller";
 import {
   AttemptIdConflictException,

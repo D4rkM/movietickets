@@ -13,7 +13,8 @@ import { DRIZZLE } from "../db/drizzle.module";
 import { isUniqueViolation } from "../db/pg-errors";
 import * as schema from "../db/schema";
 import { CreatePaymentDto } from "./dto/create-payment.dto";
-import { PAYMENT_CLIENT } from "./mercadopago.providers";
+import { extractProviderErrorCode, extractProviderHttpStatus } from "../mercadopago/mercadopago-errors";
+import { PAYMENT_CLIENT } from "../mercadopago/mercadopago.providers";
 import {
   AttemptIdConflictException,
   PaymentInProgressException,
@@ -105,36 +106,6 @@ function extractPaymentId(
   if (body.topic === "payment" && body.resource) return body.resource;
   if (query.topic === "payment" && query.id) return query.id;
   return undefined;
-}
-
-function extractProviderHttpStatus(err: unknown): number | undefined {
-  if (typeof err !== "object" || err === null) return undefined;
-  const record = err as Record<string, unknown>;
-  if (typeof record.status === "number") return record.status;
-  if (typeof record.statusCode === "number") return record.statusCode;
-  if (typeof record.cause === "object" && record.cause !== null && !Array.isArray(record.cause)) {
-    const cause = record.cause as Record<string, unknown>;
-    if (typeof cause.status === "number") return cause.status;
-    if (typeof cause.statusCode === "number") return cause.statusCode;
-  }
-  return undefined;
-}
-
-function extractProviderErrorCode(err: unknown, fallbackStatus: number): string {
-  if (typeof err === "object" && err !== null) {
-    const record = err as Record<string, unknown>;
-    if (Array.isArray(record.cause) && record.cause.length > 0) {
-      const firstCause = record.cause[0] as Record<string, unknown> | undefined;
-      if (firstCause?.code != null) return String(firstCause.code);
-    }
-    if (typeof record.code === "string" || typeof record.code === "number") {
-      return String(record.code);
-    }
-    if (typeof record.error === "string") {
-      return record.error;
-    }
-  }
-  return String(fallbackStatus);
 }
 
 @Injectable()
