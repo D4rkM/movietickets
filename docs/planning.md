@@ -64,7 +64,8 @@ movietickets/                    (raiz do monorepo)
 │       ├── checkout-transparente/
 │       ├── observability/
 │       ├── pending-booking-expiry/
-│       └── public-catalog-login-gate/
+│       ├── public-catalog-login-gate/
+│       └── refund/
 ├── docker-compose.yml           (Postgres + Valkey + Mailpit; profile `full` sobe api + web + Drizzle Studio)
 ├── Makefile                     (atalhos, `make help`)
 ├── pnpm-workspace.yaml
@@ -140,6 +141,7 @@ Definição completa de colunas, tipos, PK/FK e a tabela de junção `booking_se
 - Login exigido só ao avançar pro pagamento (catálogo e assentos são públicos; token de convidado recusado com 401 em booking, pagamento e ingressos) — **implementado** (milestone AC3, spec `docs/flows/public-catalog-login-gate/spec.md`, PRs #66 e #70)
 - "Meus ingressos": lista de bookings confirmados, com detalhe — **implementado**
 - Cancelamento de ingresso pelo cliente (self-service), libera o(s) assento(s) de volta pro catálogo — **implementado no back** (`POST /bookings/:id/cancel`, broadcast released) e no front (botão "Cancelar" com confirmação no `TicketsPage`)
+- Estorno do pagamento (Refunds API do Mercado Pago): cancelar ingresso pago dispara estorno total até um prazo antes da sessão (até 2h antes), e o admin estorna pela fila de revisão as reservas com `needs_refund_review` — **em spec (milestone Prova)**, `docs/flows/refund/spec.md`
 - QR code simples — opcional/fora do MVP
 
 ### 5. Painel admin
