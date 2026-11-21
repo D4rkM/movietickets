@@ -1,4 +1,4 @@
-import { ValidationPipe } from "@nestjs/common";
+import { ModuleMetadata, ValidationPipe } from "@nestjs/common";
 import { ConfigModule } from "@nestjs/config";
 import { JwtService } from "@nestjs/jwt";
 import { NestFastifyApplication } from "@nestjs/platform-fastify";
@@ -32,7 +32,9 @@ export interface GuestFlowApp {
  * Postgres/Valkey, listening on a random port so WebSocket clients can
  * connect. Mercado Pago clients are stubbed: no test here ever reaches them.
  */
-export async function startGuestFlowApp(): Promise<GuestFlowApp> {
+export async function startGuestFlowApp(
+  options: { extraImports?: NonNullable<ModuleMetadata["imports"]> } = {},
+): Promise<GuestFlowApp> {
   process.env.JWT_SECRET ??= "test-secret";
 
   const moduleRef = await Test.createTestingModule({
@@ -44,6 +46,7 @@ export async function startGuestFlowApp(): Promise<GuestFlowApp> {
       SeatingModule,
       BookingModule,
       PaymentModule,
+      ...(options.extraImports ?? []),
     ],
   })
     .overrideProvider(PAYMENT_CLIENT)
