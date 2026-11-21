@@ -9,7 +9,7 @@ import {
   PeriodicExportingMetricReader,
 } from "@opentelemetry/sdk-metrics";
 import { InMemorySpanExporter, ReadableSpan, SimpleSpanProcessor, TracerProvider } from "@opentelemetry/sdk-trace";
-import { instrumentDrizzle } from "../../src/telemetry/drizzle-tracing";
+import { databaseNameFromUrl, instrumentDrizzle } from "../../src/telemetry/drizzle-tracing";
 
 /**
  * In-memory OpenTelemetry for Jest integration tests: a TracerProvider and a
@@ -77,4 +77,9 @@ export function startTestTelemetry(): TestTelemetry {
 /** Everything an exporter would ship for `span` (name, attributes, status, events), as text. */
 export function exportedContent(span: ReadableSpan): string {
   return JSON.stringify({ name: span.name, attributes: span.attributes, status: span.status, events: span.events });
+}
+
+/** `db.namespace` the Drizzle patch records for this run: the database name in DATABASE_URL. */
+export function expectedDbNamespace(): string | undefined {
+  return databaseNameFromUrl(process.env.DATABASE_URL);
 }

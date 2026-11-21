@@ -5,7 +5,7 @@ import { eq } from "drizzle-orm";
 import { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import { DRIZZLE, DrizzleModule } from "../src/db/drizzle.module";
 import * as schema from "../src/db/schema";
-import { exportedContent, startTestTelemetry, TestTelemetry } from "./helpers/telemetry";
+import { expectedDbNamespace, exportedContent, startTestTelemetry, TestTelemetry } from "./helpers/telemetry";
 
 /**
  * Postgres tracing (Drizzle patch) against the real database, with in-memory
@@ -55,7 +55,7 @@ describe("Observabilidade: métricas e spans em memória (e2e)", () => {
     expect(query.parentSpanContext?.spanId).toBe(requestSpanId);
     expect(query.attributes).toMatchObject({
       "db.system.name": "postgresql",
-      "db.namespace": "movietickets",
+      "db.namespace": expectedDbNamespace(),
       "db.operation.name": "SELECT",
       "db.collection.name": "movies",
     });
