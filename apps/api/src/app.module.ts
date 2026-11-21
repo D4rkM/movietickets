@@ -10,6 +10,7 @@ import { DrizzleModule } from "./db/drizzle.module";
 import { NotificationModule } from "./notification/notification.module";
 import { PaymentModule } from "./payment/payment.module";
 import { SeatingModule } from "./seating/seating.module";
+import { LOG_REDACT_PATHS } from "./telemetry/log-redaction";
 import { ValkeyModule } from "./valkey/valkey.module";
 
 @Module({
@@ -24,7 +25,7 @@ import { ValkeyModule } from "./valkey/valkey.module";
             config.get("NODE_ENV") === "production"
               ? undefined
               : { target: "pino-pretty", options: { singleLine: true } },
-          redact: ["req.headers.authorization", "req.body.password"],
+          redact: [...LOG_REDACT_PATHS],
         },
       }),
     }),

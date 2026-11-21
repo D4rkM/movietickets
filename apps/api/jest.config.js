@@ -14,6 +14,7 @@ module.exports = {
     "!**/*.dto.ts",
     "!**/*.type.ts",
     "!**/main.ts",
+    "!**/instrumentation.ts",
     "!**/db/schema.ts",
     "!**/db/migrate.ts",
     "!**/db/seed.ts",
