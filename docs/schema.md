@@ -1,6 +1,6 @@
 # Schema do banco (Postgres)
 
-Detalha as tabelas descritas em `docs/planning.md` — colunas, tipos, PK/FK, constraints. Fonte de verdade: `apps/api/src/db/schema.ts` (Drizzle ORM); migrations SQL geradas pelo `drizzle-kit` em `apps/api/drizzle/` (`0000` a `0004` hoje).
+Detalha as tabelas descritas em `docs/planning.md` — colunas, tipos, PK/FK, constraints. Fonte de verdade: `apps/api/src/db/schema.ts` (Drizzle ORM); migrations SQL geradas pelo `drizzle-kit` em `apps/api/drizzle/` (`0000` a `0005` hoje).
 
 Convenção: PK `id uuid`, `created_at timestamptz default now()` em todas as tabelas (omitido abaixo pra não repetir).
 
@@ -8,7 +8,7 @@ Convenção: PK `id uuid`, `created_at timestamptz default now()` em todas as ta
 
 Diagrama: [`schema-erd.mmd`](./schema-erd.mmd).
 
-`BOOKING_SEATS` tem `unique (session_id, seat_id)` — não representável na notação do diagrama, mas é a constraint que garante que dois `booking_seats` nunca reservem o mesmo assento na mesma sessão (detalhado na seção da tabela abaixo). Também ficam de fora do diagrama: o unique parcial de `payments.external_payment_id` e o trigger append-only de `payment_events`.
+`BOOKING_SEATS` tem `unique (session_id, seat_id)` — não representável na notação do diagrama, mas é a constraint que garante que dois `booking_seats` nunca reservem o mesmo assento na mesma sessão (detalhado na seção da tabela abaixo). Também ficam de fora do diagrama: o unique parcial de `payments.external_payment_id`, os uniques parciais de `refunds` e o trigger append-only de `payment_events`.
 
 ## users
 
@@ -81,10 +81,11 @@ Pedido/compra — pode conter vários assentos (via `booking_seats`).
 | session_id | uuid FK → sessions.id | not null |
 | status | text | not null, default `'pending'` (`pending` \| `confirmed` \| `cancelled` \| `expired`) — texto livre, sem check constraint no banco |
 | expires_at | timestamptz | not null, default `now() + interval '10 minutes'` — prazo do booking `pending`; sempre calculado pelo relógio do banco. Só tem sentido enquanto `status = 'pending'` |
-| needs_refund_review | boolean | not null, default `false` — marcado uma vez quando um pagamento `approved` chega num booking já `expired` (estorno manual) |
+| needs_refund_review | boolean | not null, default `false` — "tem dinheiro aprovado que não voltou e precisa de ação humana" (fila `GET /admin/refunds/review`): marcado quando um pagamento `approved` chega num booking já `expired`, ou quando um estorno já aceito é rejeitado depois; limpo quando o estorno conclui (`approved`) |
 | stale_payment_alerted_at | timestamptz | nullable — marcado uma vez quando um booking `pending` tem pagamento em andamento (`pending`/`in_process`) há mais de 24h |
+| cancelled_seat_labels | text[] | nullable — rótulos dos assentos (`A1`, `A2`) snapshotados no cancelamento, logo antes de apagar os `booking_seats` (migration `0005`); é de onde "Meus ingressos" lê os assentos de um ingresso cancelado |
 
-Regra de trava de assento (`activeBookingCondition`, `apps/api/src/booking/booking-lock.ts`): um booking trava seus assentos se está `confirmed`, ou `pending` e (dentro do `expires_at` **ou** com pagamento `pending`/`in_process` em andamento). Booking `pending` vencido sem pagamento em andamento vira `expired` (pelo job periódico `PendingBookingSweeper` ou de forma lazy na criação de outro booking) e tem seus `booking_seats` apagados. Spec: `docs/flows/pending-booking-expiry/spec.md`.
+Regra de trava de assento (`activeBookingCondition`, `apps/api/src/booking/booking-lock.ts`): um booking trava seus assentos se está `confirmed`, ou `pending` e (dentro do `expires_at` **ou** com pagamento `pending`/`in_process` em andamento). Booking `pending` vencido sem pagamento em andamento vira `expired` (pelo job periódico `PendingBookingSweeper` ou de forma lazy na criação de outro booking) e tem seus `booking_seats` apagados. Spec: `docs/flows/pending-booking-expiry/spec.md`. O cancelamento (`POST /bookings/:id/cancel`, com ou sem estorno) também apaga os `booking_seats`, então o assento pode ser reservado de novo. Spec: `docs/flows/refund/spec.md`.
 
 ## booking_seats
 
@@ -128,12 +129,31 @@ Histórico de auditoria **append-only** dos pagamentos (migration `0004`).
 |---|---|---|
 | booking_id | uuid FK → bookings.id | not null |
 | payment_id | uuid FK → payments.id | nullable |
-| type | text | not null — `attempt_created`, `mp_response`, `mp_request_failed`, `attempt_abandoned`, `webhook_received`, `booking_confirmed` |
-| payload | jsonb | not null — só chaves de uma allowlist (`attempt_id`, `mp_payment_id`, `status`, `status_detail`, `amount_cents`, `installments`, `payment_method_id`, `source`, `error_code`); token, CPF, e-mail e nome do titular nunca entram |
+| type | text | not null — `attempt_created`, `mp_response`, `mp_request_failed`, `attempt_abandoned`, `webhook_received`, `booking_confirmed`; estorno: `refund_requested`, `refund_response`, `refund_request_failed`, `refund_confirmed`, `booking_cancelled` |
+| payload | jsonb | not null — só chaves de uma allowlist (`attempt_id`, `mp_payment_id`, `status`, `status_detail`, `amount_cents`, `installments`, `payment_method_id`, `source` (`sync` \| `webhook` \| `admin`), `error_code`, `refund_id`, `mp_refund_id`, `refund_status`, `reason`); token, CPF, e-mail e nome do titular/cliente/admin nunca entram |
 
 Index: `payment_events_booking_id_created_at_idx (booking_id, created_at)`.
 
 Trigger `payment_events_append_only` (`BEFORE UPDATE OR DELETE`, função `forbid_payment_events_mutation()`): qualquer `UPDATE`/`DELETE` na tabela falha com exceção.
+
+## refunds
+
+Uma linha **por pedido de estorno** de um pagamento aprovado (migration `0005`). Spec: `docs/flows/refund/spec.md`.
+
+| coluna | tipo | notas |
+|---|---|---|
+| id | uuid PK | gerado pelo back; também é o `X-Idempotency-Key` da chamada de estorno ao Mercado Pago |
+| booking_id | uuid FK → bookings.id | not null, index `refunds_booking_id_idx` |
+| payment_id | uuid FK → payments.id | not null — tentativa aprovada que está sendo estornada |
+| external_refund_id | text | nullable — id do reembolso no Mercado Pago; unique parcial `refunds_external_refund_id_uq` (`WHERE external_refund_id IS NOT NULL`) |
+| status | text | not null — `requested` (gravado antes de chamar o MP), `failed` (MP recusou a requisição com 4xx); demais vêm do MP: `in_process`, `approved`, `rejected` |
+| amount_cents | int | not null — estorno sempre total: `payments.amount_cents` da tentativa |
+| reason | text | not null — `customer_cancellation`, `expired_booking_review`, `external` (estorno feito fora da API, ex: painel do MP); `session_cancelled` reservado |
+| requested_by | uuid FK → users.id | nullable — cliente ou admin que pediu; nulo em `external` |
+| error_code | text | nullable — código do MP quando `failed` |
+| updated_at | timestamptz | not null, default `now()` — `requested` com `updated_at` há mais de 2 min é considerado parado (pode ser re-tentado com a mesma chave) |
+
+Unique parcial `refunds_active_per_payment_uq (payment_id) WHERE status IN ('requested', 'in_process', 'approved')`: no máximo um estorno ativo ou concluído por pagamento (barreira contra estorno duplo); `failed`/`rejected` permitem nova tentativa.
 
 ## Fora do Postgres (Valkey)
 
