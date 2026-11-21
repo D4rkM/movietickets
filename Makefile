@@ -6,7 +6,7 @@
 # Fall back to a real `podman` binary when a real `docker` binary isn't found.
 DOCKER := $(shell command -v docker 2>/dev/null || command -v podman 2>/dev/null || echo docker)
 
-.PHONY: help up down up-full down-full install migrate seed studio dev-api dev-web expose build lint test test-integration
+.PHONY: help up down up-full down-full obs-up obs-down up-full-obs install migrate seed studio dev-api dev-web expose build lint test test-integration
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-18s\033[0m %s\n", $$1, $$2}'
@@ -22,6 +22,15 @@ up-full: ## Start the whole stack containerized (infra + api + web + Drizzle Stu
 
 down-full: ## Stop the whole containerized stack
 	$(DOCKER) compose --profile full down
+
+obs-up: ## Start local infra + Grafana LGTM (observability); run the api on the host with OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
+	$(DOCKER) compose --profile observability up -d
+
+obs-down: ## Stop local infra + Grafana LGTM (keeps the telemetry volume; `compose --profile observability down -v` wipes it)
+	$(DOCKER) compose --profile observability down
+
+up-full-obs: ## Start the whole containerized stack + Grafana LGTM, with the api exporting telemetry to it
+	API_OTEL_EXPORTER_OTLP_ENDPOINT=http://lgtm:4318 $(DOCKER) compose --profile full --profile observability up -d --build
 
 install: ## Install workspace dependencies
 	pnpm install
