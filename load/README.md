@@ -38,7 +38,7 @@ make load SCENARIOS=seat_contention VUS=20
 
 - `browse` (leitura): `GET /movies` e `GET /sessions/:id/seats`, logado com o seed `cliente@movietickets.dev` / `password123` (rode `make seed` antes).
 - `seat_contention`: `VUS` usuários descartáveis (registrados no `setup()`) seguram o mesmo assento ao mesmo tempo. Esperado: exatamente 1 `200` e `VUS-1` respostas `409`. Os thresholds `contention_hold_won`, `contention_hold_conflict` e `contention_hold_unexpected` reprovam o teste se a regra quebrar.
-- `booking_cancel`: hold, reserva, `POST /bookings/:id/confirm` (confirmação simulada, sem pagamento) e `POST /bookings/:id/cancel`. Sem pagamento aprovado o cancelamento não chama o Mercado Pago. Se a rota de confirmação devolver `404`, o cenário avisa e é pulado.
+- `booking_cancel`: hold, reserva, `POST /bookings/:id/confirm` (confirmação simulada, sem pagamento) e `POST /bookings/:id/cancel`. Sem pagamento aprovado o cancelamento não chama o Mercado Pago. Se a rota de confirmação devolver `404`, o cenário avisa e é pulado. Depois do PR de hardening (#91), essa rota só existe com `ENABLE_TEST_ROUTES=true` no ambiente da API (em `apps/api/.env`, e recriar o container); sem a flag o cenário é pulado.
 
 Os cenários de escrita escolhem uma sessão que começa daqui a mais de 3h (o cancelamento só vale até 2h antes). Se não houver, eles avisam e são pulados (rode `make seed` de novo pra gerar sessões).
 
