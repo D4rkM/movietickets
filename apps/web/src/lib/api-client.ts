@@ -36,3 +36,24 @@ export function assertAuthorized(response: Response): void {
     throw new UnauthorizedError();
   }
 }
+
+export interface ErrorBody {
+  code?: string;
+  message?: string;
+}
+
+/** Reads `code` and `message` from an error response body, tolerating empty or non-JSON bodies. */
+export async function readErrorBody(response: Response): Promise<ErrorBody> {
+  try {
+    const body: unknown = await response.json();
+    if (typeof body === "object" && body !== null) {
+      return {
+        code: "code" in body && typeof body.code === "string" ? body.code : undefined,
+        message: "message" in body && typeof body.message === "string" ? body.message : undefined,
+      };
+    }
+  } catch {
+    // Non-JSON error body: fall back to status-based handling.
+  }
+  return {};
+}

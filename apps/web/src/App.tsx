@@ -4,6 +4,7 @@ import { AdminCinemasPage } from "./features/admin/AdminCinemasPage";
 import { AdminHomePage } from "./features/admin/AdminHomePage";
 import { AdminMovieFormPage } from "./features/admin/AdminMovieFormPage";
 import { AdminMoviesPage } from "./features/admin/AdminMoviesPage";
+import { AdminRefundsPage } from "./features/admin/AdminRefundsPage";
 import { AdminRoomFormPage } from "./features/admin/AdminRoomFormPage";
 import { AdminRoomsPage } from "./features/admin/AdminRoomsPage";
 import { AdminSessionFormPage } from "./features/admin/AdminSessionFormPage";
@@ -47,6 +48,7 @@ export function App() {
           <Route path="/admin/sessions" element={<AdminSessionsPage />} />
           <Route path="/admin/sessions/new" element={<AdminSessionFormPage />} />
           <Route path="/admin/sessions/:id" element={<AdminSessionFormPage />} />
+          <Route path="/admin/refunds" element={<AdminRefundsPage />} />
         </Route>
       </Routes>
     </AuthProvider>

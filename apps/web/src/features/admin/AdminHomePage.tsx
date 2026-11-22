@@ -22,6 +22,11 @@ const SECTIONS = [
     title: "Sessões",
     description: "Agendar e manter sessões de exibição por sala e horário.",
   },
+  {
+    to: "/admin/refunds",
+    title: "Estornos",
+    description: "Revisar e estornar pagamentos que precisam de ação.",
+  },
 ];
 
 export function AdminHomePage() {
