@@ -40,7 +40,7 @@ pnpm --filter web test       # Vitest
 pnpm --filter web test:e2e   # Playwright (e2e/)
 ```
 
-O e2e roda num browser de verdade contra a API real: precisa de Postgres + Valkey, migrations, seed e `pnpm dev:api` rodando (o Playwright sobe só o dev server do front). O SDK do Mercado Pago é substituído por um stub (`e2e/helpers/mercadopago.ts`), então não usa credencial nem chama o Mercado Pago. Como nenhuma reserva do e2e tem pagamento aprovado, os resultados de estorno (selos, erros, fila do admin) usam respostas da API simuladas com `page.route` (`e2e/helpers/refunds.ts`); o cancelamento sem estorno roda contra a API real.
+O e2e roda num browser de verdade contra a API real: precisa de Postgres + Valkey, migrations, seed e `pnpm dev:api` rodando **com `ENABLE_TEST_ROUTES=true`** (o stub de pagamento confirma a reserva pela rota mockada `POST /bookings/:id/confirm`, que sem a flag responde 404; ver `apps/api/.env.example`) (o Playwright sobe só o dev server do front). O SDK do Mercado Pago é substituído por um stub (`e2e/helpers/mercadopago.ts`), então não usa credencial nem chama o Mercado Pago. Como nenhuma reserva do e2e tem pagamento aprovado, os resultados de estorno (selos, erros, fila do admin) usam respostas da API simuladas com `page.route` (`e2e/helpers/refunds.ts`); o cancelamento sem estorno roda contra a API real.
 
 ## Lint/build
 

@@ -190,7 +190,7 @@ pnpm test        # unitários de todos os apps (Jest na api, Vitest no web)
 pnpm test:e2e    # e2e do front (Playwright, apps/web/e2e)
 ```
 
-`make test-integration` aplica as migrations e roda contra o banco de `DATABASE_URL` (ver `apps/api/README.md`). O smoke test de observabilidade (`test/observability-smoke.e2e-spec.ts`) sobe a API **compilada** como processo filho, então rode `pnpm --filter api build` antes (a CI já faz isso). O e2e do Playwright espera a API já rodando (`make up` + `make migrate` + `make seed` + `make dev-api`); ele sobe sozinho só o dev server do front e troca o SDK do Mercado Pago por um stub, então não precisa de credencial.
+`make test-integration` aplica as migrations e roda contra o banco de `DATABASE_URL` (ver `apps/api/README.md`). O smoke test de observabilidade (`test/observability-smoke.e2e-spec.ts`) sobe a API **compilada** como processo filho, então rode `pnpm --filter api build` antes (a CI já faz isso). O e2e do Playwright espera a API já rodando (`make up` + `make migrate` + `make seed` + `make dev-api`); a API precisa de `ENABLE_TEST_ROUTES=true` no `apps/api/.env` (a rota mockada de confirmação usada pelo stub de pagamento responde 404 sem a flag); ele sobe sozinho só o dev server do front e troca o SDK do Mercado Pago por um stub, então não precisa de credencial.
 
 Teste manual completo (checklist pra QA/PO/dev antes de release): [`docs/qa/roteiro-testes.md`](./docs/qa/roteiro-testes.md).
 

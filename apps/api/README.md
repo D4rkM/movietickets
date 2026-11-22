@@ -43,6 +43,7 @@ Ver `.env.example`. Principais:
 - `PUBLIC_API_URL` — base do `notification_url` do webhook mandado ao Mercado Pago (URL pública/ngrok pra receber webhook localmente, ver README raiz).
 - `SMTP_HOST`, `SMTP_PORT`, `MAIL_FROM` — e-mail de confirmação de compra (Mailpit em dev, porta 1025).
 - `LOG_LEVEL`.
+- `ENABLE_TEST_ROUTES` — `true` expõe `POST /bookings/:id/confirm` (confirmação mockada, **sem pagamento**); ausente ou qualquer outro valor, a rota responde 404. Nunca ligar em ambiente real: só pro e2e do front, pra collection do Bruno e pros testes de integração (o Jest liga sozinho). Spec: `docs/flows/test-routes/spec.md`.
 - `OTEL_*` (OpenTelemetry, opcionais) — a telemetria só liga quando `OTEL_EXPORTER_OTLP_ENDPOINT` está preenchida (ex.: `http://localhost:4318` com `make obs-up`) e `OTEL_SDK_DISABLED` não é `true`; vazia, nada do SDK é carregado.
 
   | Variável | Padrão | Efeito |
