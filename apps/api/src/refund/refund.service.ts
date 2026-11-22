@@ -10,6 +10,7 @@ import * as schema from "../db/schema";
 import { PAYMENT_CLIENT, REFUND_CLIENT } from "../mercadopago/mercadopago.providers";
 import { NotificationService } from "../notification/notification.service";
 import { buildPaymentEventPayload, CENTS_PER_UNIT, PaymentEventSource } from "../payment/payment.helpers";
+import { BusinessMetrics } from "../telemetry/business-metrics";
 import {
   BookingNotCancellableException,
   CancellationDeadlinePassedException,
@@ -106,6 +107,7 @@ export class RefundService {
     @Inject(PAYMENT_CLIENT) private readonly paymentClient: Payment,
     private readonly bookingService: BookingService,
     private readonly notificationService: NotificationService,
+    private readonly metrics: BusinessMetrics,
   ) {}
 
   /** `POST /bookings/:id/cancel`: cancels the owner's confirmed booking, refunding its approved payment in full. */
@@ -145,14 +147,14 @@ export class RefundService {
         return { kind: "cancelled_without_refund" as const, notify: cancellation.notify };
       }
 
-      const refund = await this.requestRefundRow(tx, {
+      const { refund, created } = await this.requestRefundRow(tx, {
         bookingId,
         payment,
         reason: "customer_cancellation",
         requestedBy: userId,
         source: "sync",
       });
-      return { kind: "call_provider" as const, refund, externalPaymentId: payment.externalPaymentId };
+      return { kind: "call_provider" as const, refund, created, externalPaymentId: payment.externalPaymentId };
     });
 
     if (prepared.kind === "replay") {
@@ -162,6 +164,7 @@ export class RefundService {
       await prepared.notify();
       return { bookingId, status: "cancelled", refund: null };
     }
+    if (prepared.created) this.metrics.refundRequested();
 
     const applied = await this.callProviderAndApply(prepared.refund, prepared.externalPaymentId, "sync");
     return {
@@ -218,6 +221,7 @@ export class RefundService {
         return {
           kind: lastRefund.refund.status === "in_process" ? ("reconcile" as const) : ("call_provider" as const),
           refund: lastRefund.refund,
+          created: false,
           externalPaymentId: payment.externalPaymentId,
         };
       }
@@ -226,15 +230,16 @@ export class RefundService {
       if (!payment) {
         throw new RefundNotAllowedException();
       }
-      const refund = await this.requestRefundRow(tx, {
+      const { refund, created } = await this.requestRefundRow(tx, {
         bookingId,
         payment,
         reason: "expired_booking_review",
         requestedBy: adminId,
         source: "admin",
       });
-      return { kind: "call_provider" as const, refund, externalPaymentId: payment.externalPaymentId };
+      return { kind: "call_provider" as const, refund, created, externalPaymentId: payment.externalPaymentId };
     });
+    if (prepared.created) this.metrics.refundRequested();
 
     const applied =
       prepared.kind === "reconcile"
@@ -308,7 +313,7 @@ export class RefundService {
       await this.insertEvent(tx, updated.bookingId, updated.paymentId, "refund_confirmed", eventPayload);
     }
 
-    const notifiers: Notify[] = [];
+    const notifiers: Notify[] = [async () => this.metrics.refundStatusChanged(updated.status)];
     let bookingStatus = booking.status;
 
     if (transition === "accept" || transition === "complete") {
@@ -475,9 +480,9 @@ export class RefundService {
       .from(schema.bookings)
       .where(eq(schema.bookings.id, inserted.bookingId))
       .for("update");
-    const notify = (await this.cancelBookingForRefund(tx, inserted, "webhook")) ?? noop;
+    const cancelled = (await this.cancelBookingForRefund(tx, inserted, "webhook")) ?? noop;
     await this.clearRefundReview(tx, inserted.bookingId);
-    return notify;
+    return combine([async () => this.metrics.refundStatusChanged(inserted.status), cancelled]);
   }
 
   /** Cancels the refund's booking if still confirmed; returns its post-commit broadcast, or null when nothing changed. */
@@ -508,7 +513,7 @@ export class RefundService {
   /**
    * Inside tx1: reuses the payment's stalled `requested` row (same idempotency
    * key), refuses while another request is in flight, otherwise inserts a new
-   * `requested` row plus its `refund_requested` event.
+   * `requested` row plus its `refund_requested` event. `created` tells which.
    */
   private async requestRefundRow(
     tx: RefundDbTransaction,
@@ -519,7 +524,7 @@ export class RefundService {
       requestedBy: string;
       source: PaymentEventSource;
     },
-  ): Promise<schema.Refund> {
+  ): Promise<{ refund: schema.Refund; created: boolean }> {
     const [active] = await tx
       .select({ refund: schema.refunds, stale: staleRequestedRefund() })
       .from(schema.refunds)
@@ -532,7 +537,7 @@ export class RefundService {
       .limit(1);
     if (active) {
       if (active.refund.status === "requested" && active.stale) {
-        return active.refund;
+        return { refund: active.refund, created: false };
       }
       throw new RefundInProgressException();
     }
@@ -563,7 +568,7 @@ export class RefundService {
       reason: inserted.reason,
       source: params.source,
     });
-    return inserted;
+    return { refund: inserted, created: true };
   }
 
   /** Calls `PaymentRefund.total` outside any transaction, then applies the answer in tx2. */
@@ -631,13 +636,13 @@ export class RefundService {
     errorCode: string,
     source: PaymentEventSource,
   ): Promise<void> {
-    await this.db.transaction(async (tx) => {
+    const failedNow = await this.db.transaction(async (tx) => {
       const [failed] = await tx
         .update(schema.refunds)
         .set({ status: "failed", errorCode, updatedAt: sql`now()` })
         .where(and(eq(schema.refunds.id, refund.id), eq(schema.refunds.status, "requested")))
         .returning();
-      if (!failed) return;
+      if (!failed) return false;
       await this.insertEvent(tx, failed.bookingId, failed.paymentId, "refund_request_failed", {
         attempt_id: failed.paymentId,
         refund_id: failed.id,
@@ -647,7 +652,9 @@ export class RefundService {
         error_code: errorCode,
         source,
       });
+      return true;
     });
+    if (failedNow) this.metrics.refundStatusChanged("failed");
   }
 
   private async findApprovedPayment(tx: RefundDbTransaction, bookingId: string) {

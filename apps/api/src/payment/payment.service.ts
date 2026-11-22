@@ -12,6 +12,8 @@ import { BookingService } from "../booking/booking.service";
 import { ProviderRefund, RefundDbTransaction, RefundService } from "../refund/refund.service";
 import { DRIZZLE } from "../db/drizzle.module";
 import { isUniqueViolation } from "../db/pg-errors";
+import { BusinessMetrics } from "../telemetry/business-metrics";
+import { setActiveSpanAttributes } from "../telemetry/spans";
 import * as schema from "../db/schema";
 import { CreatePaymentDto } from "./dto/create-payment.dto";
 import { extractProviderErrorCode, extractProviderHttpStatus } from "../mercadopago/mercadopago-errors";
@@ -119,6 +121,7 @@ export class PaymentService {
     private readonly bookingService: BookingService,
     private readonly refundService: RefundService,
     config: ConfigService,
+    private readonly metrics: BusinessMetrics,
   ) {
     this.publicApiUrl = config.get<string>("PUBLIC_API_URL", "http://localhost:3000");
   }
@@ -164,6 +167,9 @@ export class PaymentService {
     let tx1Result:
       | { kind: "replay_stored"; result: PaymentAttemptResult }
       | { kind: "call_mp"; amountCents: number; description: string };
+    // Metric facts from tx1, emitted only once it committed.
+    let abandonedAttempts = 0;
+    let attemptCreated = false;
 
     try {
       tx1Result = await this.db.transaction(async (tx) => {
@@ -233,6 +239,7 @@ export class PaymentService {
               ),
             )
             .returning({ id: schema.payments.id, amountCents: schema.payments.amountCents });
+          abandonedAttempts = staleCreated.length;
 
           for (const stale of staleCreated) {
             await tx.insert(schema.paymentEvents).values({
@@ -302,6 +309,7 @@ export class PaymentService {
               source: "sync",
             }),
           });
+          attemptCreated = true;
         }
 
         return { kind: "call_mp" as const, amountCents, description };
@@ -312,6 +320,8 @@ export class PaymentService {
       }
       throw err;
     }
+    if (abandonedAttempts > 0) this.metrics.paymentStatusChanged("abandoned", "sync", abandonedAttempts);
+    if (attemptCreated) this.metrics.paymentAttemptCreated();
 
     if (tx1Result.kind === "replay_stored") {
       return tx1Result.result;
@@ -337,11 +347,12 @@ export class PaymentService {
       }
       if (providerStatus !== undefined && providerStatus >= 400 && providerStatus < 500) {
         const errorCode = extractProviderErrorCode(err, providerStatus);
-        await this.db.transaction(async (tx) => {
-          await tx
+        const failedRows = await this.db.transaction(async (tx) => {
+          const failed = await tx
             .update(schema.payments)
             .set({ status: "request_failed", updatedAt: sql`now()` })
-            .where(eq(schema.payments.id, dto.attemptId));
+            .where(eq(schema.payments.id, dto.attemptId))
+            .returning({ id: schema.payments.id });
           await tx.insert(schema.paymentEvents).values({
             bookingId,
             paymentId: dto.attemptId,
@@ -356,9 +367,13 @@ export class PaymentService {
               error_code: errorCode,
             }),
           });
+          return failed.length;
         });
+        this.metrics.paymentStatusChanged("request_failed", "sync", failedRows);
+        this.metrics.paymentProviderError("request_invalid");
         throw new PaymentRequestInvalidException();
       }
+      this.metrics.paymentProviderError("timeout");
       throw new PaymentProviderTimeoutException();
     }
 
@@ -367,9 +382,11 @@ export class PaymentService {
     const statusDetail = mpPayment.status_detail ?? null;
     const installments = mpPayment.installments ?? dto.installments;
     const paymentMethodId = mpPayment.payment_method_id ?? dto.paymentMethodId;
+    // status_detail is a long, changing Mercado Pago list: span attribute only, never a metric label.
+    setActiveSpanAttributes({ "payment.status": status, "payment.status_detail": statusDetail });
 
-    const { notify, bookingStatus } = await this.db.transaction(async (tx) => {
-      await tx
+    const { notify, bookingStatus, statusChanged } = await this.db.transaction(async (tx) => {
+      const changedRows = await tx
         .update(schema.payments)
         .set({
           externalPaymentId,
@@ -379,7 +396,8 @@ export class PaymentService {
           paymentMethodId,
           updatedAt: sql`now()`,
         })
-        .where(and(eq(schema.payments.id, dto.attemptId), paymentStatusUpdateGuard(status)));
+        .where(and(eq(schema.payments.id, dto.attemptId), paymentStatusUpdateGuard(status)))
+        .returning({ id: schema.payments.id });
 
       await tx.insert(schema.paymentEvents).values({
         bookingId,
@@ -417,9 +435,14 @@ export class PaymentService {
         .from(schema.bookings)
         .where(eq(schema.bookings.id, bookingId));
 
-      return { notify: notifyFn, bookingStatus: currentBooking?.status ?? "pending" };
+      return {
+        notify: notifyFn,
+        bookingStatus: currentBooking?.status ?? "pending",
+        statusChanged: changedRows.length > 0,
+      };
     });
 
+    if (statusChanged) this.metrics.paymentStatusChanged(status, "sync");
     await notify();
 
     return {
@@ -452,6 +475,9 @@ export class PaymentService {
     const paymentMethodId = payment.payment_method_id ?? null;
     const metadataAttemptId =
       typeof payment.metadata?.attempt_id === "string" ? payment.metadata.attempt_id : undefined;
+    setActiveSpanAttributes({ "payment.status": status, "payment.status_detail": statusDetail });
+    // Set inside the transaction, read after it committed (metric emission).
+    let statusChanged = false;
 
     const notify = await this.db.transaction(async (tx) => {
       // 1. Normal path: match the attempt row by external_payment_id recorded in tx2.
@@ -462,7 +488,7 @@ export class PaymentService {
 
       if (attempt) {
         if (canTransitionPaymentStatus(attempt.status, status)) {
-          await tx
+          const updated = await tx
             .update(schema.payments)
             .set({
               status,
@@ -472,7 +498,9 @@ export class PaymentService {
               paymentMethodId: paymentMethodId ?? attempt.paymentMethodId,
               updatedAt: sql`now()`,
             })
-            .where(and(eq(schema.payments.id, attempt.id), paymentStatusUpdateGuard(status)));
+            .where(and(eq(schema.payments.id, attempt.id), paymentStatusUpdateGuard(status)))
+            .returning({ id: schema.payments.id });
+          statusChanged = updated.length > 0 && attempt.status !== status;
           attempt = {
             ...attempt,
             status,
@@ -494,7 +522,7 @@ export class PaymentService {
             ),
           );
         if (attempt && canTransitionPaymentStatus(attempt.status, status)) {
-          await tx
+          const updated = await tx
             .update(schema.payments)
             .set({
               externalPaymentId,
@@ -505,7 +533,9 @@ export class PaymentService {
               paymentMethodId: paymentMethodId ?? attempt.paymentMethodId,
               updatedAt: sql`now()`,
             })
-            .where(and(eq(schema.payments.id, attempt.id), paymentStatusUpdateGuard(status)));
+            .where(and(eq(schema.payments.id, attempt.id), paymentStatusUpdateGuard(status)))
+            .returning({ id: schema.payments.id });
+          statusChanged = updated.length > 0 && attempt.status !== status;
           attempt = {
             ...attempt,
             externalPaymentId,
@@ -545,6 +575,9 @@ export class PaymentService {
             setWhere: paymentStatusUpdateGuard(status),
           })
           .returning();
+        // No row matched by external_payment_id above, so a returned row is a new
+        // payment (or one inserted concurrently and updated by the upsert).
+        statusChanged = inserted !== undefined;
 
         attempt =
           inserted ??
@@ -589,6 +622,7 @@ export class PaymentService {
       );
     });
 
+    if (statusChanged) this.metrics.paymentStatusChanged(status, "webhook");
     await notify();
   }
 
@@ -635,6 +669,7 @@ export class PaymentService {
           amountCents: paymentRow.amountCents,
         },
         tx,
+        source === "webhook" ? "payment_webhook" : "payment_sync",
       );
       if (confirmation.confirmed) {
         await tx.insert(schema.paymentEvents).values({
