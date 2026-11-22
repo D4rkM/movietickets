@@ -1,0 +1,18 @@
+# Dashboard provider for the MovieTickets dashboards (docs/flows/observability/spec.md).
+# The JSON files live in infra/observability/grafana/dashboards/, mounted
+# read-only at the path below by docker-compose.yml. To change a dashboard:
+# edit it in Grafana, export the JSON ("Export" > "Export as JSON", without
+# "Export for sharing externally") and overwrite the file in the repo.
+apiVersion: 1
+
+providers:
+  - name: movietickets
+    orgId: 1
+    folder: MovieTickets
+    type: file
+    disableDeletion: true
+    allowUiUpdates: false
+    updateIntervalSeconds: 30
+    options:
+      path: /otel-lgtm/grafana/conf/provisioning/dashboards/movietickets
+      foldersFromFilesStructure: false

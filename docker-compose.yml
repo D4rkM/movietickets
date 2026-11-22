@@ -156,6 +156,8 @@ services:
       GF_SMTP_ENABLED: "true"
       GF_SMTP_HOST: mailpit:1025
       GF_SMTP_FROM_ADDRESS: grafana@movietickets.local
+      # Grafana's home page is the APM dashboard provisioned below.
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /otel-lgtm/grafana/conf/provisioning/dashboards/movietickets/apm.json
       # 7-day retention on the persistent volume (decision D2); Tempo keeps
       # the image default. `make obs-down` keeps the data — wipe it with
       # `docker compose --profile observability down -v`.
@@ -168,6 +170,12 @@ services:
       - "9090:9090" # Prometheus, handy for debugging queries
     volumes:
       - lgtm_data:/data
+      # Dashboards (folder "MovieTickets") and alerting (rules, contact point,
+      # notification policy) versioned in infra/observability/, read-only.
+      # Mounting the alerting directory hides the image's sample.yaml.
+      - ./infra/observability/grafana/provisioning/dashboards/movietickets.yaml:/otel-lgtm/grafana/conf/provisioning/dashboards/movietickets.yaml:ro
+      - ./infra/observability/grafana/dashboards:/otel-lgtm/grafana/conf/provisioning/dashboards/movietickets:ro
+      - ./infra/observability/grafana/provisioning/alerting:/otel-lgtm/grafana/conf/provisioning/alerting:ro
 
 volumes:
   postgres_data:
