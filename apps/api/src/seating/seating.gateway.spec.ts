@@ -1,15 +1,19 @@
 import { JwtService } from "@nestjs/jwt";
 import { Test } from "@nestjs/testing";
+import { createMockBusinessMetrics } from "../../test/helpers/business-metrics-mock";
+import { BusinessMetrics } from "../telemetry/business-metrics";
 import { SeatingGateway } from "./seating.gateway";
 
 describe("SeatingGateway", () => {
   const mockJwtService = { verifyAsync: jest.fn() };
   const mockServer = { to: jest.fn() };
+  const mockMetrics = createMockBusinessMetrics();
   let gateway: SeatingGateway;
 
   function buildClient(overrides: Record<string, unknown> = {}) {
     return {
       id: "socket-1",
+      connected: true,
       data: {} as Record<string, unknown>,
       handshake: { auth: {}, headers: {} },
       disconnect: jest.fn(),
@@ -24,7 +28,11 @@ describe("SeatingGateway", () => {
     mockServer.to.mockReturnValue({ emit: jest.fn() });
 
     const moduleRef = await Test.createTestingModule({
-      providers: [SeatingGateway, { provide: JwtService, useValue: mockJwtService }],
+      providers: [
+        SeatingGateway,
+        { provide: JwtService, useValue: mockJwtService },
+        { provide: BusinessMetrics, useValue: mockMetrics },
+      ],
     }).compile();
 
     gateway = moduleRef.get(SeatingGateway);
@@ -126,6 +134,65 @@ describe("SeatingGateway", () => {
         status: "held",
         heldByUserId: "user-1",
       });
+    });
+  });
+  describe("metrics", () => {
+    it.each([
+      ["missing_token", buildClient(), undefined],
+      ["invalid_token", buildClient({ handshake: { auth: { token: "bad-token" }, headers: {} } }), new Error("invalid")],
+    ])("should count a refused connection with reason %s without touching the open connections", async (reason, client, error) => {
+      // ARRANGE
+      if (error) mockJwtService.verifyAsync.mockRejectedValue(error);
+
+      // ACT
+      await gateway.handleConnection(client as never);
+      gateway.handleDisconnect(client as never);
+
+      // ASSERT
+      expect(mockMetrics.wsConnectionRejected).toHaveBeenCalledWith(reason);
+      expect(mockMetrics.wsConnectionOpened).not.toHaveBeenCalled();
+      expect(mockMetrics.wsConnectionClosed).not.toHaveBeenCalled();
+    });
+
+    it("should count an accepted connection as opened and its disconnect as closed", async () => {
+      // ARRANGE
+      const client = buildClient({ handshake: { auth: { token: "good-token" }, headers: {} } });
+      mockJwtService.verifyAsync.mockResolvedValue({ sub: "user-1", email: "a@test.com", role: "customer" });
+
+      // ACT
+      await gateway.handleConnection(client as never);
+      gateway.handleDisconnect(client as never);
+
+      // ASSERT
+      expect(mockMetrics.wsConnectionOpened).toHaveBeenCalledTimes(1);
+      expect(mockMetrics.wsConnectionClosed).toHaveBeenCalledTimes(1);
+      expect(mockMetrics.wsConnectionRejected).not.toHaveBeenCalled();
+    });
+
+    it("should not count a client that dropped while its token was being verified", async () => {
+      // ARRANGE
+      const client = buildClient({ connected: false, handshake: { auth: { token: "good-token" }, headers: {} } });
+      mockJwtService.verifyAsync.mockResolvedValue({ sub: "user-1", email: "a@test.com", role: "customer" });
+
+      // ACT
+      await gateway.handleConnection(client as never);
+      gateway.handleDisconnect(client as never);
+
+      // ASSERT
+      expect(client.data.userId).toBeUndefined();
+      expect(mockMetrics.wsConnectionOpened).not.toHaveBeenCalled();
+      expect(mockMetrics.wsConnectionClosed).not.toHaveBeenCalled();
+    });
+
+    it.each(["held", "released", "booked"] as const)("should count a %s broadcast by seat status", (status) => {
+      // ARRANGE
+      mockServer.to.mockReturnValue({ emit: jest.fn() });
+
+      // ACT
+      gateway.broadcastSeatUpdate("session-1", { seatId: "seat-A1", status });
+
+      // ASSERT
+      expect(mockMetrics.seatBroadcast).toHaveBeenCalledWith(status);
     });
   });
 });

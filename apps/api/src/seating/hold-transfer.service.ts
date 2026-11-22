@@ -1,6 +1,7 @@
 import { Inject, Injectable } from "@nestjs/common";
 import type { Redis } from "ioredis";
 import { GUEST_SUBJECT_PREFIX } from "../auth/jwt-payload.type";
+import { BusinessMetrics } from "../telemetry/business-metrics";
 import { VALKEY } from "../valkey/valkey.module";
 import {
   guestConsumedKey,
@@ -98,6 +99,7 @@ export class HoldTransferService {
   constructor(
     @Inject(VALKEY) private readonly valkey: Redis,
     private readonly gateway: SeatingGateway,
+    private readonly metrics: BusinessMetrics,
   ) {}
 
   /**
@@ -154,6 +156,9 @@ export class HoldTransferService {
       userId,
     )) as TransferStatus[];
 
+    const transferredCount = statuses.filter((status) => status === "transferred").length;
+    this.metrics.seatHoldTransferred(transferredCount);
+
     seats.forEach((seat, index) => {
       const status = statuses[index];
       if (status === "expired") {
@@ -195,6 +200,7 @@ export class HoldTransferService {
         userId,
       )) as string[];
 
+      this.metrics.seatHoldReleased("transfer_overflow", releasedKeys.length);
       for (const key of releasedKeys) {
         const seatId = seatIdFromHoldKey(sessionId, key);
         result.releasedSeats.push({ sessionId, seatId, reason: "limit" });

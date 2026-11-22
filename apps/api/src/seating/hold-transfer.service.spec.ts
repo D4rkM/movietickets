@@ -7,6 +7,10 @@ import {
   TRANSFER_GUEST_HOLDS_SCRIPT,
 } from "./hold-transfer.service";
 import { SeatingGateway } from "./seating.gateway";
+import { createMockBusinessMetrics } from "../../test/helpers/business-metrics-mock";
+import { BusinessMetrics } from "../telemetry/business-metrics";
+
+const mockMetrics = createMockBusinessMetrics();
 
 describe("selectOldestHoldsToRelease", () => {
   const holds = [
@@ -86,6 +90,7 @@ describe("HoldTransferService", () => {
         HoldTransferService,
         { provide: VALKEY, useValue: mockValkey },
         { provide: SeatingGateway, useValue: mockGateway },
+        { provide: BusinessMetrics, useValue: mockMetrics },
       ],
     }).compile();
 
@@ -302,5 +307,47 @@ describe("HoldTransferService", () => {
     // ASSERT
     expect(mockValkey.eval).toHaveBeenCalledTimes(1);
     expect(result?.releasedSeats).toEqual([]);
+  });
+  it("should count only holds that changed owner as transferred", async () => {
+    // ARRANGE
+    mockValkey.smembers.mockResolvedValue(["s1:a1", "s1:a2", "s1:a3"]);
+    mockValkey.eval.mockResolvedValueOnce(["transferred", "expired", "owned"]);
+
+    // ACT
+    await service.transferGuestHolds("g1", "user-1", tokenExp);
+
+    // ASSERT
+    expect(mockMetrics.seatHoldTransferred).toHaveBeenCalledWith(1);
+    expect(mockMetrics.seatHoldReleased).not.toHaveBeenCalled();
+  });
+
+  it("should count the user's holds released to fit the limit as transfer_overflow", async () => {
+    // ARRANGE: 6 guest seats kept + 1 pre-existing user hold in s1
+    mockValkey.smembers.mockResolvedValue(["s1:g1", "s1:g2", "s1:g3", "s1:g4", "s1:g5", "s1:g6"]);
+    mockValkey.eval
+      .mockResolvedValueOnce(Array.from({ length: 6 }, () => "transferred"))
+      .mockResolvedValueOnce(["seat-hold:s1:u-old"]);
+    mockValkey.scan.mockResolvedValue(["0", ["seat-hold:s1:u-old"]]);
+    mockValkey.mget.mockResolvedValue(["user-1"]);
+    mockPipeline.exec.mockResolvedValue([[null, 100_000]]);
+
+    // ACT
+    await service.transferGuestHolds("g1", "user-1", tokenExp);
+
+    // ASSERT
+    expect(mockMetrics.seatHoldTransferred).toHaveBeenCalledWith(6);
+    expect(mockMetrics.seatHoldReleased).toHaveBeenCalledWith("transfer_overflow", 1);
+  });
+
+  it("should not count anything when the guest token was already consumed", async () => {
+    // ARRANGE
+    mockValkey.set.mockResolvedValue(null);
+
+    // ACT
+    await service.transferGuestHolds("g1", "user-1", tokenExp);
+
+    // ASSERT
+    expect(mockMetrics.seatHoldTransferred).not.toHaveBeenCalled();
+    expect(mockMetrics.seatHoldReleased).not.toHaveBeenCalled();
   });
 });
