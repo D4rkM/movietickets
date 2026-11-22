@@ -3,6 +3,7 @@ import { ConfigModule } from "@nestjs/config";
 import { JwtService } from "@nestjs/jwt";
 import { NestFastifyApplication } from "@nestjs/platform-fastify";
 import { Test } from "@nestjs/testing";
+import type { MeterProvider } from "@opentelemetry/api";
 import { drizzle, PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import type { Redis } from "ioredis";
 import postgres from "postgres";
@@ -13,6 +14,7 @@ import * as schema from "../../src/db/schema";
 import { PAYMENT_CLIENT, REFUND_CLIENT } from "../../src/mercadopago/mercadopago.providers";
 import { PaymentModule } from "../../src/payment/payment.module";
 import { SeatingModule } from "../../src/seating/seating.module";
+import { METER_PROVIDER } from "../../src/telemetry/business-metrics";
 import { VALKEY, ValkeyModule } from "../../src/valkey/valkey.module";
 import { buildFastifyApp } from "./build-app";
 
@@ -33,11 +35,15 @@ export interface GuestFlowApp {
  * connect. Mercado Pago clients are stubbed: no test here ever reaches them.
  */
 export async function startGuestFlowApp(
-  options: { extraImports?: NonNullable<ModuleMetadata["imports"]> } = {},
+  options: {
+    extraImports?: NonNullable<ModuleMetadata["imports"]>;
+    /** Records BusinessMetrics into this provider (in-memory telemetry tests) instead of the global no-op one. */
+    meterProvider?: MeterProvider;
+  } = {},
 ): Promise<GuestFlowApp> {
   process.env.JWT_SECRET ??= "test-secret";
 
-  const moduleRef = await Test.createTestingModule({
+  const builder = Test.createTestingModule({
     imports: [
       ConfigModule.forRoot({ isGlobal: true }),
       DrizzleModule,
@@ -52,8 +58,11 @@ export async function startGuestFlowApp(
     .overrideProvider(PAYMENT_CLIENT)
     .useValue({ create: jest.fn(), get: jest.fn() })
     .overrideProvider(REFUND_CLIENT)
-    .useValue({ total: jest.fn() })
-    .compile();
+    .useValue({ total: jest.fn() });
+  if (options.meterProvider) {
+    builder.overrideProvider(METER_PROVIDER).useValue(options.meterProvider);
+  }
+  const moduleRef = await builder.compile();
 
   const sqlClient = postgres(process.env.DATABASE_URL!);
   const db = drizzle(sqlClient, { schema });
