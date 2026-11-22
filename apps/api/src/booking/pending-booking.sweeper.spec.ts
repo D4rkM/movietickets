@@ -1,8 +1,15 @@
 import { Logger } from "@nestjs/common";
+import { context, trace } from "@opentelemetry/api";
+import { AsyncLocalStorageContextManager } from "@opentelemetry/context-async-hooks";
+import { InMemorySpanExporter, SimpleSpanProcessor, TracerProvider } from "@opentelemetry/sdk-trace";
 import { Test } from "@nestjs/testing";
 import { DRIZZLE } from "../db/drizzle.module";
 import { SeatingGateway } from "../seating/seating.gateway";
 import { PendingBookingSweeper, SWEEP_BATCH_SIZE } from "./pending-booking.sweeper";
+import { createMockBusinessMetrics } from "../../test/helpers/business-metrics-mock";
+import { BusinessMetrics } from "../telemetry/business-metrics";
+
+const mockMetrics = createMockBusinessMetrics();
 
 describe("PendingBookingSweeper", () => {
   const tx = { select: jest.fn(), update: jest.fn(), delete: jest.fn() };
@@ -40,6 +47,7 @@ describe("PendingBookingSweeper", () => {
         PendingBookingSweeper,
         { provide: DRIZZLE, useValue: mockDb },
         { provide: SeatingGateway, useValue: mockGateway },
+        { provide: BusinessMetrics, useValue: mockMetrics },
       ],
     }).compile();
     sweeper = moduleRef.get(PendingBookingSweeper);
@@ -173,5 +181,102 @@ describe("PendingBookingSweeper", () => {
     expect(failed).toBeUndefined();
     expect(error).toHaveBeenCalledWith(expect.stringContaining("connection lost"));
     expect(next).toEqual({ expiredBookingIds: [], stalePaymentAlertBookingIds: [] });
+  });
+  describe("telemetry", () => {
+    let exporter: InMemorySpanExporter;
+    let provider: TracerProvider;
+
+    beforeEach(() => {
+      context.setGlobalContextManager(new AsyncLocalStorageContextManager().enable());
+      exporter = new InMemorySpanExporter();
+      provider = new TracerProvider({ spanProcessors: [new SimpleSpanProcessor({ exporter })] });
+      trace.setGlobalTracerProvider(provider);
+    });
+
+    afterEach(async () => {
+      await provider.shutdown();
+      trace.disable();
+      context.disable();
+    });
+
+    function sweeperSpans() {
+      return exporter.getFinishedSpans().filter((span) => span.name === "pending-booking-sweeper.run");
+    }
+
+    it("should record a successful run with the expired bookings and stale payment alerts", async () => {
+      // ARRANGE
+      expiredBatches = [
+        [
+          { id: "b1", sessionId: "session-1" },
+          { id: "b2", sessionId: "session-1" },
+        ],
+      ];
+      staleRows = [{ id: "b7", paymentStatus: "in_process" }];
+      jest.spyOn(Logger.prototype, "warn").mockImplementation(() => undefined);
+
+      // ACT
+      await sweeper.run();
+
+      // ASSERT
+      expect(mockMetrics.sweeperRun).toHaveBeenCalledWith("success", expect.any(Number));
+      expect(mockMetrics.bookingExpired).toHaveBeenCalledWith("sweeper", 2);
+      expect(mockMetrics.paymentStaleAlert).toHaveBeenCalledWith(1);
+      const [span] = sweeperSpans();
+      expect(span.parentSpanContext).toBeUndefined();
+      expect(span.attributes).toEqual({ "sweeper.outcome": "success", "sweeper.expired_count": 2 });
+    });
+
+    it("should record a skipped run when the previous tick is still running", async () => {
+      // ARRANGE
+      let finishFirstRun!: () => void;
+      mockDb.transaction.mockImplementationOnce(
+        () => new Promise((resolve) => (finishFirstRun = () => resolve({ bookings: [], seats: [] }))),
+      );
+      jest.spyOn(Logger.prototype, "debug").mockImplementation(() => undefined);
+      const firstRun = sweeper.run();
+
+      // ACT
+      await sweeper.run();
+
+      // ASSERT
+      expect(mockMetrics.sweeperRun).toHaveBeenCalledWith("skipped", expect.any(Number));
+      finishFirstRun();
+      await firstRun;
+      expect(mockMetrics.sweeperRun).toHaveBeenLastCalledWith("success", expect.any(Number));
+      expect(sweeperSpans().map((span) => span.attributes["sweeper.outcome"])).toEqual(["skipped", "success"]);
+    });
+
+    it("should record an error run without counting expirations that rolled back", async () => {
+      // ARRANGE
+      mockDb.transaction.mockRejectedValueOnce(new Error("connection lost"));
+      jest.spyOn(Logger.prototype, "error").mockImplementation(() => undefined);
+
+      // ACT
+      await sweeper.run();
+
+      // ASSERT
+      expect(mockMetrics.sweeperRun).toHaveBeenCalledWith("error", expect.any(Number));
+      expect(mockMetrics.bookingExpired).not.toHaveBeenCalled();
+      expect(mockMetrics.paymentStaleAlert).not.toHaveBeenCalled();
+      expect(sweeperSpans()[0].attributes).toEqual({ "sweeper.outcome": "error", "sweeper.expired_count": 0 });
+    });
+
+    it("should keep counting a committed batch when a later batch fails", async () => {
+      // ARRANGE
+      const fullBatch = Array.from({ length: SWEEP_BATCH_SIZE }, (_, i) => ({ id: `b${i}`, sessionId: "session-1" }));
+      expiredBatches = [fullBatch];
+      mockDb.transaction
+        .mockImplementationOnce(async (callback: (t: typeof tx) => unknown) => callback(tx))
+        .mockRejectedValueOnce(new Error("connection lost"));
+      jest.spyOn(Logger.prototype, "error").mockImplementation(() => undefined);
+
+      // ACT
+      await sweeper.run();
+
+      // ASSERT
+      expect(mockMetrics.bookingExpired).toHaveBeenCalledWith("sweeper", SWEEP_BATCH_SIZE);
+      expect(mockMetrics.sweeperRun).toHaveBeenCalledWith("error", expect.any(Number));
+      expect(sweeperSpans()[0].attributes["sweeper.expired_count"]).toBe(SWEEP_BATCH_SIZE);
+    });
   });
 });

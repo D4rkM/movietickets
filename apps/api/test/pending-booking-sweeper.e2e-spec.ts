@@ -1,6 +1,7 @@
 import { PendingBookingSweeper } from "../src/booking/pending-booking.sweeper";
 import { DRIZZLE } from "../src/db/drizzle.module";
 import { SeatingGateway } from "../src/seating/seating.gateway";
+import { BusinessMetrics } from "../src/telemetry/business-metrics";
 import { CinemaFixture, createCinemaFixture, createUserWithPassword, deleteUsers, TestUser } from "./helpers/cinema-fixture";
 import { SeatingWatcher, watchSessionAs } from "./helpers/guest-flow";
 import { GuestFlowApp, startGuestFlowApp } from "./helpers/guest-flow-app";
@@ -52,7 +53,7 @@ describe("Sweeper de reservas pendentes (e2e)", () => {
 
   /** A second sweeper over the same DB and gateway, simulating another API instance. */
   function anotherInstance(): PendingBookingSweeper {
-    return new PendingBookingSweeper(ctx.app.get(DRIZZLE), ctx.app.get(SeatingGateway));
+    return new PendingBookingSweeper(ctx.app.get(DRIZZLE), ctx.app.get(SeatingGateway), ctx.app.get(BusinessMetrics));
   }
 
   async function booking(seatIds: string[], status = "pending"): Promise<string> {

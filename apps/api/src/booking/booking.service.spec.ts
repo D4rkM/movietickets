@@ -9,6 +9,10 @@ import { SeatingService } from "../seating/seating.service";
 import { BookingAlreadyPendingException, BookingExpiredException } from "./booking-expired.exception";
 import { BookingService } from "./booking.service";
 import { TicketType } from "./dto/book-seat.dto";
+import { createMockBusinessMetrics } from "../../test/helpers/business-metrics-mock";
+import { BusinessMetrics } from "../telemetry/business-metrics";
+
+const mockMetrics = createMockBusinessMetrics();
 
 describe("BookingService", () => {
   const mockDb = {
@@ -91,6 +95,7 @@ describe("BookingService", () => {
         { provide: SeatingGateway, useValue: mockGateway },
         { provide: SeatingService, useValue: mockSeatingService },
         { provide: NotificationService, useValue: mockNotificationService },
+        { provide: BusinessMetrics, useValue: mockMetrics },
       ],
     }).compile();
 
@@ -903,6 +908,202 @@ describe("BookingService", () => {
       // ASSERT
       expect(warn).not.toHaveBeenCalled();
       warn.mockRestore();
+    });
+  });
+  describe("metrics", () => {
+    const emailBooking = {
+      id: "booking-1",
+      user: { email: "user@example.com" },
+      session: {
+        startsAt: new Date("2026-11-01T22:00:00Z"),
+        movie: { title: "Dune" },
+        room: { name: "Sala 1", cinema: { name: "Cine Centro" } },
+      },
+      seats: [{ priceCents: 2500, seat: { rowLabel: "A", seatNumber: 1 } }],
+    };
+
+    function stubConfirmedUpdate() {
+      stubUpdates([{ id: "booking-1", status: "confirmed", sessionId: "session-1" }]);
+    }
+
+    it("should count the created booking with its seat count after the transaction", async () => {
+      // ARRANGE
+      mockDb.query.sessions.findFirst.mockResolvedValue({ id: "session-1", priceCents: 2000 });
+      stubBookingInserts(2);
+
+      // ACT
+      await service.createBookingForSeats(
+        "session-1",
+        [
+          { seatId: "seat-1", ticketType: TicketType.FULL },
+          { seatId: "seat-2", ticketType: TicketType.FULL },
+        ],
+        "user-1",
+      );
+
+      // ASSERT
+      expect(mockMetrics.bookingCreated).toHaveBeenCalledWith(2);
+      expect(mockMetrics.bookingExpired).toHaveBeenCalledWith("lazy", 0);
+    });
+
+    it("should count each conflicting booking expired lazily on creation", async () => {
+      // ARRANGE
+      mockDb.query.sessions.findFirst.mockResolvedValue({ id: "session-1", priceCents: 2000 });
+      stubUpdates([{ id: "old-booking" }]);
+      stubDelete([{ bookingId: "old-booking", seatId: "seat-1" }]);
+      stubBookingInserts(1);
+
+      // ACT
+      await service.createBookingForSeats("session-1", [{ seatId: "seat-1", ticketType: TicketType.FULL }], "user-1");
+
+      // ASSERT
+      expect(mockMetrics.bookingExpired).toHaveBeenCalledWith("lazy", 1);
+    });
+
+    it("should not count anything when the booking transaction rolls back", async () => {
+      // ARRANGE
+      mockDb.query.sessions.findFirst.mockResolvedValue({ id: "session-1", priceCents: 2000 });
+      mockDb.transaction.mockRejectedValue(Object.assign(new Error("duplicate key"), { code: "23505" }));
+
+      // ACT
+      const result = service.createBookingForSeats("session-1", [{ seatId: "seat-1", ticketType: TicketType.FULL }], "user-1");
+
+      // ASSERT
+      await expect(result).rejects.toThrow(ConflictException);
+      expect(mockMetrics.bookingCreated).not.toHaveBeenCalled();
+      expect(mockMetrics.bookingExpired).not.toHaveBeenCalled();
+    });
+
+    it("should count a mock confirmation and the confirmation email sent", async () => {
+      // ARRANGE
+      mockDb.query.bookings.findFirst
+        .mockResolvedValueOnce({ id: "booking-1", userId: "user-1", status: "pending", pastDeadline: false })
+        .mockResolvedValueOnce(emailBooking);
+      stubConfirmedUpdate();
+
+      // ACT
+      await service.confirmBooking("booking-1", "user-1");
+
+      // ASSERT
+      expect(mockMetrics.bookingConfirmed).toHaveBeenCalledWith("mock");
+      expect(mockMetrics.confirmationEmail).toHaveBeenCalledWith("sent");
+    });
+
+    it("should count a failed confirmation email", async () => {
+      // ARRANGE
+      mockDb.query.bookings.findFirst
+        .mockResolvedValueOnce({ id: "booking-1", userId: "user-1", status: "pending", pastDeadline: false })
+        .mockResolvedValueOnce(emailBooking);
+      stubConfirmedUpdate();
+      mockNotificationService.sendBookingConfirmationEmail.mockRejectedValue(new Error("SMTP down"));
+      jest.spyOn(Logger.prototype, "warn").mockImplementation(() => undefined);
+
+      // ACT
+      await service.confirmBooking("booking-1", "user-1");
+
+      // ASSERT
+      expect(mockMetrics.confirmationEmail).toHaveBeenCalledWith("failed");
+      expect(mockMetrics.confirmationEmail).not.toHaveBeenCalledWith("sent");
+    });
+
+    it("should not count a mock confirmation that lost the race with expiry", async () => {
+      // ARRANGE
+      mockDb.query.bookings.findFirst
+        .mockResolvedValueOnce({ id: "booking-1", userId: "user-1", status: "pending", pastDeadline: false })
+        .mockResolvedValueOnce({ id: "booking-1", userId: "user-1", status: "pending", pastDeadline: true });
+      stubUpdates([]);
+
+      // ACT
+      const result = service.confirmBooking("booking-1", "user-1");
+
+      // ASSERT
+      await expect(result).rejects.toThrow(BookingExpiredException);
+      expect(mockMetrics.bookingConfirmed).not.toHaveBeenCalled();
+    });
+
+    it.each(["payment_sync", "payment_webhook"] as const)(
+      "should count a paid confirmation from %s only when notify runs after the commit",
+      async (source) => {
+        // ARRANGE
+        const where = jest.fn().mockReturnValue({
+          returning: jest.fn().mockResolvedValue([{ id: "booking-1", status: "confirmed", sessionId: "session-1" }]),
+        });
+        const tx = { update: jest.fn().mockReturnValue({ set: jest.fn().mockReturnValue({ where }) }) };
+
+        // ACT
+        const confirmation = await service.confirmPaidBooking("booking-1", undefined, tx as never, source);
+        const countedBeforeCommit = mockMetrics.bookingConfirmed.mock.calls.length;
+        await confirmation.notify();
+
+        // ASSERT
+        expect(countedBeforeCommit).toBe(0);
+        expect(mockMetrics.bookingConfirmed).toHaveBeenCalledWith(source);
+      },
+    );
+
+    it("should count a paid confirmation right away when there is no caller transaction", async () => {
+      // ARRANGE
+      stubConfirmedUpdate();
+
+      // ACT
+      await service.confirmPaidBooking("booking-1");
+
+      // ASSERT
+      expect(mockMetrics.bookingConfirmed).toHaveBeenCalledWith("payment_webhook");
+    });
+
+    it("should count the refund review flag only after the commit, and only the first time", async () => {
+      // ARRANGE
+      const tx = { update: jest.fn() };
+      tx.update
+        .mockReturnValueOnce(mockDb.update())
+        .mockReturnValueOnce({
+          set: jest.fn().mockReturnValue({
+            where: jest.fn().mockReturnValue({ returning: jest.fn().mockResolvedValue([{ id: "booking-1" }]) }),
+          }),
+        });
+      jest.spyOn(Logger.prototype, "warn").mockImplementation(() => undefined);
+
+      // ACT
+      const flagged = await service.confirmPaidBooking("booking-1", undefined, tx as never, "payment_webhook");
+      const countedBeforeCommit = mockMetrics.bookingRefundReviewFlagged.mock.calls.length;
+      await flagged.notify();
+      stubUpdates([], []);
+      const alreadyFlagged = await service.confirmPaidBooking("booking-1");
+      await alreadyFlagged.notify();
+
+      // ASSERT
+      expect(countedBeforeCommit).toBe(0);
+      expect(mockMetrics.bookingRefundReviewFlagged).toHaveBeenCalledTimes(1);
+      expect(mockMetrics.bookingConfirmed).not.toHaveBeenCalled();
+    });
+
+    it("should count a cancellation only when its post-commit notify runs", async () => {
+      // ARRANGE
+      const tx = createFakeDb();
+      tx.queue([{ seatId: "seat-1", rowLabel: "A", seatNumber: 1 }], [{ sessionId: "session-1" }], [{ seatId: "seat-1" }]);
+
+      // ACT
+      const result = await service.cancelConfirmedBooking(tx as never, "booking-1");
+      const countedBeforeCommit = mockMetrics.bookingCancelled.mock.calls.length;
+      await result.notify();
+
+      // ASSERT
+      expect(countedBeforeCommit).toBe(0);
+      expect(mockMetrics.bookingCancelled).toHaveBeenCalledTimes(1);
+    });
+
+    it("should not count a cancellation when the booking was no longer confirmed", async () => {
+      // ARRANGE
+      const tx = createFakeDb();
+      tx.queue([{ seatId: "seat-1", rowLabel: "A", seatNumber: 1 }], []);
+
+      // ACT
+      const result = await service.cancelConfirmedBooking(tx as never, "booking-1");
+      await result.notify();
+
+      // ASSERT
+      expect(mockMetrics.bookingCancelled).not.toHaveBeenCalled();
     });
   });
 });
