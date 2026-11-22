@@ -112,6 +112,14 @@ function params(name, token, ...statuses) {
   return { headers, tags: { name }, responseCallback: expected(...statuses) };
 }
 
+// Requests without a body must not declare Content-Type: application/json,
+// otherwise Fastify rejects them with 400 (empty JSON body).
+function paramsNoBody(name, token, ...statuses) {
+  const p = params(name, token, ...statuses);
+  delete p.headers["Content-Type"];
+  return p;
+}
+
 function login(email, password) {
   const res = http.post(
     `${BASE_URL}/auth/login`,
@@ -168,7 +176,7 @@ function holdSeat(sessionId, seatId, token) {
   return http.post(
     `${BASE_URL}/sessions/${sessionId}/seats/${seatId}/hold`,
     null,
-    params("POST /sessions/:id/seats/:seatId/hold", token, 200, 409),
+    paramsNoBody("POST /sessions/:id/seats/:seatId/hold", token, 200, 409),
   );
 }
 
@@ -176,7 +184,7 @@ function releaseSeat(sessionId, seatId, token) {
   return http.del(
     `${BASE_URL}/sessions/${sessionId}/seats/${seatId}/hold`,
     null,
-    params("DELETE /sessions/:id/seats/:seatId/hold", token, 200),
+    paramsNoBody("DELETE /sessions/:id/seats/:seatId/hold", token, 200),
   );
 }
 
@@ -290,7 +298,7 @@ export function bookingCancel(data) {
     const confirm = http.post(
       `${BASE_URL}/bookings/${bookingId}/confirm`,
       null,
-      params("POST /bookings/:id/confirm", token, 200, 404),
+      paramsNoBody("POST /bookings/:id/confirm", token, 200, 404),
     );
     if (confirm.status === 404) {
       console.warn("POST /bookings/:id/confirm returned 404 (route not enabled): skipping booking_cancel.");
@@ -301,7 +309,7 @@ export function bookingCancel(data) {
     const cancel = http.post(
       `${BASE_URL}/bookings/${bookingId}/cancel`,
       null,
-      params("POST /bookings/:id/cancel", token, 200),
+      paramsNoBody("POST /bookings/:id/cancel", token, 200),
     );
     ok = confirm.status === 200 && cancel.status === 200;
   }
@@ -327,7 +335,7 @@ export function teardown(data) {
       http.del(
         `${BASE_URL}/sessions/${data.sessionId}/holds`,
         null,
-        params("DELETE /sessions/:id/holds", token, 200),
+        paramsNoBody("DELETE /sessions/:id/holds", token, 200),
       );
     }
   }
