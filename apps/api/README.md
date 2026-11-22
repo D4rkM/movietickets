@@ -2,11 +2,11 @@
 
 Back-end do movietickets — NestJS + Fastify.
 
-REST + WebSocket Gateway. Módulos: Catalog, Seating, Booking, Payment, Refund, Auth, Admin, Notification (+ MercadoPagoModule com os clientes do SDK, compartilhado por Payment e Refund). CQRS light (sem event store) — ver `docs/planning.md`. Job periódico (`@nestjs/schedule`) expira reservas pendentes vencidas.
+REST + WebSocket Gateway. Módulos: Catalog, Seating, Booking, Payment, Refund, Auth, Admin, Notification (+ MercadoPagoModule com os clientes do SDK, compartilhado por Payment e Refund). CQRS light (sem event store) — ver `docs/planning.md`. Job periódico (`@nestjs/schedule`, `PendingBookingSweeper`, a cada 60s) expira reservas pendentes vencidas e alerta pagamento parado há mais de 24h (`docs/flows/pending-booking-expiry/sequence.md`). Telemetria em `src/telemetry/` + `src/instrumentation.ts` (OpenTelemetry, desligada por padrão).
 
 **Banco/ORM:** PostgreSQL via [Drizzle ORM](https://orm.drizzle.team/) (`postgres` driver). Schema em `src/db/schema.ts`, migrations geradas em `drizzle/`.
 
-**Logs:** `nestjs-pino` — JSON estruturado (pretty-print só fora de produção), com log de request/response automático via `pino-http`. Nível configurável por `LOG_LEVEL` (`.env.example`); `Authorization` e `body.password` ficam de fora do log por redact.
+**Logs:** `nestjs-pino` — JSON estruturado (pretty-print só fora de produção), com log de request/response automático via `pino-http`. Nível configurável por `LOG_LEVEL` (`.env.example`); `Authorization`, cookies, senha, tokens e dados do pagador ficam de fora do log por redact (`src/telemetry/log-redaction.ts`). Com a telemetria ligada, todo log sai com `trace_id`/`span_id` e também é enviado ao Loki.
 
 **Build:** SWC (`nest-cli.json`), bem mais rápido que o `tsc` puro — o typecheck continua rodando em paralelo (`typeCheck: true`) e também dá pra rodar isolado com `pnpm --filter api typecheck`.
 
@@ -22,11 +22,11 @@ REST + WebSocket Gateway. Módulos: Catalog, Seating, Booking, Payment, Refund, 
 | `GET /sessions/:id/seats`, `POST`/`DELETE /sessions/:id/seats/:seatId/hold`, `DELETE /sessions/:id/holds` | usuário ou convidado (`UserOrGuestAuthGuard`) | Seating |
 | `POST /sessions/:id/book` (vários assentos, atômico), `POST /sessions/:id/seats/:seatId/book` (um assento) | usuário | Booking |
 | `GET /bookings/mine` (confirmadas + canceladas/expiradas com estorno), `POST /bookings/:id/confirm` (confirmação mockada, sem gateway — só pra teste manual/e2e) | usuário | Booking |
-| `POST /bookings/:id/cancel` (cancela e estorna o pagamento aprovado no Mercado Pago, até 2h antes da sessão) | usuário | Refund |
+| `POST /bookings/:id/cancel` (cancela e estorna o pagamento aprovado no Mercado Pago, até 2h antes da sessão; reserva `confirmed` sem pagamento aprovado cancela direto) | usuário | Refund |
 | `GET /bookings/:id/payment-summary`, `POST /bookings/:id/payments` (Checkout Transparente) | usuário | Payment |
 | `POST /payments/webhook` | pública (chamada pelo Mercado Pago) | Payment |
 | `/admin/movies`, `/admin/cinemas`, `/admin/rooms`, `/admin/sessions` (CRUD) | usuário com `role: "admin"` | Admin |
-| `GET /admin/refunds/review` (fila de revisão de estorno), `POST /admin/bookings/:id/refund` | usuário com `role: "admin"` | Admin + Refund |
+| `GET /admin/refunds/review` (fila de revisão: reservas com `needs_refund_review` e estornos `requested` parados), `POST /admin/bookings/:id/refund` (estorna a reserva da fila) | usuário com `role: "admin"` | Admin + Refund |
 | WebSocket namespace `/seating` (`join`/`leave`, evento `seat:update`) | usuário ou convidado (token no handshake) | Seating |
 
 "Usuário" = `JwtAuthGuard`, que recusa token de convidado com 401. Regras de negócio de cada feature em `docs/flows/<feature>/spec.md`; collection pra testar à mão em `docs/bruno/`.
@@ -43,6 +43,16 @@ Ver `.env.example`. Principais:
 - `PUBLIC_API_URL` — base do `notification_url` do webhook mandado ao Mercado Pago (URL pública/ngrok pra receber webhook localmente, ver README raiz).
 - `SMTP_HOST`, `SMTP_PORT`, `MAIL_FROM` — e-mail de confirmação de compra (Mailpit em dev, porta 1025).
 - `LOG_LEVEL`.
+- `OTEL_*` (OpenTelemetry, opcionais) — a telemetria só liga quando `OTEL_EXPORTER_OTLP_ENDPOINT` está preenchida (ex.: `http://localhost:4318` com `make obs-up`) e `OTEL_SDK_DISABLED` não é `true`; vazia, nada do SDK é carregado.
+
+  | Variável | Padrão | Efeito |
+  |---|---|---|
+  | `OTEL_EXPORTER_OTLP_ENDPOINT` | vazia (desligado) | Destino OTLP/HTTP (protobuf). Também valem os endpoints por sinal (`OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`, `_METRICS_`, `_LOGS_`) |
+  | `OTEL_SERVICE_NAME` | `movietickets-api` | `service.name` |
+  | `OTEL_RESOURCE_ATTRIBUTES` | `deployment.environment.name=local` (no `.env.example`) | Atributos do recurso (ex.: `service.version`) |
+  | `OTEL_TRACES_SAMPLER` / `OTEL_TRACES_SAMPLER_ARG` | `parentbased_traceidratio` / `1.0` | Amostragem (100% em dev) |
+  | `OTEL_METRIC_EXPORT_INTERVAL` | `15000` | Intervalo de export de métricas, em ms |
+  | `OTEL_SDK_DISABLED` | — | `true` força desligado mesmo com endpoint |
 
 ## Rodar
 
@@ -93,6 +103,14 @@ UPDATE users SET role = 'admin' WHERE email = '<email>';
 
 O papel vai dentro do JWT, então a pessoa precisa **logar de novo** pra receber um token com `role: "admin"`. Pelo mesmo motivo, quem é rebaixado continua com acesso admin até o token expirar (`JWT_EXPIRES_IN`, padrão `1h`).
 
+## Observabilidade
+
+Traces, métricas e logs via OpenTelemetry pro `grafana/otel-lgtm` (perfil `observability` do docker compose). `make obs-up` na raiz sobe o Grafana em `http://localhost:3001` (`admin`/`admin`); com `OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318` no `.env`, `pnpm dev:api` passa a exportar. Os scripts `start:dev` e `start:prod` já carregam `dist/instrumentation.js` com `--require` antes da aplicação. Passo a passo no README da raiz (seção "Observabilidade") e fluxo em `docs/flows/observability/sequence.md`.
+
+## Estorno
+
+`POST /bookings/:id/cancel` cancela a reserva `confirmed` até 2h antes da sessão e estorna o valor integral pela Refunds API do Mercado Pago (chave de idempotência = `refunds.id`). Se o estorno falha, a reserva continua `confirmed`. Pagamento aprovado que chega numa reserva já `expired` vai pra fila do admin (`GET /admin/refunds/review`) e é estornado em `POST /admin/bookings/:id/refund`. O webhook (`POST /payments/webhook`) conclui estornos que ficaram em andamento. Regras na spec `docs/flows/refund/spec.md` e fluxos em `docs/flows/refund/sequence.md`.
+
 ## Testes
 
 Jest — unitários por service (mockando o banco) e integração batendo em Postgres real.
@@ -102,7 +120,7 @@ pnpm --filter api test               # unitários (com coverage, mínimo 75% —
 pnpm --filter api test:integration   # integração (roda migrations + testa contra Postgres real)
 ```
 
-`test:integration` aplica as migrations e roda contra o Postgres de `DATABASE_URL` e o Valkey de `VALKEY_URL` (os testes usam `JWT_SECRET=test-secret` se não houver um definido, e mockam o cliente do Mercado Pago). Os specs ficam em `test/*.e2e-spec.ts`; os de regra de negócio citam o AC da spec no título do `it`.
+`test:integration` aplica as migrations e roda contra o Postgres de `DATABASE_URL` e o Valkey de `VALKEY_URL` (os testes usam `JWT_SECRET=test-secret` se não houver um definido, e mockam o cliente do Mercado Pago). Os specs ficam em `test/*.e2e-spec.ts`; os de regra de negócio citam o AC da spec no título do `it`. `test/observability-smoke.e2e-spec.ts` sobe a API **compilada** como processo filho, então rode `pnpm --filter api build` antes.
 
 ## Migrations
 

@@ -14,7 +14,7 @@ Projeto novo (sem código existente). Objetivo: clone simplificado do ingresso.c
 - **Comunicação front↔back:** REST no início. Revisar pra GraphQL (ou outro) só se aparecer necessidade concreta (ex.: over-fetching no mapa de assentos, múltiplos consumidores com necessidades diferentes) — não trocar de forma especulativa.
 - **Real-time (recomendado):** WebSocket via Nest Gateway (Socket.io) — broadcast de mudanças no mapa de assentos (held/released/booked) pra todos usuários vendo a mesma sessão. Sem isso, mapa de assento fica "stale" e usuário tenta escolher assento já pego — prejudica exatamente a feature que precisa funcionar bem.
 - **E-mail:** notificação de confirmação de compra, via `nodemailer` (SMTP). Dev local usa [Mailpit](https://github.com/axllent/mailpit) (serviço `mailpit` do `docker-compose.yml`, sobe junto com `make up`) — SMTP fake na porta 1025 + UI web em `http://localhost:8025`, e-mail nunca sai da rede local. Provedor real de produção (SES, SendGrid etc.) fica em aberto, decide quando o projeto for pra produção de verdade.
-- **Observabilidade:** OpenTelemetry na API (traces, métricas e logs correlacionados) exportando pro `grafana/otel-lgtm` (Collector + Prometheus + Tempo + Loki + Grafana) num perfil opcional do docker compose, com dashboards e alertas versionados — **em spec (milestone Prova)**, `docs/flows/observability/spec.md`
+- **Observabilidade:** OpenTelemetry na API (traces, métricas e logs correlacionados) exportando pro `grafana/otel-lgtm` (Collector + Prometheus + Tempo + Loki + Grafana) num perfil opcional do docker compose, com dashboards e alertas versionados. **Implementado (milestone Prova)**, PR #86, `docs/flows/observability/spec.md`: SDK ligado só com `OTEL_EXPORTER_OTLP_ENDPOINT`, instrumentações explícitas (http, fastify, Nest, undici, ioredis, socket.io, pino, runtime), patch de tracing do Drizzle, remoção de IP/user agent e parâmetros SQL dos spans, redact de logs e container `lgtm` no perfil `observability`. Métricas de negócio (`movietickets.*`), dashboards e alertas provisionados ainda não entraram; por enquanto só o Explore do Grafana. Sequência: `docs/flows/observability/sequence.md`
 - **Testes e2e (front):** [Playwright](https://playwright.dev/) (`apps/web/e2e/`, `pnpm --filter web test:e2e`) — sobe o browser de verdade batendo num backend real (Postgres + Valkey, mesmo setup usado pelos testes de integração do back), validando fluxo completo (não só componente isolado). Complementa os `*.e2e-spec.ts` do back (`apps/api/test/`, real Postgres/Valkey/WebSocket) e o Vitest + RTL do front (unitário/componente). Casos que só fazem sentido com browser real: duas abas vendo o mapa de assento atualizar via WebSocket, hold expirando de verdade, concorrência de clique em assento.
 
 ## Localização e escopo desta primeira execução
@@ -42,7 +42,7 @@ movietickets/                    (raiz do monorepo)
 │   │   ├── e2e/                 (Playwright)
 │   │   └── README.md            (papel do front, como rodar/testar)
 │   └── api/                     (NestJS)
-│       ├── src/                 (um módulo Nest por pasta: admin, auth, booking, catalog, notification, payment, seating + db, valkey)
+│       ├── src/                 (um módulo Nest por pasta: admin, auth, booking, catalog, notification, payment, refund, seating, mercadopago + db, valkey, telemetry; instrumentation.ts é o bootstrap do OpenTelemetry)
 │       ├── drizzle/             (migrations SQL geradas pelo drizzle-kit)
 │       ├── test/                (testes de integração/e2e, *.e2e-spec.ts)
 │       └── README.md            (papel do back, como rodar/testar)
@@ -57,7 +57,7 @@ movietickets/                    (raiz do monorepo)
 │   │   ├── use-cases.drawio     (diagrama UML de casos de uso, referenciado por use-cases.md)
 │   │   └── use-cases.md         (tabela de casos de uso com specs/ACs + aproximação Mermaid)
 │   ├── bruno/                   (collection do Bruno pra testar a API manualmente)
-│   └── flows/                   (por feature: spec.md + sequence.md quando houver)
+│   └── flows/                   (por feature: spec.md + sequence.md, ver cada pasta)
 │       ├── TEMPLATE.spec.md
 │       ├── admin-panel/
 │       ├── booking/
@@ -66,7 +66,7 @@ movietickets/                    (raiz do monorepo)
 │       ├── pending-booking-expiry/
 │       ├── public-catalog-login-gate/
 │       └── refund/
-├── docker-compose.yml           (Postgres + Valkey + Mailpit; profile `full` sobe api + web + Drizzle Studio)
+├── docker-compose.yml           (Postgres + Valkey + Mailpit; profile `full` sobe api + web + Drizzle Studio; profile `observability` sobe o `grafana/otel-lgtm`)
 ├── Makefile                     (atalhos, `make help`)
 ├── pnpm-workspace.yaml
 ├── package.json                 (raiz)
@@ -141,7 +141,7 @@ Definição completa de colunas, tipos, PK/FK e a tabela de junção `booking_se
 - Login exigido só ao avançar pro pagamento (catálogo e assentos são públicos; token de convidado recusado com 401 em booking, pagamento e ingressos) — **implementado** (milestone AC3, spec `docs/flows/public-catalog-login-gate/spec.md`, PRs #66 e #70)
 - "Meus ingressos": lista de bookings confirmados, com detalhe — **implementado**
 - Cancelamento de ingresso pelo cliente (self-service), libera o(s) assento(s) de volta pro catálogo — **implementado no back** (`POST /bookings/:id/cancel`, broadcast released) e no front (botão "Cancelar" com confirmação no `TicketsPage`)
-- Estorno do pagamento (Refunds API do Mercado Pago): cancelar ingresso pago dispara estorno total até um prazo antes da sessão (até 2h antes), e o admin estorna pela fila de revisão as reservas com `needs_refund_review` — **em spec (milestone Prova)**, `docs/flows/refund/spec.md`
+- Estorno do pagamento (Refunds API do Mercado Pago): cancelar ingresso pago dispara estorno total até um prazo antes da sessão (até 2h antes), e o admin estorna pela fila de revisão as reservas com `needs_refund_review` — **implementado (milestone Prova)**, back no PR #85 e front no PR #87 (ACs 27 a 30: diálogo de cancelamento com prazo/estorno, selo no ticket e página `/admin/refunds`), `docs/flows/refund/spec.md`: `POST /bookings/:id/cancel` estorna via Refunds API do Mercado Pago (sem pagamento aprovado, cancela direto), `GET /admin/refunds/review` e `POST /admin/bookings/:id/refund` pela fila de revisão, e conclusão do estorno pelo webhook. Sequência: `docs/flows/refund/sequence.md`
 - QR code simples — opcional/fora do MVP
 
 ### 5. Painel admin
@@ -164,6 +164,8 @@ Definição completa de colunas, tipos, PK/FK e a tabela de junção `booking_se
 - `PaymentModule` — Checkout Transparente: resumo do pagamento, criação de tentativa na Payments API do Mercado Pago, webhook handler e auditoria em `payment_events`
 - `AuthModule` — cadastro/login (JWT com `kind`: `user` ou `guest`), token de convidado (`POST /auth/guest`, rate limit via `@nestjs/throttler`), `JwtAuthGuard` (só usuário), `UserOrGuestAuthGuard`, `@Roles`/`RolesGuard`
 - `AdminModule` — CRUD filmes/cinemas/salas/sessões em `/admin/*` (role `admin`), com services de command/query próprios por recurso (não reusa o `CatalogModule`)
+- `RefundModule` — cancelamento com estorno pelo cliente (`POST /bookings/:id/cancel`), estorno pela fila de revisão do admin e conclusão pelo webhook; clientes do SDK do Mercado Pago compartilhados com o `PaymentModule` via `MercadoPagoModule`
+- `telemetry/` + `instrumentation.ts` — bootstrap do OpenTelemetry (carregado com `--require` antes do `main.js`), patch de tracing do Drizzle e limpeza de dados sensíveis; não é módulo Nest
 - `NotificationModule` — envio de e-mail de confirmação de compra (`nodemailer`, Mailpit em dev), chamado pelo `BookingModule` depois do commit da confirmação (síncrono, best-effort)
 
 ## Verificação end-to-end
@@ -175,3 +177,5 @@ Definição completa de colunas, tipos, PK/FK e a tabela de junção `booking_se
 5. Testar expiração de hold: segurar assento e não finalizar checkout, esperar TTL — assento deve voltar a ficar livre pros outros
 6. Testar painel admin: criar filme/sessão nova, verificar que aparece no catálogo na hora
 7. Testar expiração de reserva: criar reserva no checkout e não pagar por 10 min — booking vira `expired` e os assentos voltam a ficar livres
+8. Testar estorno: pagar com cartão de teste, cancelar o ingresso em "Meus ingressos" (até 2h antes da sessão) — booking vira `cancelled`, o estorno aparece no Mercado Pago e o assento volta a ficar livre
+9. Testar observabilidade: `make obs-up`, `OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318` no `apps/api/.env`, `make dev-api`, fazer uma request e achar o trace (Tempo) e o log correlacionado (Loki) em `http://localhost:3001`

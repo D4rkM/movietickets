@@ -1,6 +1,6 @@
 # C4 — Diagrama de Container
 
-Detalha as peças dentro do sistema Cinema Tickets.
+Detalha as peças dentro do sistema movietickets.
 
 Diagrama: [`container.drawio`](./container.drawio) — abrir em [app.diagrams.net](https://app.diagrams.net) (File → Open From → Device).
 
