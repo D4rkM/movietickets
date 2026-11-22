@@ -56,10 +56,10 @@ Os cenários de escrita escolhem uma sessão que começa daqui a mais de 3h (o c
 - Usuários descartáveis (`load-<id>-c-<n>@loadtest.local` e `load-<id>-b-<n>@loadtest.local`) ficam no banco, a API não tem rota pra apagar usuário. Limpeza opcional, com a stack rodando:
 
 ```bash
-docker compose exec postgres psql -U <usuario> -d <banco> -c "DELETE FROM bookings WHERE user_id IN (SELECT id FROM users WHERE email LIKE 'load-%@loadtest.local'); DELETE FROM users WHERE email LIKE 'load-%@loadtest.local';"
+docker compose exec postgres psql -U movietickets -d movietickets -c "DELETE FROM bookings WHERE user_id IN (SELECT id FROM users WHERE email LIKE 'load-%@loadtest.local'); DELETE FROM users WHERE email LIKE 'load-%@loadtest.local';"
 ```
 
-(use o usuário e o banco do `docker-compose.yml`; troque `docker` por `podman` se for o caso. Se houver tabelas ligadas à reserva, como `refunds`, o `DELETE` pode falhar por chave estrangeira: nesse caso, deixe os dados, são inofensivos.)
+(troque `docker` por `podman` se for o caso. Se houver tabelas ligadas à reserva, como `refunds`, o `DELETE` pode falhar por chave estrangeira: nesse caso, deixe os dados, são inofensivos.)
 - Uma reserva `pending` fica solta só se a confirmação der `404`; ela expira sozinha (sweeper / expiração preguiçosa).
 
 ## Aviso
