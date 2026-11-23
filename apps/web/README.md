@@ -10,8 +10,8 @@ Features (`src/features/`):
 - **seating** — `/sessions/:id/seats`, mapa de assentos público com hold/release ao clicar e atualização em tempo real via WebSocket (`socket.io-client`). Visitante deslogado recebe um token de convidado (`POST /auth/guest`, guardado em `localStorage`) pra segurar assentos; ao avançar pro pagamento vai pro login.
 - **auth** — login/cadastro; no login manda o token de convidado (`guestToken`) e a API transfere os holds pro usuário, avisando se algum assento foi liberado.
 - **checkout** — `/checkout` (rota protegida): cria a reserva, mostra o resumo e paga com cartão via Checkout Transparente (campos seguros do SDK JS do Mercado Pago, `@mercadopago/sdk-js`; o cartão nunca passa pela nossa API). Aviso de reserva expirada e nova tentativa depois de pagamento recusado.
-- **tickets** — `/tickets`, "Meus ingressos" com cancelamento.
-- **admin** — `/admin/*`, CRUD de filmes, cinemas, salas e sessões (só usuário com `role: "admin"`).
+- **tickets** — `/tickets`, "Meus ingressos" com cancelamento e estorno integral (prazo até 2h antes da sessão; ingresso cancelado continua na lista com o selo do estorno).
+- **admin** — `/admin/*`, CRUD de filmes, cinemas, salas e sessões e fila de estornos em `/admin/refunds` (só usuário com `role: "admin"`).
 
 ## Rodar
 
@@ -40,7 +40,7 @@ pnpm --filter web test       # Vitest
 pnpm --filter web test:e2e   # Playwright (e2e/)
 ```
 
-O e2e roda num browser de verdade contra a API real: precisa de Postgres + Valkey, migrations, seed e `pnpm dev:api` rodando (o Playwright sobe só o dev server do front). O SDK do Mercado Pago é substituído por um stub (`e2e/helpers/mercadopago.ts`), então não usa credencial nem chama o Mercado Pago.
+O e2e roda num browser de verdade contra a API real: precisa de Postgres + Valkey, migrations, seed e `pnpm dev:api` rodando (o Playwright sobe só o dev server do front). O SDK do Mercado Pago é substituído por um stub (`e2e/helpers/mercadopago.ts`), então não usa credencial nem chama o Mercado Pago. Como nenhuma reserva do e2e tem pagamento aprovado, os resultados de estorno (selos, erros, fila do admin) usam respostas da API simuladas com `page.route` (`e2e/helpers/refunds.ts`); o cancelamento sem estorno roda contra a API real.
 
 ## Lint/build
 

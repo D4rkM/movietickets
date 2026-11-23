@@ -2,12 +2,14 @@ import { API_URL, apiFetch, assertAuthorized } from "../../lib/api-client";
 import type {
   AdminCinema,
   AdminMovie,
+  AdminRefundResult,
   AdminRoom,
   AdminSession,
   CreateCinemaInput,
   CreateMovieInput,
   CreateRoomInput,
   CreateSessionInput,
+  RefundReviewItem,
   UpdateCinemaInput,
   UpdateMovieInput,
   UpdateRoomInput,
@@ -244,4 +246,20 @@ export async function deleteAdminSession(id: string, accessToken: string): Promi
     headers: authHeaders(accessToken),
   });
   return assertNoContentOrThrow(response, "Falha ao excluir a sessão");
+}
+
+export async function listRefundReviewQueue(accessToken: string): Promise<RefundReviewItem[]> {
+  const response = await apiFetch(`${API_URL}/admin/refunds/review`, {
+    headers: authHeaders(accessToken),
+  });
+  return parseJsonOrThrow<RefundReviewItem[]>(response, "Falha ao carregar a fila de estornos");
+}
+
+/** Refunds a queued booking in full, or reconciles its `in_process` refund with Mercado Pago. */
+export async function requestAdminRefund(bookingId: string, accessToken: string): Promise<AdminRefundResult> {
+  const response = await apiFetch(`${API_URL}/admin/bookings/${bookingId}/refund`, {
+    method: "POST",
+    headers: authHeaders(accessToken),
+  });
+  return parseJsonOrThrow<AdminRefundResult>(response, "Falha ao solicitar o estorno");
 }

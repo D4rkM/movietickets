@@ -1,12 +1,12 @@
 # movietickets
 
-Site de compra de ingressos para filmes: o cliente cria conta, navega pelo catálogo de filmes e sessões, escolhe os assentos na sala e finaliza a compra. Foco principal do projeto é a seleção de assento funcionar bem — sem double-booking mesmo com concorrência —, junto com catálogo, checkout e histórico de ingressos do usuário.
+Site de compra de ingressos para filmes: o cliente cria conta, navega pelo catálogo de filmes e sessões, escolhe os assentos na sala e finaliza a compra. Foco principal do projeto é a seleção de assento funcionar bem — sem double-booking mesmo com concorrência —, junto com catálogo, checkout (Mercado Pago, sandbox), expiração de reservas não pagas, cancelamento com estorno, painel admin, histórico de ingressos do usuário e observabilidade (OpenTelemetry + Grafana).
 
 Monorepo (pnpm workspaces):
 
 - `apps/web` — front (React + Vite). Ver `apps/web/README.md`.
 - `apps/api` — back (NestJS). Ver `apps/api/README.md`.
-- `docs/` — documentação: `docs/planning.md` (decisões de stack/arquitetura), `docs/c4/` (diagramas C4), `docs/use-cases/` ([diagrama de casos de uso](./docs/use-cases/use-cases.md)), `docs/flows/<feature>/` (spec, sequência e diagrama de classes por feature), `docs/schema.md` + `docs/schema-erd.mmd` (schema do banco e DER), `docs/bruno/` (collection do [Bruno](https://www.usebruno.com/) pra testar as rotas manualmente).
+- `docs/` — documentação: `docs/planning.md` (decisões de stack/arquitetura), `docs/c4/` (diagramas C4), `docs/use-cases/` ([diagrama de casos de uso](./docs/use-cases/use-cases.md)), `docs/flows/<feature>/` (spec, sequência e diagrama de classes por feature; sequências: [`booking`](./docs/flows/booking/sequence.md), [`checkout-transparente`](./docs/flows/checkout-transparente/sequence.md), [`pending-booking-expiry`](./docs/flows/pending-booking-expiry/sequence.md), [`refund`](./docs/flows/refund/sequence.md), [`admin-panel`](./docs/flows/admin-panel/sequence.md), [`public-catalog-login-gate`](./docs/flows/public-catalog-login-gate/sequence.md), [`observability`](./docs/flows/observability/sequence.md); classes: [`admin-panel`](./docs/flows/admin-panel/class.md), [`auth`](./docs/flows/auth/class.md), [`booking`](./docs/flows/booking/class.md), [`checkout-transparente`](./docs/flows/checkout-transparente/class.md), [`frontend`](./docs/flows/frontend/class.md), [`refund`](./docs/flows/refund/class.md), [`seating`](./docs/flows/seating/class.md)), `docs/schema.md` + `docs/schema-erd.mmd` (schema do banco e DER), `docs/bruno/` (collection do [Bruno](https://www.usebruno.com/) pra testar as rotas manualmente).
 
 ## Instalação
 
@@ -77,6 +77,9 @@ Todo `make <alvo>` do [`Makefile`](./Makefile) tem um comando direto equivalente
 | `down` | `docker compose down` |
 | `up-full` | `docker compose --profile full up -d --build` |
 | `down-full` | `docker compose --profile full down` |
+| `obs-up` | `docker compose --profile observability up -d` |
+| `obs-down` | `docker compose --profile observability down` |
+| `up-full-obs` | `API_OTEL_EXPORTER_OTLP_ENDPOINT=http://lgtm:4318 docker compose --profile full --profile observability up -d --build` |
 | `migrate` | `pnpm --filter api db:migrate` |
 | `seed` | `pnpm --filter api db:seed` |
 | `studio` | `pnpm --filter api db:studio` |
