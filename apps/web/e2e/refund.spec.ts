@@ -44,7 +44,7 @@ test("AC28: deve manter o ingresso cancelado na lista com o selo Estorno em anda
   // THEN the ticket stays in the list, cancelled, with the pending refund badge
   const card = ticketCard(page, "Filme Estornável");
   await expect(card.getByText("Ingresso cancelado. Estorno em andamento.")).toBeVisible();
-  await expect(card.getByText("Cancelado")).toBeVisible();
+  await expect(card.getByText("Cancelado", { exact: true })).toBeVisible();
   await expect(card.getByRole("button", { name: "Cancelar" })).toHaveCount(0);
   expect(cancelCalls).toEqual([ticket.bookingId]);
 });
