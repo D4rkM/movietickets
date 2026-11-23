@@ -40,7 +40,7 @@ classDiagram
     class TicketsPage {
         <<page>>
         cancelar com estorno
-        cancelado e expirado ficam na lista esmaecidos
+        cancelado e expirado ficam na lista, detalhes com opacity-60
     }
     class RefundBadge {
         <<component>>
