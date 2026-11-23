@@ -1,6 +1,7 @@
 import { io, Socket as ClientSocket } from "socket.io-client";
 import { AdminModule } from "../../src/admin/admin.module";
 import { GuestFlowApp, startGuestFlowApp } from "./guest-flow-app";
+import { newMercadoPagoId } from "./mercado-pago-ids";
 import { MercadoPagoMocks } from "./pending-booking";
 import { TestTelemetry } from "./telemetry";
 
@@ -13,12 +14,10 @@ export function startAppWithBusinessMetrics(telemetry: TestTelemetry): Promise<G
   return startGuestFlowApp({ extraImports: [AdminModule], meterProvider: telemetry.meterProvider });
 }
 
-let nextMercadoPagoPaymentId = 7_000_000 + (Math.floor(Date.now() / 1000) % 1_000_000);
-
 /** Makes `Payment.create` answer synchronously with the given status. */
 export function mercadoPagoAnswersPayment(mocks: MercadoPagoMocks, status: string, statusDetail = "accredited"): void {
   mocks.payment.create.mockResolvedValue({
-    id: nextMercadoPagoPaymentId++,
+    id: newMercadoPagoId(),
     status,
     status_detail: statusDetail,
     installments: 1,
