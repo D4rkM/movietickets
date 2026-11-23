@@ -40,6 +40,19 @@ classDiagram
     class TicketsPage {
         <<page>>
         cancelar com estorno
+        cancelado e expirado ficam na lista esmaecidos
+    }
+    class RefundBadge {
+        <<component>>
+        aviso de estorno
+    }
+    class RefundHelpers {
+        <<helpers>>
+        refundBadgeText()
+        isTicketInactive()
+        inactiveTicketLabel()
+        canCancelTicket()
+        isCancellationClosed()
     }
     class LoginPage {
         <<page>>
@@ -119,6 +132,9 @@ classDiagram
     CheckoutPage --> MercadoPagoSdk
     TicketsPage --> AuthProvider
     TicketsPage --> TicketsApi
+    TicketsPage --> RefundBadge
+    TicketsPage ..> RefundHelpers
+    RefundBadge ..> RefundHelpers
     LoginPage --> AuthProvider
     RegisterPage --> AuthApi
     AuthProvider --> AuthApi : login com guestToken
