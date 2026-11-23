@@ -286,7 +286,6 @@ export function mercadoPagoMocks(app: NestFastifyApplication): MercadoPagoMocks 
   return { payment: app.get(PAYMENT_CLIENT), refund: app.get(REFUND_CLIENT) };
 }
 
-
 export interface WebhookPaymentOverrides {
   paymentId?: number;
   statusDetail?: string;
@@ -425,4 +424,17 @@ export function failBookingConfirmationOnce(app: NestFastifyApplication): () => 
     throw new Error("Simulated failure inside tx2");
   });
   return () => spy.mockRestore();
+}
+
+/** POST /bookings/:id/confirm (mocked payment, only exists with ENABLE_TEST_ROUTES=true). */
+export function confirmMockedAs(app: NestFastifyApplication, token: string, bookingId: string) {
+  return callAs(app, token, "POST", `/bookings/${bookingId}/confirm`);
+}
+
+export async function bookingStatusOf(db: Db, bookingId: string): Promise<string> {
+  const [row] = await db
+    .select({ status: schema.bookings.status })
+    .from(schema.bookings)
+    .where(eq(schema.bookings.id, bookingId));
+  return row.status;
 }

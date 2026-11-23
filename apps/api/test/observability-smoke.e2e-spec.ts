@@ -212,6 +212,40 @@ describe("Observabilidade: API compilada com OpenTelemetry (smoke)", () => {
       expect(request.attributes).not.toHaveProperty("user_agent.original");
       expect(JSON.stringify(collector.spans())).not.toContain("SmokeBrowser/1.0");
     });
+
+    it("AC7: não deve exportar IP nem user agent do cliente nos logs, nem no OTLP nem no stdout", async () => {
+      // GIVEN the API exporting telemetry and a request carrying a user agent and proxy headers
+      const headers = {
+        "user-agent": "SmokeLogBrowser/1.0",
+        "x-forwarded-for": "203.0.113.77",
+        "x-real-ip": "203.0.113.77",
+      };
+
+      // WHEN the request arrives
+      await fetch(`${api.baseUrl}/observability-smoke-log-privacy`, { headers });
+
+      // THEN the "request completed" log exists, but without IP, port or user agent (OTLP and stdout)
+      const request = await waitFor("span SERVER da request de privacidade de logs", () =>
+        collector
+          .spans()
+          .find(
+            (span) =>
+              span.kind === OTLP_SPAN_KIND.SERVER && span.attributes["url.path"] === "/observability-smoke-log-privacy",
+          ),
+      );
+      const log = await waitForLogOfTrace(collector, request.traceId);
+      expect(log.body).toBe("request completed");
+      const exportedLogs = JSON.stringify(collector.logRecords());
+      const stdout = api.output();
+      expect(stdout).toContain("/observability-smoke-log-privacy");
+      for (const text of [exportedLogs, stdout]) {
+        expect(text).not.toContain("SmokeLogBrowser");
+        expect(text).not.toContain("203.0.113.77");
+        expect(text).not.toContain("remoteAddress");
+        expect(text).not.toContain("remotePort");
+        expect(text).not.toContain("user-agent");
+      }
+    });
   });
 
   describe("desligamento", () => {

@@ -43,8 +43,8 @@ test("AC28: deve manter o ingresso cancelado na lista com o selo Estorno em anda
 
   // THEN the ticket stays in the list, cancelled, with the pending refund badge
   const card = ticketCard(page, "Filme Estornável");
-  await expect(card.getByText("Estorno em andamento")).toBeVisible();
-  await expect(card.getByText("Cancelado")).toBeVisible();
+  await expect(card.getByText("Ingresso cancelado. Estorno em andamento.")).toBeVisible();
+  await expect(card.getByText("Cancelado", { exact: true })).toBeVisible();
   await expect(card.getByRole("button", { name: "Cancelar" })).toHaveCount(0);
   expect(cancelCalls).toEqual([ticket.bookingId]);
 });
@@ -91,7 +91,7 @@ test("AC28: deve mostrar Tentar de novo quando o provedor não responde e reenvi
   await dialog.getByRole("button", { name: "Tentar de novo" }).click();
 
   // THEN the same booking is cancelled again and the ticket shows the pending refund
-  await expect(ticketCard(page, "Filme Lento").getByText("Estorno em andamento")).toBeVisible();
+  await expect(ticketCard(page, "Filme Lento").getByText("Ingresso cancelado. Estorno em andamento.")).toBeVisible();
   expect(cancelCalls).toEqual([ticket.bookingId, ticket.bookingId]);
 });
 
@@ -104,7 +104,7 @@ test("AC29: deve mostrar Estorno em andamento no ingresso cancelado com estorno 
   await openMyTickets(page);
 
   // THEN the pending badge is shown
-  await expect(ticketCard(page, "Filme Pendente").getByText("Estorno em andamento")).toBeVisible();
+  await expect(ticketCard(page, "Filme Pendente").getByText("Ingresso cancelado. Estorno em andamento.")).toBeVisible();
 });
 
 test("AC29: deve mostrar Estorno concluído no ingresso com estorno aprovado", async ({ page }) => {
@@ -118,7 +118,7 @@ test("AC29: deve mostrar Estorno concluído no ingresso com estorno aprovado", a
   await openMyTickets(page);
 
   // THEN the completed badge is shown
-  await expect(ticketCard(page, "Filme Concluído").getByText("Estorno concluído")).toBeVisible();
+  await expect(ticketCard(page, "Filme Concluído").getByText("Ingresso cancelado e estornado.")).toBeVisible();
 });
 
 test("AC29: deve mostrar a mensagem de falha no ingresso cancelado com estorno que falhou", async ({ page }) => {

@@ -59,3 +59,5 @@ jobs:
         env:
           DATABASE_URL: postgres://movietickets:movietickets@localhost:5432/movietickets
           VALKEY_URL: redis://localhost:6379
+          # Mocked POST /bookings/:id/confirm (docs/flows/test-routes/spec.md).
+          ENABLE_TEST_ROUTES: "true"

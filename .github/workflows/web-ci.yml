@@ -55,6 +55,9 @@ jobs:
       DATABASE_URL: postgres://movietickets:movietickets@localhost:5432/movietickets
       VALKEY_URL: redis://localhost:6379
       JWT_SECRET: ci-test-secret
+      # The e2e stub confirms bookings through the mocked POST /bookings/:id/confirm,
+      # which only exists with this flag (docs/flows/test-routes/spec.md).
+      ENABLE_TEST_ROUTES: "true"
       # No real Mercado Pago call happens in the smoke test; the app just needs
       # this to be set to boot (PaymentModule reads it eagerly on startup).
       MERCADOPAGO_ACCESS_TOKEN: TEST-ci-placeholder
