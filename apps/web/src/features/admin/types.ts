@@ -75,3 +75,31 @@ export interface CreateSessionInput {
 }
 
 export type UpdateSessionInput = Partial<CreateSessionInput>;
+
+/** Why a booking is in the admin refund review queue. */
+export type RefundReviewReason = "expired_booking_paid" | "refund_rejected" | "refund_stalled";
+
+/** Raw refund status, as stored by the backend (not the customer-facing simplification). */
+export type AdminRefundStatus = "requested" | "in_process" | "approved" | "rejected" | "failed";
+
+/** Item of `GET /admin/refunds/review`. */
+export interface RefundReviewItem {
+  bookingId: string;
+  bookingStatus: string;
+  customerEmail: string;
+  movieTitle: string;
+  sessionStartsAt: string;
+  amountCents: number;
+  externalPaymentId: string | null;
+  paymentApprovedAt: string | null;
+  reviewReason: RefundReviewReason;
+  /** Last refund of the booking, or null. */
+  refund: { id: string; status: AdminRefundStatus; errorCode: string | null; updatedAt: string } | null;
+}
+
+/** Response of `POST /admin/bookings/:id/refund`. */
+export interface AdminRefundResult {
+  bookingId: string;
+  bookingStatus: string;
+  refund: { id: string; status: AdminRefundStatus; amountCents: number } | null;
+}
