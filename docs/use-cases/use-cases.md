@@ -12,7 +12,6 @@ Diagrama UML: [`use-cases.drawio`](./use-cases.drawio) — abrir em [app.diagram
 Legenda (também dentro do diagrama):
 
 - Elipse azul, borda contínua: implementado.
-- Elipse amarela, borda tracejada: planejado (Prova), spec sendo escrita em paralelo.
 - `«include»`: o caso base sempre executa o incluído. `«extend»`: comportamento opcional, sob a condição entre colchetes; a seta sai da extensão e aponta pro caso base.
 - Seta com triângulo vazado: generalização. Cliente é um Visitante, então herda todos os casos de uso dele.
 - Ator cinza: sistema externo.
@@ -21,7 +20,7 @@ UC07 e UC14 aparecem nas duas páginas (mesmo caso de uso, desenhado de novo pra
 
 ## Aproximação em Mermaid
 
-O GitHub não renderiza diagrama de casos de uso UML, então segue uma aproximação em flowchart (atores em retângulo, casos de uso em elipse/estádio, planejados tracejados). A fonte de verdade é o `.drawio`.
+O GitHub não renderiza diagrama de casos de uso UML, então segue uma aproximação em flowchart (atores em retângulo, casos de uso em elipse/estádio). A fonte de verdade é o `.drawio`.
 
 ```mermaid
 flowchart LR
@@ -48,7 +47,7 @@ flowchart LR
         UC10(["UC10 Informar meia-entrada"])
         UC11(["UC11 Pagar com cartão"])
         UC12(["UC12 Ver meus ingressos"])
-        UC13(["UC13 Cancelar ingresso"])
+        UC13(["UC13 Cancelar ingresso sem pagamento aprovado"])
         UC14(["UC14 Confirmar reserva paga"])
         UC15(["UC15 Enviar e-mail de confirmação"])
         UC16(["UC16 Manter filmes"])
@@ -67,14 +66,14 @@ flowchart LR
 
     visitante --- UC01 & UC02 & UC04 & UC05 & UC06 & UC07
     cliente --- UC09 & UC11 & UC12 & UC13
-    cliente -.- UC24
+    cliente --- UC24
     admin --- UC16 & UC17 & UC18 & UC19
-    admin -.- UC25
+    admin --- UC25
     agendador --- UC22 & UC23
     mp --- UC11 & UC20
-    mp -.- UC26
+    mp --- UC24 & UC25 & UC26
     email --- UC15
-    ops -.- UC27
+    ops --- UC27
 
     UC03 -. "«extend» sem token de usuário" .-> UC02
     UC08 -. "«extend» guestToken válido" .-> UC07
@@ -87,17 +86,15 @@ flowchart LR
     UC21 -. "«extend» approved em reserva expired" .-> UC20
     UC14 -. "«include»" .-> UC15
 
-    classDef planned fill:#fff2cc,stroke:#d6b656,stroke-dasharray:5 5
     classDef impl fill:#dae8fc,stroke:#6c8ebf
     classDef external fill:#f5f5f5,stroke:#666666
-    class UC01,UC02,UC03,UC04,UC05,UC06,UC07,UC08,UC09,UC10,UC11,UC12,UC13,UC14,UC15,UC16,UC17,UC18,UC19,UC20,UC21,UC22,UC23 impl
-    class UC24,UC25,UC26,UC27,ops planned
+    class UC01,UC02,UC03,UC04,UC05,UC06,UC07,UC08,UC09,UC10,UC11,UC12,UC13,UC14,UC15,UC16,UC17,UC18,UC19,UC20,UC21,UC22,UC23,UC24,UC25,UC26,UC27,ops impl
     class mp,email external
 ```
 
 ## Tabela de casos de uso
 
-Specs: [catálogo público + login](../flows/public-catalog-login-gate/spec.md) (PCL), [expiração de reserva](../flows/pending-booking-expiry/spec.md) (PBE), [checkout transparente](../flows/checkout-transparente/spec.md) (CT), [painel admin](../flows/admin-panel/spec.md) (ADM). Fluxos sem spec própria (anteriores ao SDD) apontam pro `docs/planning.md` ou pro diagrama de sequência.
+Specs: [catálogo público + login](../flows/public-catalog-login-gate/spec.md) (PCL), [expiração de reserva](../flows/pending-booking-expiry/spec.md) (PBE), [checkout transparente](../flows/checkout-transparente/spec.md) (CT), [painel admin](../flows/admin-panel/spec.md) (ADM), [estorno](../flows/refund/spec.md) (REF), [observabilidade](../flows/observability/spec.md) (OBS), [teste de carga](../flows/load-test/spec.md) (LT). Fluxos sem spec própria (anteriores ao SDD) apontam pro `docs/planning.md` ou pro diagrama de sequência.
 
 | ID | Caso de uso | Ator principal | Atores secundários | Descrição curta | Spec / AC | Status |
 |---|---|---|---|---|---|---|
@@ -113,7 +110,7 @@ Specs: [catálogo público + login](../flows/public-catalog-login-gate/spec.md) 
 | UC10 | Informar meia-entrada | Cliente | — | `«extend»` de UC09 por assento com `ticketType` meia: exige documento (`halfPriceDocument`) e cobra meio preço. | `docs/flows/booking/sequence.md` | implementado |
 | UC11 | Pagar com cartão (checkout transparente) | Cliente | Mercado Pago | Resumo da reserva, campos seguros do SDK do Mercado Pago, token do cartão e `POST /bookings/:id/payments` com idempotência por `attemptId`. Recusado mantém a reserva pendente pra nova tentativa. `«include»` UC07. | [CT](../flows/checkout-transparente/spec.md) AC1–AC21; [PBE](../flows/pending-booking-expiry/spec.md) AC16 | implementado (sandbox) |
 | UC12 | Ver meus ingressos | Cliente | — | Página `/tickets` com os ingressos confirmados do usuário (`GET /bookings/mine`). Requer login. | [PCL](../flows/public-catalog-login-gate/spec.md) AC2, AC8 | implementado |
-| UC13 | Cancelar ingresso (sem estorno) | Cliente | — | `POST /bookings/:id/cancel` em reserva `confirmed`: vira `cancelled`, libera os assentos (broadcast `released`). Não estorna o pagamento. | `docs/planning.md` (feature 4) | implementado |
+| UC13 | Cancelar ingresso sem pagamento aprovado | Cliente | — | `POST /bookings/:id/cancel` em reserva `confirmed` sem pagamento aprovado (confirmação mock ou seed): vira `cancelled`, libera os assentos (broadcast `released`) sem chamar o Mercado Pago, `refund: null`. Com pagamento aprovado o mesmo endpoint estorna (UC24). | [REF](../flows/refund/spec.md) AC6; `docs/planning.md` (feature 4) | implementado |
 | UC14 | Confirmar reserva paga | Sistema (via UC11 ou UC20) | — | `«extend»` de UC11 e de UC20 quando o pagamento é `approved` numa reserva `pending`: confirma uma única vez, broadcast `booked` e e-mail. | [CT](../flows/checkout-transparente/spec.md) AC9, AC25, AC29; [PBE](../flows/pending-booking-expiry/spec.md) AC12 | implementado |
 | UC15 | Enviar e-mail de confirmação | Sistema (via UC14) | Serviço de e-mail | `«include»` de UC14: envio síncrono e best-effort via SMTP (Mailpit em dev); falha só gera log. | [CT](../flows/checkout-transparente/spec.md) AC9, AC25; `docs/planning.md` (feature 6) | implementado (versão assíncrona não iniciada) |
 | UC16 | Manter filmes | Administrador | — | CRUD em `/admin/movies` com validação; exclusão bloqueada se o filme tem sessão; mudança de duração não pode criar sobreposição. `«include»` UC07. | [ADM](../flows/admin-panel/spec.md) AC4–AC7, AC23, AC24 | implementado |
@@ -124,10 +121,10 @@ Specs: [catálogo público + login](../flows/public-catalog-login-gate/spec.md) 
 | UC21 | Sinalizar reserva pra estorno manual | Sistema (via UC20) | — | `«extend»` de UC20 quando chega `approved` pra reserva `expired`: marca `needs_refund_review`, não ressuscita a reserva nem manda e-mail. | [PBE](../flows/pending-booking-expiry/spec.md) AC14; [CT](../flows/checkout-transparente/spec.md) AC27 | implementado |
 | UC22 | Expirar reservas pendentes vencidas | Agendador | — | `PendingBookingSweeper` a cada 60s: `pending` vencida sem pagamento em andamento vira `expired`, assentos liberados com broadcast `released`; alerta pagamento parado há mais de 24h. | [PBE](../flows/pending-booking-expiry/spec.md) AC8–AC11, AC20 | implementado |
 | UC23 | Expirar holds (TTL) | Agendador | — | TTL do Valkey derruba o hold; `HoldExpiryListener` (keyspace notifications) emite `released` pro mapa. | `docs/planning.md` (feature 1) | implementado |
-| UC24 | Cancelar ingresso pago com estorno | Cliente | Mercado Pago | Cancelamento self-service que também estorna o pagamento no Mercado Pago (substitui UC13). | spec em andamento | planejado (Prova) |
-| UC25 | Revisar e estornar reservas sinalizadas | Administrador | Mercado Pago | Admin vê as reservas com `needs_refund_review` (UC21) e dispara o estorno. | spec em andamento | planejado (Prova) |
-| UC26 | Notificar estorno | Mercado Pago | — | Webhook de `refunded`/`charged_back` passa a atualizar a reserva (hoje só grava o status e loga, CT AC26). | spec em andamento | planejado (Prova) |
-| UC27 | Monitorar aplicação (dashboards/alertas) | Operador / Dev | — | Dashboards e alertas de saúde da aplicação. | spec em andamento | planejado (Prova) |
+| UC24 | Cancelar ingresso pago com estorno | Cliente | Mercado Pago | `POST /bookings/:id/cancel` em reserva `confirmed` com pagamento aprovado, até 2h antes da sessão: registra o pedido, estorna o valor total pela Refunds API (idempotente, sem estorno duplicado em chamadas simultâneas), cancela a reserva e libera os assentos; recusa, rejeição e timeout mantêm o ingresso válido. Em "Meus ingressos" o diálogo mostra valor e prazo, e o ingresso cancelado fica esmaecido com o selo do estorno. Cobre o caminho de UC13 quando há pagamento. | [REF](../flows/refund/spec.md) AC1–AC13, AC26–AC29, AC33 | implementado (sandbox) |
+| UC25 | Revisar e estornar reservas sinalizadas | Administrador | Mercado Pago | Página `/admin/refunds` lista a fila: reservas com `needs_refund_review` (marcada pelo UC21) e estornos `requested` parados. "Estornar" faz estorno total pelo mesmo serviço do UC24; com estorno em andamento, "Atualizar status" re-busca o pagamento no Mercado Pago. Requer role admin. | [REF](../flows/refund/spec.md) AC20–AC23, AC30 | implementado (sandbox) |
+| UC26 | Notificar estorno | Mercado Pago | — | Webhook `refunded` conclui o estorno (`refunds` vai pra `approved`, reserva `cancelled` quando ainda `confirmed`), de forma idempotente e segura com a resposta síncrona; estorno feito direto no painel do Mercado Pago é registrado como `external`; estorno `rejected` depois de aceito vai pra revisão. `charged_back`/`in_mediation` só gravam o status e logam. | [REF](../flows/refund/spec.md) AC14–AC19 | implementado (sandbox) |
+| UC27 | Monitorar aplicação (dashboards/alertas) | Operador / Dev | — | Telemetria OpenTelemetry da API (traces, métricas e logs com `trace_id`, sem dados sensíveis) exportada pro Grafana (`make up-full-obs`): dashboards APM, Runtime, Dependências e Negócio, métricas de negócio (`movietickets.*`), cinco alertas provisionados com e-mail no Mailpit e navegação trace ↔ logs. Sem endpoint OTLP a API roda com a telemetria desligada. Ferramenta relacionada: teste de carga com k6 ([LT](../flows/load-test/spec.md)). | [OBS](../flows/observability/spec.md) AC1–AC16 | implementado |
 
 ## Manter este diagrama
 
