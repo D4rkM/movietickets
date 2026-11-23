@@ -220,7 +220,7 @@
             "params": [],
             "body": { "mode": "none" },
             "auth": { "mode": "bearer", "bearer": { "token": "{{accessToken}}" } },
-            "docs": "Confirmação mockada de pagamento (sem gateway): muda o booking de `pending` pra `confirmed`, o que faz o assento aparecer como `booked` no mapa e dispara o e-mail de confirmação (Mailpit). O front não usa mais essa rota (paga pelo payment/Create payment); ela fica pra teste manual e e2e.\n\nPré-requisitos:\n1. Rode booking/Book seats — o `bookingId` retornado é salvo automaticamente na env var.\n\nRetorna 404 se o booking não existir ou não for seu, 409 `BOOKING_EXPIRED` se a reserva já venceu, 409 se já não estiver `pending`."
+            "docs": "Confirmação mockada de pagamento (sem gateway): muda o booking de `pending` pra `confirmed`, o que faz o assento aparecer como `booked` no mapa e dispara o e-mail de confirmação (Mailpit). O front não usa mais essa rota (paga pelo payment/Create payment); ela fica pra teste manual e e2e.\n\nSó existe com `ENABLE_TEST_ROUTES=true` no `.env` da API (reinicie a API depois de ligar); sem a flag responde 404.\n\nPré-requisitos:\n1. Rode booking/Book seats — o `bookingId` retornado é salvo automaticamente na env var.\n\nRetorna 404 se o booking não existir ou não for seu, 409 `BOOKING_EXPIRED` se a reserva já venceu, 409 se já não estiver `pending`."
           }
         },
         {

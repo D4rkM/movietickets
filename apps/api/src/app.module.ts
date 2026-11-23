@@ -11,7 +11,7 @@ import { NotificationModule } from "./notification/notification.module";
 import { PaymentModule } from "./payment/payment.module";
 import { RefundModule } from "./refund/refund.module";
 import { SeatingModule } from "./seating/seating.module";
-import { LOG_REDACT_PATHS } from "./telemetry/log-redaction";
+import { LOG_REDACT_PATHS, omitClientIdentity } from "./telemetry/log-redaction";
 import { ValkeyModule } from "./valkey/valkey.module";
 
 @Module({
@@ -27,6 +27,7 @@ import { ValkeyModule } from "./valkey/valkey.module";
               ? undefined
               : { target: "pino-pretty", options: { singleLine: true } },
           redact: [...LOG_REDACT_PATHS],
+          serializers: { req: omitClientIdentity },
         },
       }),
     }),

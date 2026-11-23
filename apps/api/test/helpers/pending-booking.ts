@@ -426,3 +426,16 @@ export function failBookingConfirmationOnce(app: NestFastifyApplication): () => 
   });
   return () => spy.mockRestore();
 }
+
+/** POST /bookings/:id/confirm (mocked payment, only exists with ENABLE_TEST_ROUTES=true). */
+export function confirmMockedAs(app: NestFastifyApplication, token: string, bookingId: string) {
+  return callAs(app, token, "POST", `/bookings/${bookingId}/confirm`);
+}
+
+export async function bookingStatusOf(db: Db, bookingId: string): Promise<string> {
+  const [row] = await db
+    .select({ status: schema.bookings.status })
+    .from(schema.bookings)
+    .where(eq(schema.bookings.id, bookingId));
+  return row.status;
+}

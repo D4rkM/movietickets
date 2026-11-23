@@ -14,3 +14,27 @@ export const LOG_REDACT_PATHS: readonly string[] = [
   "req.body.token",
   "req.body.payer",
 ];
+
+/** Request headers that identify the client (personal data, LGPD) and never go to logs. */
+export const LOG_REMOVED_REQUEST_HEADERS: readonly string[] = ["user-agent", "x-forwarded-for", "x-real-ip"];
+
+/** Fields of the serialized request that identify the client's network address. */
+const LOG_REMOVED_REQUEST_FIELDS: readonly string[] = ["remoteAddress", "remotePort"];
+
+/**
+ * Custom pino-http `req` serializer: drops the client IP/port and the
+ * user-agent/forwarding headers from the serialized request instead of masking
+ * them, so they appear neither in stdout nor in the OTLP export to Loki.
+ * pino-http hands it the already-serialized request (standard shape).
+ * Secrets stay masked as `[Redacted]` through LOG_REDACT_PATHS.
+ */
+export function omitClientIdentity<T extends { headers?: Record<string, unknown> }>(serializedReq: T): T {
+  const copy: Record<string, unknown> = { ...serializedReq };
+  for (const field of LOG_REMOVED_REQUEST_FIELDS) delete copy[field];
+  if (serializedReq.headers) {
+    const headers = { ...serializedReq.headers };
+    for (const header of LOG_REMOVED_REQUEST_HEADERS) delete headers[header];
+    copy.headers = headers;
+  }
+  return copy as T;
+}
