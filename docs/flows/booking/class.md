@@ -14,6 +14,11 @@ classDiagram
     class BookingConfirmationController {
         <<controller>>
         POST bookings/ID/confirm
+        confirmacao mockada, so com ENABLE_TEST_ROUTES=true
+    }
+    class TestRoutesGuard {
+        <<guard>>
+        404 se ENABLE_TEST_ROUTES nao for true
     }
     class MyBookingsController {
         <<controller>>
@@ -56,6 +61,7 @@ classDiagram
     }
 
     BookingController ..> JwtAuthGuard : UseGuards
+    BookingConfirmationController ..> TestRoutesGuard : UseGuards (antes do JwtAuthGuard)
     BookingConfirmationController ..> JwtAuthGuard : UseGuards
     MyBookingsController ..> JwtAuthGuard : UseGuards
     BookingController --> BookingService
@@ -75,4 +81,5 @@ classDiagram
 
 - `BookingModule` importa `AuthModule`, `SeatingModule` e `NotificationModule`; exporta `BookingService` (usado por `PaymentModule` e `RefundModule`).
 - `cancelConfirmedBooking` recebe a transação de quem chama (o `RefundService`), por isso o cancelamento e o registro do estorno ficam atômicos.
+- `BookingConfirmationController` (`POST /bookings/:id/confirm`) é a confirmação mockada, sem pagamento: o `TestRoutesGuard` roda antes do `JwtAuthGuard` e responde 404, como se a rota não existisse, a menos que `ENABLE_TEST_ROUTES=true` (lido a cada request). Spec: [`../test-routes/spec.md`](../test-routes/spec.md).
 - Consistência de assento vem do Postgres (`unique (session_id, seat_id)` em `booking_seats`); o hold no Valkey é só temporário. Ver [`../../schema.md`](../../schema.md).
