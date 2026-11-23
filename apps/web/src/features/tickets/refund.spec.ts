@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { canCancelTicket, inactiveTicketLabel, isCancellationClosed, refundBadgeText } from "./refund";
+import { canCancelTicket, inactiveTicketLabel, isCancellationClosed, isTicketInactive, refundBadgeText } from "./refund";
 import type { Ticket, TicketRefund } from "./types";
 
 const NOW = new Date("2026-11-20T12:00:00.000Z");
@@ -67,8 +67,10 @@ describe("isCancellationClosed", () => {
 
 describe("refundBadgeText", () => {
   it.each([
-    ["pending", "cancelled", "Estorno em andamento"],
-    ["completed", "cancelled", "Estorno concluído"],
+    ["pending", "cancelled", "Ingresso cancelado. Estorno em andamento."],
+    ["completed", "cancelled", "Ingresso cancelado e estornado."],
+    ["pending", "expired", "Estorno em andamento"],
+    ["completed", "expired", "Estorno concluído"],
     ["failed", "cancelled", "Não foi possível estornar. Nossa equipe vai analisar."],
     ["failed", "expired", "Não foi possível estornar. Nossa equipe vai analisar."],
     ["failed", "confirmed", "Não foi possível estornar. Seu ingresso continua válido."],
@@ -98,5 +100,22 @@ describe("inactiveTicketLabel", () => {
 
     // ASSERT
     expect(label).toBe(expected);
+  });
+});
+
+describe("isTicketInactive", () => {
+  it.each([
+    ["cancelled", true],
+    ["expired", true],
+    ["confirmed", false],
+  ])("should decide for a %s booking", (status, expected) => {
+    // ARRANGE
+    const bookingStatus = status;
+
+    // ACT
+    const result = isTicketInactive(bookingStatus);
+
+    // ASSERT
+    expect(result).toBe(expected);
   });
 });

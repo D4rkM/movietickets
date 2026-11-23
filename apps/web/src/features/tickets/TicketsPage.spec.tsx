@@ -197,7 +197,7 @@ describe("TicketsPage (integration)", () => {
         expect.objectContaining({ method: "POST" }),
       );
       // AND Dune stays listed as cancelled with the pending-refund badge and no cancel button
-      const duneCard = (await screen.findByText("Estorno em andamento")).closest("li")!;
+      const duneCard = (await screen.findByText("Ingresso cancelado. Estorno em andamento.")).closest("li")!;
       expect(within(duneCard).getByText("Dune")).toBeInTheDocument();
       expect(within(duneCard).getByText("Cancelado")).toBeInTheDocument();
       expect(within(duneCard).queryByRole("button", { name: "Cancelar" })).not.toBeInTheDocument();
@@ -317,7 +317,7 @@ describe("TicketsPage (integration)", () => {
       await userEvent.click(retryButton);
 
       // THEN the same endpoint is called again and the ticket shows the pending refund
-      expect(await screen.findByText("Estorno em andamento")).toBeInTheDocument();
+      expect(await screen.findByText("Ingresso cancelado. Estorno em andamento.")).toBeInTheDocument();
       const calls = cancelCalls();
       expect(calls).toHaveLength(2);
       expect(calls.every(([url]) => url.toString().endsWith("/bookings/booking-1/cancel"))).toBe(true);
@@ -326,7 +326,7 @@ describe("TicketsPage (integration)", () => {
   });
 
   describe("AC29: refund badge on listed tickets", () => {
-    it("AC29: deve mostrar Estorno em andamento para ingresso cancelado com estorno pendente", async () => {
+    it("AC29: deve mostrar Ingresso cancelado, estorno em andamento para ingresso cancelado com estorno pendente", async () => {
       // GIVEN a cancelled ticket whose refund is still pending
       mockBackend([
         { ...DUNE_TICKET, status: "cancelled", refund: { status: "pending", amountCents: 5000, requestedAt: hoursFromNow(-1) } },
@@ -336,12 +336,12 @@ describe("TicketsPage (integration)", () => {
       renderTicketsPage();
 
       // THEN it shows the pending badge and no cancel button
-      expect(await screen.findByText("Estorno em andamento")).toBeInTheDocument();
+      expect(await screen.findByText("Ingresso cancelado. Estorno em andamento.")).toBeInTheDocument();
       expect(screen.getByText("Cancelado")).toBeInTheDocument();
       expect(screen.queryByRole("button", { name: "Cancelar" })).not.toBeInTheDocument();
     });
 
-    it("AC29: deve mostrar Estorno concluído para ingresso com estorno aprovado", async () => {
+    it("AC29: deve mostrar Ingresso cancelado e estornado para ingresso com estorno aprovado", async () => {
       // GIVEN a cancelled ticket whose refund was approved
       mockBackend([
         { ...DUNE_TICKET, status: "cancelled", refund: { status: "completed", amountCents: 5000, requestedAt: hoursFromNow(-1) } },
@@ -351,7 +351,7 @@ describe("TicketsPage (integration)", () => {
       renderTicketsPage();
 
       // THEN it shows the completed badge
-      expect(await screen.findByText("Estorno concluído")).toBeInTheDocument();
+      expect(await screen.findByText("Ingresso cancelado e estornado.")).toBeInTheDocument();
     });
 
     it("AC29: deve mostrar a mensagem de falha para ingresso cancelado com estorno que falhou", async () => {
@@ -365,6 +365,28 @@ describe("TicketsPage (integration)", () => {
 
       // THEN it shows the failure message for the team to review
       expect(await screen.findByText("Não foi possível estornar. Nossa equipe vai analisar.")).toBeInTheDocument();
+    });
+
+    it("AC33: deve esmaecer os dados do ingresso cancelado e manter o aviso do estorno legível", async () => {
+      // GIVEN a cancelled ticket with a pending refund next to an active ticket
+      mockBackend([
+        { ...DUNE_TICKET, status: "cancelled", refund: { status: "pending", amountCents: 5000, requestedAt: hoursFromNow(-1) } },
+        OPPENHEIMER_TICKET,
+      ]);
+
+      // WHEN the page renders
+      renderTicketsPage();
+
+      // THEN the cancelled ticket's details are dimmed but its notice is not
+      const duneCard = (await screen.findByText("Dune")).closest("li")!;
+      const details = within(duneCard).getByTestId("ticket-details");
+      expect(details).toHaveClass("opacity-60");
+      expect(details).toContainElement(screen.getByText("Dune"));
+      expect(details).not.toContainElement(within(duneCard).getByTestId("refund-badge"));
+      expect(within(duneCard).getByTestId("refund-badge")).toHaveTextContent("Ingresso cancelado. Estorno em andamento.");
+      // AND the active ticket is not dimmed
+      const oppenheimerCard = screen.getByText("Oppenheimer").closest("li")!;
+      expect(within(oppenheimerCard).getByTestId("ticket-details")).not.toHaveClass("opacity-60");
     });
 
     it("AC29: deve listar o ingresso expirado com pagamento aprovado e o selo do estorno", async () => {

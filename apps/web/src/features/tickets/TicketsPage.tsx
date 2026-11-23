@@ -5,7 +5,7 @@ import { formatCentsBRL } from "../../lib/money";
 import { useAuth } from "../auth/AuthContext";
 import { CancelBookingError, cancelBooking, getMyTickets } from "./api";
 import { RefundBadge } from "./RefundBadge";
-import { CANCELLATION_CLOSED_TEXT, canCancelTicket, inactiveTicketLabel, isCancellationClosed } from "./refund";
+import { CANCELLATION_CLOSED_TEXT, canCancelTicket, inactiveTicketLabel, isCancellationClosed, isTicketInactive } from "./refund";
 import type { CancelBookingResult, Ticket } from "./types";
 
 function formatDateTime(iso: string): string {
@@ -126,23 +126,25 @@ export function TicketsPage() {
           const inactiveLabel = inactiveTicketLabel(ticket.status);
           return (
             <li key={ticket.bookingId} className="rounded border border-gray-200 p-4">
-              <div className="flex flex-wrap items-center gap-2">
-                <h2 className="text-lg font-medium">{ticket.session.movie.title}</h2>
-                {inactiveLabel && (
-                  <span className="rounded bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700">
-                    {inactiveLabel}
-                  </span>
-                )}
+              <div data-testid="ticket-details" className={isTicketInactive(ticket.status) ? "opacity-60" : undefined}>
+                <div className="flex flex-wrap items-center gap-2">
+                  <h2 className="text-lg font-medium">{ticket.session.movie.title}</h2>
+                  {inactiveLabel && (
+                    <span className="rounded bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700">
+                      {inactiveLabel}
+                    </span>
+                  )}
+                </div>
+                <p className="text-sm text-gray-500">
+                  {formatDateTime(ticket.session.startsAt)} · {ticket.session.cinema.name} ·{" "}
+                  {ticket.session.room.name}
+                </p>
+                <p className="mt-2 text-sm">
+                  Assentos:{" "}
+                  {ticket.seats.map((seat) => `${seat.rowLabel}${seat.seatNumber}`).join(", ")}
+                </p>
+                <p className="mt-1 text-sm text-gray-500">Total: {formatCentsBRL(ticket.amountCents)}</p>
               </div>
-              <p className="text-sm text-gray-500">
-                {formatDateTime(ticket.session.startsAt)} · {ticket.session.cinema.name} ·{" "}
-                {ticket.session.room.name}
-              </p>
-              <p className="mt-2 text-sm">
-                Assentos:{" "}
-                {ticket.seats.map((seat) => `${seat.rowLabel}${seat.seatNumber}`).join(", ")}
-              </p>
-              <p className="mt-1 text-sm text-gray-500">Total: {formatCentsBRL(ticket.amountCents)}</p>
               {ticket.refund && (
                 <div className="mt-2">
                   <RefundBadge refund={ticket.refund} bookingStatus={ticket.status} />
