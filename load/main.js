@@ -9,6 +9,7 @@ import http from "k6/http";
 import { check, fail, sleep } from "k6";
 import { Counter } from "k6/metrics";
 import exec from "k6/execution";
+import { randomBytes } from "k6/crypto";
 
 const BASE_URL = (__ENV.BASE_URL || "http://localhost:3000").replace(/\/$/, "");
 const SMOKE = __ENV.SMOKE === "1";
@@ -31,11 +32,15 @@ for (const name of SELECTED) {
 
 const SEEDED_EMAIL = "cliente@movietickets.dev";
 const SEEDED_PASSWORD = "password123";
-const THROWAWAY_PASSWORD = "loadtest-password-123";
 // Sessions starting sooner than this are skipped by the write scenarios: the
 // API only allows cancelling until 120 min before the session starts.
 const MIN_SESSION_LEAD_MS = 3 * 60 * 60 * 1000;
-const RUN_ID = `${Date.now().toString(36)}${Math.floor(Math.random() * 1e4).toString(36)}`;
+// Cryptographically secure randomness for throwaway account data (unique per run).
+function randomHex(bytes) {
+  return Array.from(new Uint8Array(randomBytes(bytes)), (b) => b.toString(16).padStart(2, "0")).join("");
+}
+const RUN_ID = randomHex(6);
+const THROWAWAY_PASSWORD = randomHex(16);
 
 // Contention correctness counters (AC1 in the spec).
 const holdWon = new Counter("contention_hold_won");
@@ -245,7 +250,7 @@ export function browse(data) {
   const movies = http.get(`${BASE_URL}/movies`, params("GET /movies", null, 200));
   check(movies, { "GET /movies is 200": (res) => res.status === 200 });
   if (data.browseToken && data.sessions.length > 0) {
-    const sessionId = data.sessions[Math.floor(Math.random() * data.sessions.length)];
+    const sessionId = data.sessions[exec.scenario.iterationInTest % data.sessions.length];
     const map = getSeatMap(sessionId, data.browseToken);
     check(map, { "GET /sessions/:id/seats is 200": (res) => res.status === 200 });
   }
