@@ -101,6 +101,9 @@
         <mxCell id="p1_ac_plan" value="" style="endArrow=none;html=1;rounded=0;" edge="1" parent="1" source="a_cliente" target="uc24">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
+        <mxCell id="p1_mp24" value="" style="endArrow=none;html=1;rounded=0;" edge="1" parent="1" source="a_mp" target="uc24">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
         <mxCell id="p1_mp" value="" style="endArrow=none;html=1;rounded=0;" edge="1" parent="1" source="a_mp" target="uc11">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
@@ -238,6 +241,9 @@
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
         <mxCell id="p2_mp1" value="" style="endArrow=none;html=1;rounded=0;" edge="1" parent="1" source="b_mp" target="uc20">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="p2_mp25" value="" style="endArrow=none;html=1;rounded=0;" edge="1" parent="1" source="b_mp" target="uc25">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
         <mxCell id="p2_mp2" value="" style="endArrow=none;html=1;rounded=0;" edge="1" parent="1" source="b_mp" target="uc26">
