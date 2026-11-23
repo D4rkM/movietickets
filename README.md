@@ -6,7 +6,7 @@ Monorepo (pnpm workspaces):
 
 - `apps/web` — front (React + Vite). Ver `apps/web/README.md`.
 - `apps/api` — back (NestJS). Ver `apps/api/README.md`.
-- `docs/` — documentação: `docs/planning.md` (decisões de stack/arquitetura), `docs/c4/` (diagramas C4), `docs/use-cases/` ([diagrama de casos de uso](./docs/use-cases/use-cases.md)), `docs/flows/<feature>/` (spec, sequência e diagrama de classes por feature; sequências: [`booking`](./docs/flows/booking/sequence.md), [`checkout-transparente`](./docs/flows/checkout-transparente/sequence.md), [`pending-booking-expiry`](./docs/flows/pending-booking-expiry/sequence.md), [`refund`](./docs/flows/refund/sequence.md), [`admin-panel`](./docs/flows/admin-panel/sequence.md), [`public-catalog-login-gate`](./docs/flows/public-catalog-login-gate/sequence.md), [`observability`](./docs/flows/observability/sequence.md); classes: [`admin-panel`](./docs/flows/admin-panel/class.md), [`auth`](./docs/flows/auth/class.md), [`booking`](./docs/flows/booking/class.md), [`checkout-transparente`](./docs/flows/checkout-transparente/class.md), [`frontend`](./docs/flows/frontend/class.md), [`refund`](./docs/flows/refund/class.md), [`seating`](./docs/flows/seating/class.md)), `docs/schema.md` + `docs/schema-erd.mmd` (schema do banco e DER), `docs/bruno/` (collection do [Bruno](https://www.usebruno.com/) pra testar as rotas manualmente).
+- `docs/` — documentação: `docs/planning.md` (decisões de stack/arquitetura), `docs/c4/` (diagramas C4), `docs/use-cases/` ([diagrama de casos de uso](./docs/use-cases/use-cases.md)), `docs/flows/<feature>/` (spec, sequência e diagrama de classes por feature; sequências: [`booking`](./docs/flows/booking/sequence.md), [`checkout-transparente`](./docs/flows/checkout-transparente/sequence.md), [`pending-booking-expiry`](./docs/flows/pending-booking-expiry/sequence.md), [`refund`](./docs/flows/refund/sequence.md), [`admin-panel`](./docs/flows/admin-panel/sequence.md), [`public-catalog-login-gate`](./docs/flows/public-catalog-login-gate/sequence.md), [`observability`](./docs/flows/observability/sequence.md); classes: [`admin-panel`](./docs/flows/admin-panel/class.md), [`auth`](./docs/flows/auth/class.md), [`booking`](./docs/flows/booking/class.md), [`checkout-transparente`](./docs/flows/checkout-transparente/class.md), [`frontend`](./docs/flows/frontend/class.md), [`refund`](./docs/flows/refund/class.md), [`seating`](./docs/flows/seating/class.md); spec do teste de carga: [`load-test`](./docs/flows/load-test/spec.md)), `docs/schema.md` + `docs/schema-erd.mmd` (schema do banco e DER), `docs/bruno/` (collection do [Bruno](https://www.usebruno.com/) pra testar as rotas manualmente).
 
 ## Instalação
 
@@ -178,6 +178,10 @@ make up-full-obs   # igual ao up-full, com a API exportando pro container lgtm
 - Variáveis `OTEL_*`: ver `apps/api/.env.example`. Amostragem padrão de 100% (`OTEL_TRACES_SAMPLER=parentbased_traceidratio`, `OTEL_TRACES_SAMPLER_ARG=1.0`) e export de métricas a cada 15 s; tudo sobrescrevível por env.
 - Dados persistem no volume `lgtm_data` com retenção de 7 dias. `make obs-down` para os containers e mantém os dados; pra zerar: `docker compose --profile observability down -v`.
 - Dashboards e alertas: editar no Grafana, exportar o JSON e commitar em `infra/observability/`. (Os dashboards e alertas provisionados do projeto ainda não entraram; por enquanto só o Explore.)
+
+## Teste de carga
+
+Script [k6](https://grafana.com/docs/k6/latest/) pra gerar tráfego na stack local (alimenta os dashboards do Grafana) e validar a disputa por assento: `make load-smoke` (só leitura) e `make load`. Como instalar, variáveis e o que olhar no Grafana em [`load/README.md`](./load/README.md); spec em [`docs/flows/load-test/spec.md`](./docs/flows/load-test/spec.md).
 
 ## Testes
 

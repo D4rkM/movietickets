@@ -6,7 +6,7 @@
 # Fall back to a real `podman` binary when a real `docker` binary isn't found.
 DOCKER := $(shell command -v docker 2>/dev/null || command -v podman 2>/dev/null || echo docker)
 
-.PHONY: help up down up-full down-full obs-up obs-down up-full-obs install migrate seed studio dev-api dev-web expose build lint test test-integration
+.PHONY: help up down up-full down-full obs-up obs-down up-full-obs install migrate seed studio dev-api dev-web expose build lint test test-integration load load-smoke
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-18s\033[0m %s\n", $$1, $$2}'
@@ -64,3 +64,11 @@ test: ## Run unit tests (apps/api)
 
 test-integration: ## Run integration tests against the local Postgres
 	pnpm --filter api test:integration
+
+load: ## Load test (k6) against the local stack: browse + seat contention + book/cancel (the latter needs ENABLE_TEST_ROUTES=true on the api, else skipped). Env: BASE_URL, SCENARIOS, VUS, DURATION (see load/README.md). Writes test data!
+	@command -v k6 >/dev/null 2>&1 || { echo "k6 not found. Install it first (macOS: brew install k6; others: https://grafana.com/docs/k6/latest/set-up/install-k6/)." >&2; exit 1; }
+	k6 run load/main.js
+
+load-smoke: ## Read-only k6 smoke (1 VU, 1 iteration, browse only): checks the stack is reachable, writes nothing
+	@command -v k6 >/dev/null 2>&1 || { echo "k6 not found. Install it first (macOS: brew install k6; others: https://grafana.com/docs/k6/latest/set-up/install-k6/)." >&2; exit 1; }
+	k6 run -e SMOKE=1 load/main.js
