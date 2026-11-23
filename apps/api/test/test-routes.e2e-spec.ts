@@ -46,54 +46,54 @@ describe("Rotas de teste: confirmação mockada de reserva (e2e)", () => {
   }
 
   it("AC1: deve responder 404 e manter a reserva pendente quando ENABLE_TEST_ROUTES não está ligada", async () => {
-    // GIVEN uma reserva pendente e a flag ausente
+    // GIVEN a pending booking and the flag unset
     const bookingId = await pendingBookingOfUser();
     delete process.env.ENABLE_TEST_ROUTES;
 
-    // WHEN o dono tenta confirmar sem pagar
+    // WHEN the owner tries to confirm without paying
     const response = await confirmMockedAs(ctx.app, userToken, bookingId);
 
-    // THEN a rota "não existe" e a reserva continua pendente
+    // THEN the route "does not exist" and the booking stays pending
     expect(response.statusCode).toBe(404);
     expect(await bookingStatusOf(ctx.db, bookingId)).toBe("pending");
   });
 
   it("AC1: deve responder 404 quando ENABLE_TEST_ROUTES tem qualquer valor diferente de true", async () => {
-    // GIVEN uma reserva pendente e a flag com valor que não é "true"
+    // GIVEN a pending booking and the flag set to a value other than "true"
     const bookingId = await pendingBookingOfUser();
     process.env.ENABLE_TEST_ROUTES = "1";
 
-    // WHEN o dono tenta confirmar
+    // WHEN the owner tries to confirm
     const response = await confirmMockedAs(ctx.app, userToken, bookingId);
 
-    // THEN a rota continua desabilitada
+    // THEN the route stays disabled
     expect(response.statusCode).toBe(404);
     expect(await bookingStatusOf(ctx.db, bookingId)).toBe("pending");
   });
 
   it("AC2: deve confirmar a reserva pendente quando ENABLE_TEST_ROUTES=true", async () => {
-    // GIVEN uma reserva pendente e a flag ligada
+    // GIVEN a pending booking and the flag enabled
     const bookingId = await pendingBookingOfUser();
     process.env.ENABLE_TEST_ROUTES = "true";
 
-    // WHEN o dono confirma
+    // WHEN the owner confirms
     const response = await confirmMockedAs(ctx.app, userToken, bookingId);
 
-    // THEN a reserva fica confirmada
+    // THEN the booking becomes confirmed
     expect(response.statusCode).toBe(200);
     expect(response.json()).toEqual({ bookingId, status: "confirmed" });
     expect(await bookingStatusOf(ctx.db, bookingId)).toBe("confirmed");
   });
 
   it("AC3: deve recusar token de convidado com 401 quando ENABLE_TEST_ROUTES=true", async () => {
-    // GIVEN um convidado e a flag ligada
+    // GIVEN a guest and the flag enabled
     const guest: GuestIdentity = await obtainGuestIdentity(ctx.app, ctx.jwtService);
     process.env.ENABLE_TEST_ROUTES = "true";
 
-    // WHEN ele tenta confirmar uma reserva
+    // WHEN the guest tries to confirm a booking
     const response = await confirmMockedAs(ctx.app, guest.guestToken, "00000000-0000-0000-0000-000000000099");
 
-    // THEN é recusado por não ser usuário
+    // THEN it is rejected because the caller is not a user
     expect(response.statusCode).toBe(401);
   });
 });

@@ -214,17 +214,17 @@ describe("Observabilidade: API compilada com OpenTelemetry (smoke)", () => {
     });
 
     it("AC7: não deve exportar IP nem user agent do cliente nos logs, nem no OTLP nem no stdout", async () => {
-      // GIVEN a API exportando telemetria e uma request com user agent e cabeçalhos de proxy
+      // GIVEN the API exporting telemetry and a request carrying a user agent and proxy headers
       const headers = {
         "user-agent": "SmokeLogBrowser/1.0",
         "x-forwarded-for": "203.0.113.77",
         "x-real-ip": "203.0.113.77",
       };
 
-      // WHEN a request chega
+      // WHEN the request arrives
       await fetch(`${api.baseUrl}/observability-smoke-log-privacy`, { headers });
 
-      // THEN o log "request completed" existe, mas sem IP, porta nem user agent (OTLP e stdout)
+      // THEN the "request completed" log exists, but without IP, port or user agent (OTLP and stdout)
       const request = await waitFor("span SERVER da request de privacidade de logs", () =>
         collector
           .spans()
