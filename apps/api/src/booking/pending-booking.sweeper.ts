@@ -5,6 +5,8 @@ import { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import { DRIZZLE } from "../db/drizzle.module";
 import * as schema from "../db/schema";
 import { SeatingGateway } from "../seating/seating.gateway";
+import { BusinessMetrics } from "../telemetry/business-metrics";
+import { withRootSpan } from "../telemetry/spans";
 import {
   expirableBookingCondition,
   groupSeatsByBooking,
@@ -42,6 +44,7 @@ export class PendingBookingSweeper {
   constructor(
     @Inject(DRIZZLE) private readonly db: PostgresJsDatabase<typeof schema>,
     private readonly gateway: SeatingGateway,
+    private readonly metrics: BusinessMetrics,
   ) {}
 
   @Interval(SWEEP_INTERVAL_MS)
@@ -52,34 +55,54 @@ export class PendingBookingSweeper {
   /**
    * One sweeper tick. Skipped (returns undefined) while a previous tick on this
    * instance is still running; errors are logged, never thrown, so a failing
-   * tick can't take the API down.
+   * tick can't take the API down. Each tick is a root span
+   * (`pending-booking-sweeper.run`, the queries are its children) and counts in
+   * `movietickets.sweeper.runs`/`.duration` with its outcome.
    */
   async run(): Promise<SweepResult | undefined> {
-    if (this.running) {
-      this.logger.debug("Previous sweep still running, skipping this tick");
-      return undefined;
-    }
-    this.running = true;
-    try {
-      return await this.sweep();
-    } catch (err) {
-      this.logger.error(`Pending booking sweep failed: ${err}`);
-      return undefined;
-    } finally {
-      this.running = false;
-    }
+    return withRootSpan("pending-booking-sweeper.run", async (span) => {
+      const startedAt = performance.now();
+      const finish = (outcome: "success" | "error" | "skipped", expiredCount = 0) => {
+        span.setAttribute("sweeper.outcome", outcome);
+        span.setAttribute("sweeper.expired_count", expiredCount);
+        this.metrics.sweeperRun(outcome, (performance.now() - startedAt) / 1000);
+      };
+
+      if (this.running) {
+        this.logger.debug("Previous sweep still running, skipping this tick");
+        finish("skipped");
+        return undefined;
+      }
+      this.running = true;
+      let expiredCount = 0;
+      try {
+        const result = await this.sweep((count) => (expiredCount += count));
+        finish("success", result.expiredBookingIds.length);
+        return result;
+      } catch (err) {
+        this.logger.error(`Pending booking sweep failed: ${err}`);
+        finish("error", expiredCount);
+        return undefined;
+      } finally {
+        this.running = false;
+      }
+    });
   }
 
-  private async sweep(): Promise<SweepResult> {
+  private async sweep(onExpired: (count: number) => void): Promise<SweepResult> {
     const expiredBookingIds: string[] = [];
     for (;;) {
       const batch = await this.expireBatch();
+      // Each batch already committed: count it even if a later batch fails.
+      this.metrics.bookingExpired("sweeper", batch.bookings.length);
+      onExpired(batch.bookings.length);
       this.announce(batch);
       expiredBookingIds.push(...batch.bookings.map((booking) => booking.id));
       if (batch.bookings.length < SWEEP_BATCH_SIZE) break;
     }
 
     const stalePaymentAlertBookingIds = await this.alertStalePayments();
+    this.metrics.paymentStaleAlert(stalePaymentAlertBookingIds.length);
     return { expiredBookingIds, stalePaymentAlertBookingIds };
   }
 

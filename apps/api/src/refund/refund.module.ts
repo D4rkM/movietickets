@@ -1,4 +1,5 @@
 import { Module } from "@nestjs/common";
+import { TelemetryModule } from "../telemetry/telemetry.module";
 import { AuthTokenModule } from "../auth/auth-token.module";
 import { BookingModule } from "../booking/booking.module";
 import { MercadoPagoModule } from "../mercadopago/mercadopago.module";
@@ -12,7 +13,7 @@ import { RefundService } from "./refund.service";
  * queue. Doesn't import PaymentModule (PaymentModule imports this one).
  */
 @Module({
-  imports: [AuthTokenModule, BookingModule, NotificationModule, MercadoPagoModule],
+  imports: [AuthTokenModule, BookingModule, NotificationModule, MercadoPagoModule, TelemetryModule],
   controllers: [RefundController],
   providers: [RefundService],
   exports: [RefundService],

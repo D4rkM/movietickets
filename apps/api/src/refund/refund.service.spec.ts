@@ -1,8 +1,10 @@
 import { Logger, NotFoundException } from "@nestjs/common";
+import { createMockBusinessMetrics } from "../../test/helpers/business-metrics-mock";
 import { createFakeDb, FakeDb, postgresError } from "../../test/helpers/fake-db";
 import { BookingService } from "../booking/booking.service";
 import * as schema from "../db/schema";
 import { NotificationService } from "../notification/notification.service";
+import { BusinessMetrics } from "../telemetry/business-metrics";
 import {
   BookingNotCancellableException,
   CancellationDeadlinePassedException,
@@ -47,6 +49,7 @@ describe("RefundService", () => {
   const cancellationNotify = jest.fn();
   const bookingService = { cancelConfirmedBooking: jest.fn() };
   const notificationService = { sendRefundRequestedEmail: jest.fn() };
+  const metrics = createMockBusinessMetrics();
 
   /** Types of the payment_events rows inserted so far, in order. */
   function insertedEventTypes(): string[] {
@@ -83,6 +86,7 @@ describe("RefundService", () => {
       paymentClient as never,
       bookingService as unknown as BookingService,
       notificationService as unknown as NotificationService,
+      metrics as unknown as BusinessMetrics,
     );
   });
 
@@ -744,6 +748,188 @@ describe("RefundService", () => {
 
       // ASSERT
       await expect(result).rejects.toThrow(expected);
+    });
+  });
+  describe("metrics", () => {
+    it("should count the requested refund and its approved status after the commits", async () => {
+      // ARRANGE
+      const requested = refundRow();
+      db.queue(
+        [confirmedBooking],
+        [approvedPayment],
+        [],
+        [requested],
+        [],
+        [{ id: "booking-1", status: "confirmed" }],
+        [requested],
+        [refundRow({ status: "approved", externalRefundId: "777" })],
+      );
+      refundClient.total.mockResolvedValue({ id: 777, status: "approved" });
+
+      // ACT
+      await service.cancelWithRefund("booking-1", "user-1");
+
+      // ASSERT
+      expect(metrics.refundRequested).toHaveBeenCalledTimes(1);
+      expect(metrics.refundStatusChanged).toHaveBeenCalledTimes(1);
+      expect(metrics.refundStatusChanged).toHaveBeenCalledWith("approved");
+    });
+
+    it("should not count a new request when a stalled requested row is reused", async () => {
+      // ARRANGE
+      const stalled = refundRow();
+      db.queue(
+        [confirmedBooking],
+        [approvedPayment],
+        [{ refund: stalled, stale: true }],
+        [{ id: "booking-1", status: "confirmed" }],
+        [stalled],
+        [refundRow({ status: "in_process", externalRefundId: "777" })],
+      );
+      refundClient.total.mockResolvedValue({ id: 777, status: "in_process" });
+
+      // ACT
+      await service.cancelWithRefund("booking-1", "user-1");
+
+      // ASSERT
+      expect(metrics.refundRequested).not.toHaveBeenCalled();
+      expect(metrics.refundStatusChanged).toHaveBeenCalledWith("in_process");
+    });
+
+    it("should count a failed status when Mercado Pago refuses the request with a 4xx", async () => {
+      // ARRANGE
+      db.queue([confirmedBooking], [approvedPayment], [], [refundRow()], [], [refundRow({ status: "failed" })]);
+      refundClient.total.mockRejectedValue({ status: 400, cause: [{ code: 2063 }] });
+
+      // ACT
+      const result = service.cancelWithRefund("booking-1", "user-1");
+
+      // ASSERT
+      await expect(result).rejects.toThrow(RefundRequestInvalidException);
+      expect(metrics.refundRequested).toHaveBeenCalledTimes(1);
+      expect(metrics.refundStatusChanged).toHaveBeenCalledWith("failed");
+    });
+
+    it("should not count a failed status when the row had already left requested", async () => {
+      // ARRANGE
+      db.queue([confirmedBooking], [approvedPayment], [], [refundRow()], [], []);
+      refundClient.total.mockRejectedValue({ status: 400 });
+
+      // ACT
+      const result = service.cancelWithRefund("booking-1", "user-1");
+
+      // ASSERT
+      await expect(result).rejects.toThrow(RefundRequestInvalidException);
+      expect(metrics.refundStatusChanged).not.toHaveBeenCalled();
+    });
+
+    it("should count a rejected refund", async () => {
+      // ARRANGE
+      const requested = refundRow();
+      db.queue(
+        [confirmedBooking],
+        [approvedPayment],
+        [],
+        [requested],
+        [],
+        [{ id: "booking-1", status: "confirmed" }],
+        [requested],
+        [refundRow({ status: "rejected", externalRefundId: "777" })],
+      );
+      refundClient.total.mockResolvedValue({ id: 777, status: "rejected" });
+
+      // ACT
+      const result = service.cancelWithRefund("booking-1", "user-1");
+
+      // ASSERT
+      await expect(result).rejects.toThrow(RefundRejectedException);
+      expect(metrics.refundStatusChanged).toHaveBeenCalledWith("rejected");
+    });
+
+    it("should not count anything for a booking cancelled without a payment to refund", async () => {
+      // ARRANGE
+      db.queue([confirmedBooking], []);
+
+      // ACT
+      await service.cancelWithRefund("booking-1", "user-1");
+
+      // ASSERT
+      expect(metrics.refundRequested).not.toHaveBeenCalled();
+      expect(metrics.refundStatusChanged).not.toHaveBeenCalled();
+    });
+
+    it("should count the status change of applyRefundStatus only when its post-commit notify runs", async () => {
+      // ARRANGE
+      const inProcess = refundRow({ status: "in_process", externalRefundId: "777" });
+      db.queue([{ id: "booking-1", status: "cancelled" }], [inProcess], [refundRow({ status: "approved", externalRefundId: "777" })]);
+
+      // ACT
+      const result = await service.applyRefundStatus(db as never, inProcess, { id: 777, status: "approved" }, "webhook");
+      const countedBeforeCommit = metrics.refundStatusChanged.mock.calls.length;
+      await result.notify();
+
+      // ASSERT
+      expect(countedBeforeCommit).toBe(0);
+      expect(metrics.refundStatusChanged).toHaveBeenCalledWith("approved");
+    });
+
+    it("should not count a redelivered refund status", async () => {
+      // ARRANGE
+      const approved = refundRow({ status: "approved", externalRefundId: "777" });
+      db.queue([{ id: "booking-1", status: "cancelled" }], [approved]);
+
+      // ACT
+      const result = await service.applyRefundStatus(db as never, approved, { id: 777, status: "approved" }, "webhook");
+      await result.notify();
+
+      // ASSERT
+      expect(metrics.refundStatusChanged).not.toHaveBeenCalled();
+    });
+
+    it("should count an external refund as approved only after the commit, without a request", async () => {
+      // ARRANGE
+      const external = refundRow({ status: "approved", reason: "external", requestedBy: null, externalRefundId: "999" });
+      db.queue([], [], [external]);
+
+      // ACT
+      const notify = await service.applyRefundedPayment(db as never, {
+        bookingId: "booking-1",
+        paymentId: "payment-1",
+        paymentStatus: "refunded",
+        amountCents: 5000,
+        refunds: [{ id: 999, status: "approved", amount: 50 }],
+      });
+      const countedBeforeCommit = metrics.refundStatusChanged.mock.calls.length;
+      await notify();
+
+      // ASSERT
+      expect(countedBeforeCommit).toBe(0);
+      expect(metrics.refundStatusChanged).toHaveBeenCalledWith("approved");
+      expect(metrics.refundRequested).not.toHaveBeenCalled();
+    });
+
+    it("should count the admin's new refund request", async () => {
+      // ARRANGE
+      const requested = refundRow({ reason: "expired_booking_review", requestedBy: "admin-1" });
+      db.queue(
+        [{ id: "booking-1", needsRefundReview: true }],
+        [],
+        [approvedPayment],
+        [],
+        [requested],
+        [],
+        [{ id: "booking-1", status: "expired" }],
+        [requested],
+        [refundRow({ status: "approved", reason: "expired_booking_review", externalRefundId: "777" })],
+      );
+      refundClient.total.mockResolvedValue({ id: 777, status: "approved" });
+
+      // ACT
+      await service.requestAdminRefund("booking-1", "admin-1");
+
+      // ASSERT
+      expect(metrics.refundRequested).toHaveBeenCalledTimes(1);
+      expect(metrics.refundStatusChanged).toHaveBeenCalledWith("approved");
     });
   });
 });

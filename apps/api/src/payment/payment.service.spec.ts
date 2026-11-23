@@ -26,6 +26,10 @@ import {
 } from "./payment.helpers";
 import { RefundService } from "../refund/refund.service";
 import { PaymentService } from "./payment.service";
+import { createMockBusinessMetrics } from "../../test/helpers/business-metrics-mock";
+import { BusinessMetrics } from "../telemetry/business-metrics";
+
+const mockMetrics = createMockBusinessMetrics();
 
 describe("PaymentService & payment helpers", () => {
   const mockDb = {
@@ -61,9 +65,14 @@ describe("PaymentService & payment helpers", () => {
         where: jest.fn().mockResolvedValue([]),
       }),
     });
+    // Awaitable as-is, or with `.returning()` (one changed row).
     mockDb.update.mockReturnValue({
       set: jest.fn().mockReturnValue({
-        where: jest.fn().mockResolvedValue(undefined),
+        where: jest.fn().mockReturnValue(
+          Object.assign(Promise.resolve(undefined), {
+            returning: jest.fn().mockResolvedValue([{ id: "attempt-1" }]),
+          }),
+        ),
       }),
     });
     mockDb.transaction.mockImplementation(async (callback: (tx: typeof mockDb) => unknown) =>
@@ -78,6 +87,7 @@ describe("PaymentService & payment helpers", () => {
         { provide: BookingService, useValue: mockBookingService },
         { provide: RefundService, useValue: mockRefundService },
         { provide: ConfigService, useValue: mockConfig },
+        { provide: BusinessMetrics, useValue: mockMetrics },
       ],
     }).compile();
 
@@ -401,6 +411,7 @@ describe("PaymentService & payment helpers", () => {
         "booking-1",
         { externalPaymentId: "4242", amountCents: 3000 },
         tx,
+        "payment_sync",
       );
       expect(tx.insert).toHaveBeenCalledWith(schema.paymentEvents);
       expect(insertValues).toHaveBeenCalledWith(
@@ -644,6 +655,7 @@ describe("PaymentService & payment helpers", () => {
         "booking-1",
         expect.anything(),
         expect.anything(),
+        "payment_webhook",
       );
     });
 
@@ -665,6 +677,7 @@ describe("PaymentService & payment helpers", () => {
         "booking-1",
         expect.anything(),
         expect.anything(),
+        "payment_webhook",
       );
     });
 
@@ -706,6 +719,7 @@ describe("PaymentService & payment helpers", () => {
           amountCents: 4500,
         },
         expect.anything(),
+        "payment_webhook",
       );
     });
 
@@ -825,7 +839,76 @@ describe("PaymentService & payment helpers", () => {
         "booking-1",
         { externalPaymentId: "5000", amountCents: 3000 },
         expect.anything(),
+        "payment_webhook",
       );
+    });
+    describe("metrics", () => {
+      function stubAttemptFoundByExternalId(attempt: Record<string, unknown>) {
+        mockDb.select.mockReturnValue({
+          from: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue([attempt]) }),
+        });
+      }
+
+      it("should count a webhook status change of an existing attempt", async () => {
+        // ARRANGE
+        stubAttemptFoundByExternalId({ id: "attempt-1", bookingId: "booking-1", status: "in_process" });
+        mockPaymentClient.get.mockResolvedValue({ id: 4242, status: "rejected", external_reference: "booking-1" });
+
+        // ACT
+        await service.handleWebhook({ type: "payment", data: { id: "4242" } });
+
+        // ASSERT
+        expect(mockMetrics.paymentStatusChanged).toHaveBeenCalledWith("rejected", "webhook");
+      });
+
+      it("should not count a redelivered webhook with the same status", async () => {
+        // ARRANGE
+        stubAttemptFoundByExternalId({ id: "attempt-1", bookingId: "booking-1", status: "rejected" });
+        mockPaymentClient.get.mockResolvedValue({ id: 4242, status: "rejected", external_reference: "booking-1" });
+
+        // ACT
+        await service.handleWebhook({ type: "payment", data: { id: "4242" } });
+
+        // ASSERT
+        expect(mockMetrics.paymentStatusChanged).not.toHaveBeenCalled();
+      });
+
+      it("should not count a late pre-approval status the guard refuses on an approved attempt", async () => {
+        // ARRANGE
+        stubAttemptFoundByExternalId({ id: "attempt-1", bookingId: "booking-1", status: "approved" });
+        mockPaymentClient.get.mockResolvedValue({ id: 4242, status: "pending", external_reference: "booking-1" });
+
+        // ACT
+        await service.handleWebhook({ type: "payment", data: { id: "4242" } });
+
+        // ASSERT
+        expect(mockMetrics.paymentStatusChanged).not.toHaveBeenCalled();
+      });
+
+      it("should count a payment first seen by the webhook (inserted row)", async () => {
+        // ARRANGE
+        mockPaymentClient.get.mockResolvedValue({ id: 999, status: "approved", external_reference: "booking-1" });
+
+        // ACT
+        await service.handleWebhook({ type: "payment", data: { id: "999" } });
+
+        // ASSERT
+        expect(mockMetrics.paymentStatusChanged).toHaveBeenCalledWith("approved", "webhook");
+      });
+
+      it("should not count anything when the webhook transaction rolls back", async () => {
+        // ARRANGE
+        stubAttemptFoundByExternalId({ id: "attempt-1", bookingId: "booking-1", status: "in_process" });
+        mockPaymentClient.get.mockResolvedValue({ id: 4242, status: "approved", external_reference: "booking-1" });
+        mockBookingService.confirmPaidBooking.mockRejectedValue(new Error("deadlock"));
+
+        // ACT
+        const promise = service.handleWebhook({ type: "payment", data: { id: "4242" } });
+
+        // ASSERT
+        await expect(promise).rejects.toThrow("deadlock");
+        expect(mockMetrics.paymentStatusChanged).not.toHaveBeenCalled();
+      });
     });
   });
 
@@ -1053,6 +1136,104 @@ describe("PaymentService & payment helpers", () => {
 
       // ASSERT
       await expect(promise).rejects.toThrow(PaymentProviderTimeoutException);
+    });
+    describe("metrics", () => {
+      /** update().set().where().returning() resolving to `rows`, one call each, in order. */
+      function stubUpdateReturning(...rowsPerCall: unknown[][]) {
+        for (const rows of rowsPerCall) {
+          mockDb.update.mockReturnValueOnce({
+            set: jest.fn().mockReturnValue({
+              where: jest.fn().mockReturnValue({ returning: jest.fn().mockResolvedValue(rows) }),
+            }),
+          });
+        }
+      }
+
+      it("should count the new attempt, the abandoned ones and the synchronous status after each commit", async () => {
+        // ARRANGE
+        setupCreatePaymentTx({});
+        stubUpdateReturning([{ id: "old-1", amountCents: 3000 }, { id: "old-2", amountCents: 3000 }], [{ id: "attempt-1" }]);
+        mockPaymentClient.create.mockResolvedValue({ id: 7777, status: "rejected", status_detail: "cc_rejected_other_reason" });
+
+        // ACT
+        await service.createPayment("booking-1", "user-1", validDto);
+
+        // ASSERT
+        expect(mockMetrics.paymentAttemptCreated).toHaveBeenCalledTimes(1);
+        expect(mockMetrics.paymentStatusChanged).toHaveBeenCalledWith("abandoned", "sync", 2);
+        expect(mockMetrics.paymentStatusChanged).toHaveBeenCalledWith("rejected", "sync");
+        expect(mockMetrics.paymentProviderError).not.toHaveBeenCalled();
+      });
+
+      it("should not count the synchronous status when the transition guard left the row untouched", async () => {
+        // ARRANGE
+        setupCreatePaymentTx({});
+        stubUpdateReturning([], []);
+        mockPaymentClient.create.mockResolvedValue({ id: 7777, status: "pending" });
+
+        // ACT
+        await service.createPayment("booking-1", "user-1", validDto);
+
+        // ASSERT
+        expect(mockMetrics.paymentStatusChanged).not.toHaveBeenCalledWith("pending", "sync");
+      });
+
+      it("should not count anything from tx1 when it rolls back on a payment already in flight", async () => {
+        // ARRANGE
+        setupCreatePaymentTx({ inProgress: { id: "attempt-in-flight" } });
+        stubUpdateReturning([{ id: "old-1", amountCents: 3000 }]);
+
+        // ACT
+        const promise = service.createPayment("booking-1", "user-1", validDto);
+
+        // ASSERT
+        await expect(promise).rejects.toThrow(PaymentInProgressException);
+        expect(mockMetrics.paymentAttemptCreated).not.toHaveBeenCalled();
+        expect(mockMetrics.paymentStatusChanged).not.toHaveBeenCalled();
+      });
+
+      it("should not count a new attempt when replaying a stored result", async () => {
+        // ARRANGE
+        setupCreatePaymentTx({
+          existingAttempt: { id: validDto.attemptId, bookingId: "booking-1", externalPaymentId: "8888", status: "approved" },
+        });
+
+        // ACT
+        await service.createPayment("booking-1", "user-1", validDto);
+
+        // ASSERT
+        expect(mockMetrics.paymentAttemptCreated).not.toHaveBeenCalled();
+        expect(mockMetrics.paymentStatusChanged).not.toHaveBeenCalled();
+      });
+
+      it("should count request_failed and a request_invalid provider error on Mercado Pago 4xx", async () => {
+        // ARRANGE
+        setupCreatePaymentTx({});
+        stubUpdateReturning([], [{ id: "attempt-1" }]);
+        mockPaymentClient.create.mockRejectedValue(Object.assign(new Error("Invalid card token"), { status: 400 }));
+
+        // ACT
+        const promise = service.createPayment("booking-1", "user-1", validDto);
+
+        // ASSERT
+        await expect(promise).rejects.toThrow(PaymentRequestInvalidException);
+        expect(mockMetrics.paymentStatusChanged).toHaveBeenCalledWith("request_failed", "sync", 1);
+        expect(mockMetrics.paymentProviderError).toHaveBeenCalledWith("request_invalid");
+      });
+
+      it("should count a timeout provider error without any status change on Mercado Pago 5xx", async () => {
+        // ARRANGE
+        setupCreatePaymentTx({});
+        mockPaymentClient.create.mockRejectedValue(Object.assign(new Error("Gateway timeout"), { status: 504 }));
+
+        // ACT
+        const promise = service.createPayment("booking-1", "user-1", validDto);
+
+        // ASSERT
+        await expect(promise).rejects.toThrow(PaymentProviderTimeoutException);
+        expect(mockMetrics.paymentProviderError).toHaveBeenCalledWith("timeout");
+        expect(mockMetrics.paymentStatusChanged).not.toHaveBeenCalledWith(expect.anything(), "sync");
+      });
     });
   });
 

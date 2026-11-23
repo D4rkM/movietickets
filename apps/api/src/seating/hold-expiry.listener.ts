@@ -1,6 +1,8 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import Redis from "ioredis";
+import { BusinessMetrics } from "../telemetry/business-metrics";
+import { withRootSpan } from "../telemetry/spans";
 import { SeatingGateway } from "./seating.gateway";
 import { HOLD_KEY_PREFIX } from "./seating.service";
 
@@ -34,6 +36,7 @@ export class HoldExpiryListener implements OnModuleInit, OnModuleDestroy {
   constructor(
     private readonly config: ConfigService,
     private readonly gateway: SeatingGateway,
+    private readonly metrics: BusinessMetrics,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -49,7 +52,9 @@ export class HoldExpiryListener implements OnModuleInit, OnModuleDestroy {
     this.subscriber = new Redis(connectionString);
     await this.subscriber.psubscribe(EXPIRED_EVENT_PATTERN);
     this.subscriber.on("pmessage", (_pattern: string, _channel: string, key: string) => {
-      this.handleExpiredKey(key);
+      this.handleExpiredKey(key).catch((err: unknown) => {
+        this.logger.warn(`Failed to handle expired hold ${key}: ${err}`);
+      });
     });
   }
 
@@ -57,11 +62,21 @@ export class HoldExpiryListener implements OnModuleInit, OnModuleDestroy {
     await this.subscriber?.quit();
   }
 
-  private handleExpiredKey(key: string): void {
+  /**
+   * Runs outside any request, so it opens its own root span (`seat-hold.expired`)
+   * to group the broadcast. Session/seat ids are technical, non-personal ids:
+   * fine on a span, never on a metric.
+   */
+  async handleExpiredKey(key: string): Promise<void> {
     const parsed = parseHoldKey(key);
     if (!parsed) return;
 
-    this.logger.debug(`Hold expired passively: session=${parsed.sessionId} seat=${parsed.seatId}`);
-    this.gateway.broadcastSeatUpdate(parsed.sessionId, { seatId: parsed.seatId, status: "released" });
+    await withRootSpan("seat-hold.expired", (span) => {
+      span.setAttribute("session.id", parsed.sessionId);
+      span.setAttribute("seat.id", parsed.seatId);
+      this.logger.debug(`Hold expired passively: session=${parsed.sessionId} seat=${parsed.seatId}`);
+      this.metrics.seatHoldReleased("expired");
+      this.gateway.broadcastSeatUpdate(parsed.sessionId, { seatId: parsed.seatId, status: "released" });
+    });
   }
 }

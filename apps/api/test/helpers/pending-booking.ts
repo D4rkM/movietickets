@@ -9,6 +9,7 @@ import { BookingService } from "../../src/booking/booking.service";
 import * as schema from "../../src/db/schema";
 import { PAYMENT_CLIENT, REFUND_CLIENT } from "../../src/mercadopago/mercadopago.providers";
 import { callAs } from "./guest-flow";
+import { newMercadoPagoId } from "./mercado-pago-ids";
 
 type Db = PostgresJsDatabase<typeof schema>;
 
@@ -285,8 +286,6 @@ export function mercadoPagoMocks(app: NestFastifyApplication): MercadoPagoMocks 
   return { payment: app.get(PAYMENT_CLIENT), refund: app.get(REFUND_CLIENT) };
 }
 
-let nextPaymentId = Math.floor(Date.now() / 1000);
-
 export interface WebhookPaymentOverrides {
   paymentId?: number;
   statusDetail?: string;
@@ -306,7 +305,7 @@ export async function deliverPaymentWebhook(
     typeof paymentIdOrOverrides === "number"
       ? { paymentId: paymentIdOrOverrides }
       : (paymentIdOrOverrides ?? {});
-  const paymentId = overrides.paymentId ?? nextPaymentId++;
+  const paymentId = overrides.paymentId ?? newMercadoPagoId();
 
   mocks.payment.get.mockResolvedValue({
     id: paymentId,
@@ -333,7 +332,7 @@ export async function deliverLegacyIpnBodyWebhook(
   mocks: MercadoPagoMocks,
   bookingId: string,
   status: string,
-  paymentId = nextPaymentId++,
+  paymentId = newMercadoPagoId(),
 ): Promise<number> {
   mocks.payment.get.mockResolvedValue({
     id: paymentId,
@@ -358,7 +357,7 @@ export async function deliverLegacyIpnQueryWebhook(
   mocks: MercadoPagoMocks,
   bookingId: string,
   status: string,
-  paymentId = nextPaymentId++,
+  paymentId = newMercadoPagoId(),
 ): Promise<number> {
   mocks.payment.get.mockResolvedValue({
     id: paymentId,

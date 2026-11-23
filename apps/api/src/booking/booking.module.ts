@@ -1,4 +1,5 @@
 import { Module } from "@nestjs/common";
+import { TelemetryModule } from "../telemetry/telemetry.module";
 import { AuthModule } from "../auth/auth.module";
 import { NotificationModule } from "../notification/notification.module";
 import { SeatingModule } from "../seating/seating.module";
@@ -9,7 +10,7 @@ import { MyBookingsController } from "./my-bookings.controller";
 import { PendingBookingSweeper } from "./pending-booking.sweeper";
 
 @Module({
-  imports: [AuthModule, SeatingModule, NotificationModule],
+  imports: [AuthModule, SeatingModule, NotificationModule, TelemetryModule],
   controllers: [BookingController, BookingConfirmationController, MyBookingsController],
   providers: [BookingService, PendingBookingSweeper],
   exports: [BookingService],

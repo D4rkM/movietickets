@@ -1,0 +1,191 @@
+# Alert rules of docs/flows/observability/spec.md ("Alertas", decision D7).
+# Evaluated every minute; notifications go to Mailpit (contact-points.yaml).
+# Query A is the PromQL of the spec table; C is the threshold.
+apiVersion: 1
+
+groups:
+  - orgId: 1
+    name: movietickets-api
+    folder: MovieTickets
+    interval: 1m
+    rules:
+      - uid: mt-http-5xx-rate
+        title: Taxa de erro 5xx alta
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 900
+              to: 0
+            datasourceUid: prometheus
+            model:
+              refId: A
+              expr: '(sum(rate(http_server_request_duration_seconds_count{service_name="movietickets-api",http_response_status_code=~"5.."}[5m])) or vector(0)) / sum(rate(http_server_request_duration_seconds_count{service_name="movietickets-api"}[5m])) and on() (sum(rate(http_server_request_duration_seconds_count{service_name="movietickets-api"}[5m])) > 0.1)'
+              instant: true
+              range: false
+              intervalMs: 60000
+              maxDataPoints: 43200
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator:
+                    type: gt
+                    params:
+                      - 0.05
+        noDataState: OK
+        execErrState: Error
+        for: 5m
+        annotations:
+          summary: 'Mais de 5% das requests da API responderam 5xx nos últimos 5 min (com tráfego acima de 0,1 req/s).'
+          description: 'Valor atual: {{ humanizePercentage $values.A.Value }}. Abra o dashboard APM (RED) e os logs de erro da API.'
+        labels:
+          severity: critical
+        isPaused: false
+      - uid: mt-http-p95-latency
+        title: Latência p95 alta
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 900
+              to: 0
+            datasourceUid: prometheus
+            model:
+              refId: A
+              expr: 'histogram_quantile(0.95, sum by (le) (rate(http_server_request_duration_seconds_bucket{service_name="movietickets-api",http_route!="/payments/webhook"}[5m])))'
+              instant: true
+              range: false
+              intervalMs: 60000
+              maxDataPoints: 43200
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator:
+                    type: gt
+                    params:
+                      - 1
+        noDataState: OK
+        execErrState: Error
+        for: 10m
+        annotations:
+          summary: 'O p95 de latência da API passou de 1 s por 10 min (sem contar o webhook de pagamento).'
+          description: 'Valor atual: {{ humanizeDuration $values.A.Value }}. Veja as rotas mais lentas no dashboard APM e os traces no Tempo.'
+        labels:
+          severity: warning
+        isPaused: false
+      - uid: mt-payment-rejection-spike
+        title: Pico de pagamento recusado
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 900
+              to: 0
+            datasourceUid: prometheus
+            model:
+              refId: A
+              expr: 'sum(increase(movietickets_payment_status_changed_total{service_name="movietickets-api",payment_status="rejected"}[15m])) / sum(increase(movietickets_payment_status_changed_total{service_name="movietickets-api",payment_status=~"approved|rejected"}[15m])) and on() (sum(increase(movietickets_payment_status_changed_total{service_name="movietickets-api",payment_status=~"approved|rejected"}[15m])) >= 5)'
+              instant: true
+              range: false
+              intervalMs: 60000
+              maxDataPoints: 43200
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator:
+                    type: gt
+                    params:
+                      - 0.5
+        noDataState: OK
+        execErrState: Error
+        for: 0s
+        annotations:
+          summary: 'Mais da metade dos pagamentos decididos nos últimos 15 min foi recusada (mínimo de 5 pagamentos).'
+          description: 'Taxa de recusa: {{ humanizePercentage $values.A.Value }}. Confira o status_detail nos spans de pagamento e o dashboard Negócio.'
+        labels:
+          severity: warning
+        isPaused: false
+      - uid: mt-payment-stale
+        title: Pagamento parado > 24 h
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 900
+              to: 0
+            datasourceUid: prometheus
+            model:
+              refId: A
+              expr: 'sum(increase(movietickets_payment_stale_alert_total{service_name="movietickets-api"}[10m]))'
+              instant: true
+              range: false
+              intervalMs: 60000
+              maxDataPoints: 43200
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator:
+                    type: gt
+                    params:
+                      - 0
+        noDataState: OK
+        execErrState: Error
+        for: 0s
+        annotations:
+          summary: 'O sweeper encontrou reserva com pagamento em andamento há mais de 24 h.'
+          description: 'O log de warn do PendingBookingSweeper traz o bookingId ("Payment in flight for more than 24h"). Revise o pagamento no painel do Mercado Pago.'
+        labels:
+          severity: warning
+        isPaused: false
+      - uid: mt-sweeper-stopped
+        title: Sweeper parado
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 900
+              to: 0
+            datasourceUid: prometheus
+            model:
+              refId: A
+              expr: 'sum(increase(movietickets_sweeper_runs_total{service_name="movietickets-api",outcome="success"}[5m]))'
+              instant: true
+              range: false
+              intervalMs: 60000
+              maxDataPoints: 43200
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator:
+                    type: lt
+                    params:
+                      - 1
+        noDataState: Alerting
+        execErrState: Error
+        for: 5m
+        annotations:
+          summary: 'Nenhuma execução com sucesso do PendingBookingSweeper nos últimos 5 min (ou a API parou de mandar métricas).'
+          description: 'Também dispara com a API fora do ar (sem dados), de propósito. Veja os logs de erro do sweeper e se a API está de pé.'
+        labels:
+          severity: critical
+        isPaused: false

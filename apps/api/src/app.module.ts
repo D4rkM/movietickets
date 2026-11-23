@@ -12,6 +12,7 @@ import { PaymentModule } from "./payment/payment.module";
 import { RefundModule } from "./refund/refund.module";
 import { SeatingModule } from "./seating/seating.module";
 import { LOG_REDACT_PATHS, omitClientIdentity } from "./telemetry/log-redaction";
+import { TelemetryModule } from "./telemetry/telemetry.module";
 import { ValkeyModule } from "./valkey/valkey.module";
 
 @Module({
@@ -32,6 +33,7 @@ import { ValkeyModule } from "./valkey/valkey.module";
       }),
     }),
     ScheduleModule.forRoot(),
+    TelemetryModule,
     DrizzleModule,
     ValkeyModule,
     AuthModule,

@@ -8,6 +8,7 @@ import * as schema from "../../src/db/schema";
 import { CinemaFixture, createCinemaFixture, createUserWithPassword, TestUser } from "./cinema-fixture";
 import { callAs, seatStatusSeenBy } from "./guest-flow";
 import { GuestFlowApp, startGuestFlowApp } from "./guest-flow-app";
+import { newMercadoPagoId } from "./mercado-pago-ids";
 import { insertBookingWithPrices, MercadoPagoMocks, recordPayment } from "./pending-booking";
 
 type Db = PostgresJsDatabase<typeof schema>;
@@ -48,17 +49,9 @@ export function signUserToken(ctx: GuestFlowApp, user: TestUser, role: "customer
   return ctx.jwtService.sign({ kind: "user", sub: user.id, email: user.email, role });
 }
 
-/**
- * Numeric Mercado Pago ids unique across parallel Jest workers and runs: the
- * worker id prefixes the current epoch millis, then each call increments.
- */
-const idBase = Number(`${process.env.JEST_WORKER_ID ?? "0"}${Date.now()}`);
-let nextExternalPaymentId = idBase;
-let nextExternalRefundId = idBase;
-
-/** A fresh numeric Mercado Pago refund id. */
+/** A fresh numeric Mercado Pago refund id (see mercado-pago-ids.ts). */
 export function newMpRefundId(): number {
-  return nextExternalRefundId++;
+  return newMercadoPagoId();
 }
 
 export interface PaidBooking {
@@ -86,7 +79,7 @@ export async function createPaidBooking(
     seats: values.seatIds.map((seatId) => ({ seatId, priceCents })),
   });
   const amountCents = priceCents * values.seatIds.length;
-  const externalPaymentId = String(nextExternalPaymentId++);
+  const externalPaymentId = String(newMercadoPagoId());
   const paymentId = await recordPayment(db, bookingId, "approved", { externalPaymentId, amountCents });
   return { bookingId, paymentId, externalPaymentId, seatIds: values.seatIds, amountCents };
 }

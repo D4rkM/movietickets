@@ -4,12 +4,14 @@ import {
   ConnectedSocket,
   MessageBody,
   OnGatewayConnection,
+  OnGatewayDisconnect,
   SubscribeMessage,
   WebSocketGateway,
   WebSocketServer,
 } from "@nestjs/websockets";
 import { Server, Socket } from "socket.io";
 import { JwtPayload } from "../auth/jwt-payload.type";
+import { BusinessMetrics } from "../telemetry/business-metrics";
 
 const SESSION_ROOM_PREFIX = "session";
 
@@ -30,28 +32,46 @@ export interface SeatUpdateEvent {
  * access boundary here, not CORS.
  */
 @WebSocketGateway({ namespace: "seating", cors: { origin: true } })
-export class SeatingGateway implements OnGatewayConnection {
+export class SeatingGateway implements OnGatewayConnection, OnGatewayDisconnect {
   private readonly logger = new Logger(SeatingGateway.name);
 
   @WebSocketServer()
   private server!: Server;
 
-  constructor(private readonly jwtService: JwtService) {}
+  constructor(
+    private readonly jwtService: JwtService,
+    private readonly metrics: BusinessMetrics,
+  ) {}
 
   async handleConnection(client: Socket): Promise<void> {
     const token = this.extractToken(client);
     if (!token) {
+      this.metrics.wsConnectionRejected("missing_token");
       client.disconnect(true);
       return;
     }
 
+    let payload: JwtPayload;
     try {
-      const payload = await this.jwtService.verifyAsync<JwtPayload>(token);
-      client.data.userId = payload.sub;
+      payload = await this.jwtService.verifyAsync<JwtPayload>(token);
     } catch {
       this.logger.warn(`Rejected WebSocket connection: invalid token (${client.id})`);
+      this.metrics.wsConnectionRejected("invalid_token");
       client.disconnect(true);
+      return;
     }
+
+    // The client may have dropped while the token was being verified: then
+    // handleDisconnect already ran (without userId) and must not be unbalanced.
+    if (!client.connected) return;
+    client.data.userId = payload.sub;
+    this.metrics.wsConnectionOpened();
+  }
+
+  /** Only connections that passed the JWT handshake were counted, so only those are uncounted. */
+  handleDisconnect(client: Socket): void {
+    if (client.data?.userId === undefined) return;
+    this.metrics.wsConnectionClosed();
   }
 
   /** Client joins the room for a session's seat map when opening it. */
@@ -69,6 +89,7 @@ export class SeatingGateway implements OnGatewayConnection {
   /** Called by SeatingService/BookingService whenever a seat's state changes, to notify every other client viewing the same session. */
   broadcastSeatUpdate(sessionId: string, event: SeatUpdateEvent): void {
     this.server.to(this.roomName(sessionId)).emit("seat:update", event);
+    this.metrics.seatBroadcast(event.status);
   }
 
   private roomName(sessionId: string): string {

@@ -4,6 +4,10 @@ import { DRIZZLE } from "../db/drizzle.module";
 import { VALKEY } from "../valkey/valkey.module";
 import { SeatingGateway } from "./seating.gateway";
 import { SeatingService } from "./seating.service";
+import { createMockBusinessMetrics } from "../../test/helpers/business-metrics-mock";
+import { BusinessMetrics } from "../telemetry/business-metrics";
+
+const mockMetrics = createMockBusinessMetrics();
 
 describe("SeatingService", () => {
   const mockDb = {
@@ -66,6 +70,7 @@ describe("SeatingService", () => {
         { provide: DRIZZLE, useValue: mockDb },
         { provide: VALKEY, useValue: mockValkey },
         { provide: SeatingGateway, useValue: mockGateway },
+        { provide: BusinessMetrics, useValue: mockMetrics },
       ],
     }).compile();
 
@@ -517,6 +522,117 @@ describe("SeatingService", () => {
       // ASSERT
       expect(result.seats.find((s) => s.id === "seat-A1")?.status).toBe("held_by_me");
       expect(result.seats.find((s) => s.id === "seat-A2")?.status).toBe("held_by_other");
+    });
+  });
+  describe("metrics", () => {
+    const seat = { id: "seat-A1", roomId: "room-1", rowLabel: "A", seatNumber: 1 };
+
+    beforeEach(() => {
+      mockDb.query.sessions.findFirst.mockResolvedValue(session);
+      mockDb.query.seats.findFirst.mockResolvedValue(seat);
+    });
+
+    it.each([
+      ["user-1", "user"],
+      ["guest:3f1c2a9e-0000-4000-8000-000000000001", "guest"],
+    ])("should count a created hold for holder %s as %s", async (holder, holderKind) => {
+      // ARRANGE
+      mockValkey.set.mockResolvedValue("OK");
+
+      // ACT
+      await service.holdSeat("session-1", "seat-A1", holder);
+
+      // ASSERT
+      expect(mockMetrics.seatHoldCreated).toHaveBeenCalledTimes(1);
+      expect(mockMetrics.seatHoldCreated).toHaveBeenCalledWith(holderKind);
+      expect(mockMetrics.seatHoldRejected).not.toHaveBeenCalled();
+    });
+
+    it("should not count a created hold when the same user only refreshes the TTL", async () => {
+      // ARRANGE
+      mockValkey.get.mockResolvedValue("user-1");
+
+      // ACT
+      await service.holdSeat("session-1", "seat-A1", "user-1");
+
+      // ASSERT
+      expect(mockMetrics.seatHoldCreated).not.toHaveBeenCalled();
+      expect(mockMetrics.seatHoldRejected).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      [
+        "booked",
+        () => lockedSeatsWhere.mockResolvedValue([{ seatId: "seat-A1" }]),
+      ],
+      [
+        "held_by_other",
+        () => mockValkey.get.mockResolvedValue("user-2"),
+      ],
+      [
+        "held_by_other",
+        () => mockValkey.set.mockResolvedValue(null),
+      ],
+      [
+        "limit_reached",
+        () => {
+          mockValkey.scan.mockResolvedValue([
+            "0",
+            Array.from({ length: 6 }, (_, i) => `seat-hold:session-1:seat-other-${i}`),
+          ]);
+          mockValkey.mget.mockResolvedValue(Array.from({ length: 6 }, () => "user-1"));
+        },
+      ],
+    ])("should count a rejected hold with reason %s and no created hold", async (reason, arrange) => {
+      // ARRANGE
+      arrange();
+
+      // ACT
+      const result = service.holdSeat("session-1", "seat-A1", "user-1");
+
+      // ASSERT
+      await expect(result).rejects.toThrow(ConflictException);
+      expect(mockMetrics.seatHoldRejected).toHaveBeenCalledWith(reason);
+      expect(mockMetrics.seatHoldCreated).not.toHaveBeenCalled();
+    });
+
+    it("should count a manual release only when the user's hold was actually deleted", async () => {
+      // ARRANGE
+      mockValkey.get.mockResolvedValueOnce("user-1").mockResolvedValueOnce("user-2");
+
+      // ACT
+      await service.releaseSeat("session-1", "seat-A1", "user-1");
+      await service.releaseSeat("session-1", "seat-A2", "user-1");
+
+      // ASSERT
+      expect(mockMetrics.seatHoldReleased).toHaveBeenCalledTimes(1);
+      expect(mockMetrics.seatHoldReleased).toHaveBeenCalledWith("manual");
+    });
+
+    it("should count every hold released by release-all with reason release_all", async () => {
+      // ARRANGE
+      mockValkey.scan.mockResolvedValue([
+        "0",
+        ["seat-hold:session-1:seat-A1", "seat-hold:session-1:seat-A2", "seat-hold:session-1:seat-B1"],
+      ]);
+      mockValkey.mget.mockResolvedValue(["user-1", "user-2", "user-1"]);
+
+      // ACT
+      await service.releaseAllHoldsForUser("session-1", "user-1");
+
+      // ASSERT
+      expect(mockMetrics.seatHoldReleased).toHaveBeenCalledWith("release_all", 2);
+    });
+
+    it("should count as booked only the hold keys that still existed", async () => {
+      // ARRANGE
+      mockValkey.del.mockResolvedValue(1);
+
+      // ACT
+      await service.releaseHoldsForBookedSeats("session-1", ["seat-1", "seat-2"]);
+
+      // ASSERT
+      expect(mockMetrics.seatHoldReleased).toHaveBeenCalledWith("booked", 1);
     });
   });
 });

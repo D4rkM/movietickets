@@ -1,6 +1,8 @@
+import { SpanKind } from "@opentelemetry/api";
 import { PendingBookingSweeper } from "../src/booking/pending-booking.sweeper";
 import { DRIZZLE } from "../src/db/drizzle.module";
 import { SeatingGateway } from "../src/seating/seating.gateway";
+import { BusinessMetrics } from "../src/telemetry/business-metrics";
 import { CinemaFixture, createCinemaFixture, createUserWithPassword, deleteUsers, TestUser } from "./helpers/cinema-fixture";
 import { SeatingWatcher, watchSessionAs } from "./helpers/guest-flow";
 import { GuestFlowApp, startGuestFlowApp } from "./helpers/guest-flow-app";
@@ -15,6 +17,7 @@ import {
   seatIdsOf,
   settle,
 } from "./helpers/pending-booking";
+import { startTestTelemetry, TestTelemetry, watchMetric } from "./helpers/telemetry";
 
 // Spec: docs/flows/pending-booking-expiry/spec.md (sweeper: AC8-AC10, AC20)
 describe("Sweeper de reservas pendentes (e2e)", () => {
@@ -52,7 +55,7 @@ describe("Sweeper de reservas pendentes (e2e)", () => {
 
   /** A second sweeper over the same DB and gateway, simulating another API instance. */
   function anotherInstance(): PendingBookingSweeper {
-    return new PendingBookingSweeper(ctx.app.get(DRIZZLE), ctx.app.get(SeatingGateway));
+    return new PendingBookingSweeper(ctx.app.get(DRIZZLE), ctx.app.get(SeatingGateway), ctx.app.get(BusinessMetrics));
   }
 
   async function booking(seatIds: string[], status = "pending"): Promise<string> {
@@ -193,5 +196,105 @@ describe("Sweeper de reservas pendentes (e2e)", () => {
     warnings.restore();
     expect(warnings.mentioning(bookingId)).toHaveLength(1);
     expect((await readBooking(ctx.db, bookingId)).status).toBe("pending");
+  });
+  /**
+   * Spec: docs/flows/observability/spec.md (AC10). Kept in this file because the
+   * sweeper is global to the database: running it from another test file in
+   * parallel could expire bookings these tests expect to expire themselves.
+   * Declared last, so the in-memory telemetry (Drizzle patch included) never
+   * touches the tests above.
+   */
+  describe("observabilidade do sweeper", () => {
+    let telemetry: TestTelemetry;
+    let observedSweeper: PendingBookingSweeper;
+
+    beforeAll(() => {
+      telemetry = startTestTelemetry({ registerGlobalTracer: true });
+      observedSweeper = new PendingBookingSweeper(
+        ctx.app.get(DRIZZLE),
+        ctx.app.get(SeatingGateway),
+        new BusinessMetrics(telemetry.meterProvider),
+      );
+    });
+
+    beforeEach(() => {
+      telemetry.reset();
+    });
+
+    afterAll(async () => {
+      await telemetry.shutdown();
+    });
+
+    it("AC10: deve registrar execução do sweeper com sucesso e as reservas expiradas", async () => {
+      // GIVEN uma reserva pendente vencida, sem pagamento
+      const [seatId] = await fixture.addSeats(1);
+      const bookingId = await booking([seatId]);
+      await expireDeadlineOf(ctx.db, bookingId);
+      const successfulRuns = await watchMetric(telemetry, "movietickets.sweeper.runs", { outcome: "success" });
+      const sweptBookings = await watchMetric(telemetry, "movietickets.booking.expired", { "expiry.trigger": "sweeper" });
+
+      // WHEN o sweeper roda
+      const result = await observedSweeper.run();
+
+      // THEN conta uma execução com sucesso e as reservas que ele expirou (a nossa entre elas)
+      expect(result?.expiredBookingIds).toContain(bookingId);
+      expect(await successfulRuns.increase()).toBe(1);
+      expect(await sweptBookings.increase()).toBe(result!.expiredBookingIds.length);
+      const durations = await telemetry.metricPoints("movietickets.sweeper.duration");
+      expect(durations.map((point) => point.attributes)).toContainEqual({ outcome: "success" });
+    });
+
+    it("AC10: deve gerar o span raiz pending-booking-sweeper.run com as queries como filhas", async () => {
+      // GIVEN uma reserva pendente vencida, sem pagamento
+      const [seatId] = await fixture.addSeats(1);
+      const bookingId = await booking([seatId]);
+      await expireDeadlineOf(ctx.db, bookingId);
+
+      // WHEN o sweeper roda
+      const result = await observedSweeper.run();
+
+      // THEN o span raiz traz o outcome e a quantidade expirada, e as queries do banco ficam abaixo dele
+      const spans = telemetry.spans();
+      const run = spans.find((span) => span.name === "pending-booking-sweeper.run")!;
+      expect(run.parentSpanContext).toBeUndefined();
+      expect(run.attributes).toEqual({
+        "sweeper.outcome": "success",
+        "sweeper.expired_count": result!.expiredBookingIds.length,
+      });
+      const runDescendants = telemetry.spansOfTrace(run.spanContext().traceId).filter((span) => span !== run);
+      expect(runDescendants.map((span) => span.name)).toEqual(
+        expect.arrayContaining(["db.transaction", "UPDATE bookings"]),
+      );
+      expect(runDescendants.filter((span) => span.kind === SpanKind.CLIENT).length).toBeGreaterThan(0);
+    });
+
+    it("AC10: deve contar o pagamento parado há mais de 24h alertado pelo sweeper", async () => {
+      // GIVEN uma reserva pendente criada há 25h com pagamento ainda pending
+      const [seatId] = await fixture.addSeats(1);
+      const bookingId = await booking([seatId]);
+      await backdateBooking(ctx.db, bookingId, 25);
+      await recordPayment(ctx.db, bookingId, "pending");
+      const warnings = captureWarnings();
+      const staleAlerts = await watchMetric(telemetry, "movietickets.payment.stale_alert");
+
+      // WHEN o sweeper roda
+      const result = await observedSweeper.run();
+
+      // THEN conta cada reserva alertada nesta execução (a nossa entre elas)
+      warnings.restore();
+      expect(result?.stalePaymentAlertBookingIds).toContain(bookingId);
+      expect(await staleAlerts.increase()).toBe(result!.stalePaymentAlertBookingIds.length);
+    });
+
+    it("AC10: deve registrar como skipped a execução que encontra a anterior ainda rodando", async () => {
+      // GIVEN o contador de execuções puladas
+      const skippedRuns = await watchMetric(telemetry, "movietickets.sweeper.runs", { outcome: "skipped" });
+
+      // WHEN dois ticks da mesma instância começam ao mesmo tempo
+      await Promise.all([observedSweeper.run(), observedSweeper.run()]);
+
+      // THEN o segundo é contado como skipped
+      expect(await skippedRuns.increase()).toBe(1);
+    });
   });
 });

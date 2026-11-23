@@ -5,6 +5,7 @@ import type { Redis } from "ioredis";
 import { activeBookingCondition } from "../booking/booking-lock";
 import { DRIZZLE } from "../db/drizzle.module";
 import * as schema from "../db/schema";
+import { BusinessMetrics } from "../telemetry/business-metrics";
 import { VALKEY } from "../valkey/valkey.module";
 import {
   guestHoldMember,
@@ -48,6 +49,7 @@ export class SeatingService {
     @Inject(DRIZZLE) private readonly db: PostgresJsDatabase<typeof schema>,
     @Inject(VALKEY) private readonly valkey: Redis,
     private readonly gateway: SeatingGateway,
+    private readonly metrics: BusinessMetrics,
   ) {}
 
   async getSeatMap(sessionId: string, userId: string): Promise<SeatMapResponse> {
@@ -102,6 +104,7 @@ export class SeatingService {
     }
 
     if (await this.isSeatBooked(sessionId, seatId)) {
+      this.metrics.seatHoldRejected("booked");
       throw new ConflictException("Assento já foi reservado");
     }
 
@@ -115,11 +118,13 @@ export class SeatingService {
       return { seatId, status: "held", expiresInSeconds: HOLD_TTL_SECONDS };
     }
     if (currentHolder) {
+      this.metrics.seatHoldRejected("held_by_other");
       throw new ConflictException("Assento já está sendo segurado por outro usuário");
     }
 
     const activeHolds = await this.countActiveHoldsForUser(sessionId, userId);
     if (activeHolds >= MAX_HELD_SEATS_PER_USER) {
+      this.metrics.seatHoldRejected("limit_reached");
       throw new ConflictException(
         `Limite de ${MAX_HELD_SEATS_PER_USER} assentos simultâneos por sessão atingido`,
       );
@@ -128,9 +133,11 @@ export class SeatingService {
     const acquired = await this.valkey.set(key, userId, "EX", HOLD_TTL_SECONDS, "NX");
     if (acquired !== "OK") {
       // Someone else won the race between the check above and this SETNX.
+      this.metrics.seatHoldRejected("held_by_other");
       throw new ConflictException("Assento já está sendo segurado por outro usuário");
     }
     await this.trackGuestHolds(userId, sessionId, [seatId]);
+    this.metrics.seatHoldCreated(guestIdFromHolder(userId) ? "guest" : "user");
 
     this.gateway.broadcastSeatUpdate(sessionId, { seatId, status: "held", heldByUserId: userId });
     return { seatId, status: "held", expiresInSeconds: HOLD_TTL_SECONDS };
@@ -158,6 +165,7 @@ export class SeatingService {
 
     await this.valkey.del(key);
     await this.untrackGuestHolds(userId, sessionId, [seatId]);
+    this.metrics.seatHoldReleased("manual");
     this.gateway.broadcastSeatUpdate(sessionId, { seatId, status: "released" });
     return { seatId, released: true };
   }
@@ -184,6 +192,7 @@ export class SeatingService {
 
     const releasedSeatIds = ownedKeys.map((key) => seatIdFromHoldKey(sessionId, key));
     await this.untrackGuestHolds(userId, sessionId, releasedSeatIds);
+    this.metrics.seatHoldReleased("release_all", releasedSeatIds.length);
     for (const seatId of releasedSeatIds) {
       this.gateway.broadcastSeatUpdate(sessionId, { seatId, status: "released" });
     }
@@ -202,7 +211,9 @@ export class SeatingService {
   async releaseHoldsForBookedSeats(sessionId: string, seatIds: string[]): Promise<void> {
     if (seatIds.length === 0) return;
     const keys = seatIds.map((seatId) => this.holdKey(sessionId, seatId));
-    await this.valkey.del(...keys);
+    // DEL returns how many keys existed: only those were real holds released.
+    const released = await this.valkey.del(...keys);
+    this.metrics.seatHoldReleased("booked", released);
   }
 
   /** True when a booking that still locks the seat exists (see `activeBookingCondition`). */

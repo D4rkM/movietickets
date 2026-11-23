@@ -7,6 +7,7 @@ import * as schema from "../db/schema";
 import { NotificationService } from "../notification/notification.service";
 import { SeatingGateway } from "../seating/seating.gateway";
 import { SeatingService } from "../seating/seating.service";
+import { BusinessMetrics } from "../telemetry/business-metrics";
 import {
   assertBookingNotExpired,
   BookingAlreadyPendingException,
@@ -39,6 +40,9 @@ export interface CreateBookingResult {
   ticketType: TicketType;
   priceCents: number;
 }
+
+/** Which payment path confirmed the booking (metric `confirmation.source`). */
+export type PaidConfirmationSource = "payment_sync" | "payment_webhook";
 
 export interface ApprovedPayment {
   externalPaymentId: string;
@@ -77,6 +81,7 @@ export class BookingService {
     private readonly gateway: SeatingGateway,
     private readonly seatingService: SeatingService,
     private readonly notificationService: NotificationService,
+    private readonly metrics: BusinessMetrics,
   ) {}
 
   /** Single-seat convenience wrapper around {@link createBookingForSeats}. */
@@ -118,6 +123,7 @@ export class BookingService {
     const requestedSeatIds = seats.map((seat) => seat.seatId);
     let results: CreateBookingResult[];
     let expiredSeats: { bookingId: string; seatId: string }[] = [];
+    let expiredBookingCount = 0;
     try {
       results = await this.db.transaction(async (tx) => {
         // Lazy expiry: a pending booking past its deadline (and with no payment in
@@ -147,6 +153,7 @@ export class BookingService {
             ),
           )
           .returning({ id: schema.bookings.id });
+        expiredBookingCount = expiredBookings.length;
         if (expiredBookings.length > 0) {
           // Every seat of an expired booking is freed, not only the requested ones.
           expiredSeats = await tx
@@ -214,6 +221,9 @@ export class BookingService {
     // to protect no longer matters).
     await this.seatingService.releaseHoldsForBookedSeats(sessionId, requestedSeatIds);
 
+    // Only reached after the transaction committed.
+    this.metrics.bookingCreated(seats.length);
+    this.metrics.bookingExpired("lazy", expiredBookingCount);
     this.logExpiredSeats("lazy expiry on booking creation", expiredSeats);
     for (const { seatId } of expiredSeats) {
       if (!requestedSeatIds.includes(seatId)) {
@@ -254,6 +264,7 @@ export class BookingService {
       if (current) this.assertConfirmable(current);
       throw new BookingExpiredException();
     }
+    this.metrics.bookingConfirmed("mock");
 
     const bookedSeats = await this.db.query.bookingSeats.findMany({
       where: eq(schema.bookingSeats.bookingId, bookingId),
@@ -282,6 +293,7 @@ export class BookingService {
     bookingId: string,
     payment?: ApprovedPayment,
     tx?: DbExecutor,
+    source: PaidConfirmationSource = "payment_webhook",
   ): Promise<PaidBookingConfirmation> {
     const executor = tx ?? this.db;
     const [updated] = await executor
@@ -290,11 +302,19 @@ export class BookingService {
       .where(and(eq(schema.bookings.id, bookingId), eq(schema.bookings.status, "pending")))
       .returning();
     if (!updated) {
-      await this.flagExpiredBookingForRefundReview(bookingId, payment, executor);
-      return { confirmed: false, notify: async () => undefined };
+      const flagged = await this.flagExpiredBookingForRefundReview(bookingId, payment, executor);
+      const notifyFlagged = async () => {
+        if (flagged) this.metrics.bookingRefundReviewFlagged();
+      };
+      if (!tx) {
+        await notifyFlagged();
+      }
+      return { confirmed: false, notify: notifyFlagged };
     }
 
     const notify = async () => {
+      // Runs only after the caller's transaction committed (or right away without one).
+      this.metrics.bookingConfirmed(source);
       const bookedSeats = await this.db.query.bookingSeats.findMany({
         where: eq(schema.bookingSeats.bookingId, bookingId),
       });
@@ -349,6 +369,7 @@ export class BookingService {
     const releasedSeatIds = released.map((row) => row.seatId);
 
     const notify = async () => {
+      this.metrics.bookingCancelled();
       for (const seatId of releasedSeatIds) {
         this.gateway.broadcastSeatUpdate(cancelled.sessionId, { seatId, status: "released" });
       }
@@ -403,12 +424,13 @@ export class BookingService {
    * Flags an `expired` booking that received an approved payment for manual
    * refund review. The conditional update only matches the first time, so a
    * redelivered webhook neither changes anything nor repeats the warning.
+   * Returns whether the booking was flagged by this call.
    */
   private async flagExpiredBookingForRefundReview(
     bookingId: string,
     payment?: ApprovedPayment,
     executor: DbExecutor = this.db,
-  ): Promise<void> {
+  ): Promise<boolean> {
     const [flagged] = await executor
       .update(schema.bookings)
       .set({ needsRefundReview: true })
@@ -420,12 +442,13 @@ export class BookingService {
         ),
       )
       .returning({ id: schema.bookings.id });
-    if (!flagged) return;
+    if (!flagged) return false;
 
     this.logger.warn(
       `Approved payment on an expired booking, review refund: bookingId=${bookingId} ` +
         `externalPaymentId=${payment?.externalPaymentId ?? "unknown"} amountCents=${payment?.amountCents ?? "unknown"}`,
     );
+    return true;
   }
 
   private logExpiredSeats(reason: string, expiredSeats: { bookingId: string; seatId: string }[]): void {
@@ -466,7 +489,9 @@ export class BookingService {
         })),
         totalCents: booking.seats.reduce((sum, bookingSeat) => sum + bookingSeat.priceCents, 0),
       });
+      this.metrics.confirmationEmail("sent");
     } catch (err) {
+      this.metrics.confirmationEmail("failed");
       this.logger.warn(`Failed to send booking confirmation email for ${bookingId}: ${err}`);
     }
   }

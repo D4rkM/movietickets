@@ -1,0 +1,15 @@
+# Alert notifications go to the local Mailpit (decision D4 of
+# docs/flows/observability/spec.md): GF_SMTP_HOST=mailpit:1025 in
+# docker-compose.yml, messages at http://localhost:8025. Never a real inbox.
+apiVersion: 1
+
+contactPoints:
+  - orgId: 1
+    name: mailpit-email
+    receivers:
+      - uid: movietickets-mailpit-email
+        type: email
+        settings:
+          addresses: oncall@movietickets.local
+          singleEmail: true
+        disableResolveMessage: false
