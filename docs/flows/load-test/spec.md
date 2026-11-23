@@ -28,7 +28,7 @@ Os dashboards do Grafana (métricas de negócio `movietickets.*` e APM/RED, ver 
 
 - Hold: `POST /sessions/:id/seats/:seatId/hold`, responde `200` com `{ seatId, status: "held", expiresInSeconds }`; assento segurado por outro usuário ou já reservado responde `409` (`apps/api/src/seating/seating.controller.ts`, `seating.service.ts`). O mesmo usuário segurando de novo recebe `200` (renova TTL), então cada VU precisa de um usuário próprio.
 - Reserva: `POST /sessions/:id/seats/:seatId/book` com `{ ticketType: "full" }`, `201` (`apps/api/src/booking/booking.controller.ts`).
-- A rota `POST /bookings/:id/confirm` (confirmação simulada) existe hoje sem flag de ambiente (`booking-confirmation.controller.ts`; não há `ENABLE_TEST_ROUTES` no código). Se uma versão futura da API devolver `404` nela, o cenário `booking_cancel` avisa e é pulado sem falhar.
+- A rota `POST /bookings/:id/confirm` (confirmação simulada) só existe quando a API roda com `ENABLE_TEST_ROUTES=true` (hardening do #91). Sem a flag ela devolve `404` e o cenário `booking_cancel` avisa e é pulado sem falhar.
 - Cancelar só é permitido até 120 min antes da sessão (`CANCELLATION_DEADLINE_MINUTES`, `booking-lock.ts`), e o seed cria sessões a partir de 1h à frente. Por isso os cenários de escrita só usam sessões que começam daqui a mais de 3h.
 - `POST /auth/guest` tem rate limit de 10 por minuto por IP (`guest-token.constants.ts`), então o script usa usuários logados, não convidados.
 - k6: `http_req_failed` só conta status fora do esperado porque cada request declara seus status esperados (`responseCallback: http.expectedStatuses(...)`); um `409` no hold não é falha.

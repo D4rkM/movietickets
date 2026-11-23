@@ -62,7 +62,7 @@ test("AC27: deve mostrar valor e prazo no diálogo, cancelar o ingresso, mantê-
   // THEN the ticket stays listed as cancelled, with no refund badge (nothing was charged)
   await expect(dialog).toBeHidden();
   const card = ticketCard(page, session.movieTitle);
-  await expect(card.getByText("Cancelado")).toBeVisible();
+  await expect(card.getByText("Cancelado", { exact: true })).toBeVisible();
   await expect(card.getByRole("button", { name: "Cancelar" })).toHaveCount(0);
   await expect(card.getByTestId("refund-badge")).toHaveCount(0);
 

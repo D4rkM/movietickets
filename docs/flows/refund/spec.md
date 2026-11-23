@@ -339,6 +339,7 @@ Campos novos em `MyBooking`:
 - **AC27** (D1): em "Meus ingressos", o diálogo de cancelamento mostra o valor total do ingresso, diz que o estorno é integral no cartão da compra e mostra a data/hora limite (`cancellableUntil`); depois do limite o botão "Cancelar" não aparece e aparece o texto de cancelamento encerrado.
 - **AC28**: cancelar com sucesso mantém o ingresso na lista como cancelado com o selo do estorno; 409/422 mostram o `message` do back; 504 mostra a mensagem e "Tentar de novo" chama o mesmo endpoint.
 - **AC29**: o selo do ingresso mostra "Estorno em andamento", "Estorno concluído" ou a mensagem de falha conforme `refund.status`.
+- **AC33**: em "Meus ingressos", o ingresso `cancelled`/`expired` continua na lista com os dados (filme, sessão, assentos, total) esmaecidos (`opacity-60`) e o aviso do estorno fora da área esmaecida, legível; reserva cancelada mostra "Ingresso cancelado. Estorno em andamento." ou "Ingresso cancelado e estornado." conforme `refund.status` (falha mantém a mensagem da AC29); ingresso ativo não é esmaecido.
 - **AC30**: a página `/admin/refunds` lista a fila com motivo em pt-BR e botão "Estornar" com confirmação; com estorno em andamento o botão vira "Atualizar status"; depois da ação a fila recarrega; erro mostra o `message` do back.
 
 ### E-mail
@@ -419,6 +420,7 @@ Cada AC vira pelo menos um teste com o número da AC no título do `it`. Teste d
 | AC27 | componente (Vitest + RTL) | diálogo mostra valor e prazo; depois do prazo não há botão "Cancelar" |
 | AC28 | componente | sucesso mantém o ingresso com selo; 422 mostra `message`; 504 mostra "Tentar de novo" e reenvia |
 | AC29 | componente | um caso por status de estorno (`it.each`) |
+| AC33 | componente | ingresso cancelado tem `opacity-60` nos dados e não no selo; ingresso ativo não |
 | AC30 | componente | fila renderiza motivos; "Estornar" pede confirmação e chama a API; "Atualizar status" com estorno em andamento |
 | AC31 | integração (Mailpit) | `it("AC31: deve enviar e-mail de estorno solicitado")` e `it("AC31: não deve falhar o cancelamento quando o e-mail falha")` |
 | AC32 | integração | `it("AC32: deve criar a tabela de estornos sem alterar dados existentes")` |

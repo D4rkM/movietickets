@@ -65,7 +65,7 @@ test: ## Run unit tests (apps/api)
 test-integration: ## Run integration tests against the local Postgres
 	pnpm --filter api test:integration
 
-load: ## Load test (k6) against the local stack: browse + seat contention + book/cancel. Env: BASE_URL, SCENARIOS, VUS, DURATION (see load/README.md). Writes test data!
+load: ## Load test (k6) against the local stack: browse + seat contention + book/cancel (the latter needs ENABLE_TEST_ROUTES=true on the api, else skipped). Env: BASE_URL, SCENARIOS, VUS, DURATION (see load/README.md). Writes test data!
 	@command -v k6 >/dev/null 2>&1 || { echo "k6 not found. Install it first (macOS: brew install k6; others: https://grafana.com/docs/k6/latest/set-up/install-k6/)." >&2; exit 1; }
 	k6 run load/main.js
 

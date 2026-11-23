@@ -27,7 +27,7 @@ Projeto criado em `~/projects/movietickets`. **Esta primeira execução é só s
 4. Arquivos de config base: `pnpm-workspace.yaml`, `package.json` raiz, `docker-compose.yml` (Postgres + Valkey), `.github/workflows/*.yml` (esqueleto), `CLAUDE.md` (regra de testes), `README.md` raiz + READMEs vazios/esqueleto em `apps/web` e `apps/api`
 5. `git init` + primeiro commit
 
-Sequência/classe diagrams por feature (`docs/flows/<feature>/sequence.md`, `docs/flows/<feature>/class.md`) e o código real de cada app ficam pra próximas rodadas, uma feature por vez.
+Sequência/classe diagrams por feature (`docs/flows/<feature>/sequence.md`, `docs/flows/<feature>/class.md`) e o código real de cada app ficam pra próximas rodadas, uma feature por vez. Diagramas de classes já existentes: booking, seating, checkout-transparente (pagamento), refund, auth, admin-panel e frontend.
 
 ## Organização do projeto (monorepo)
 
@@ -58,15 +58,18 @@ movietickets/                    (raiz do monorepo)
 │   │   ├── use-cases.drawio     (diagrama UML de casos de uso, referenciado por use-cases.md)
 │   │   └── use-cases.md         (tabela de casos de uso com specs/ACs + aproximação Mermaid)
 │   ├── bruno/                   (collection do Bruno pra testar a API manualmente)
-│   └── flows/                   (por feature: spec.md + sequence.md, ver cada pasta)
+│   └── flows/                   (por feature: spec.md + sequence.md/class.md quando houver)
 │       ├── TEMPLATE.spec.md
-│       ├── admin-panel/
-│       ├── booking/
-│       ├── checkout-transparente/
+│       ├── admin-panel/         (spec.md, class.md)
+│       ├── auth/                (class.md)
+│       ├── booking/             (sequence.md, class.md)
+│       ├── checkout-transparente/ (spec.md, sequence.md, class.md; inclui MercadoPagoModule)
+│       ├── frontend/            (class.md, componentes de apps/web)
 │       ├── observability/
 │       ├── pending-booking-expiry/
 │       ├── public-catalog-login-gate/
-│       └── refund/
+│       ├── refund/              (spec.md, sequence.md, class.md)
+│       └── seating/             (class.md, hold no Valkey + gateway)
 ├── docker-compose.yml           (Postgres + Valkey + Mailpit; profile `full` sobe api + web + Drizzle Studio; profile `observability` sobe o `grafana/otel-lgtm`)
 ├── Makefile                     (atalhos, `make help`)
 ├── pnpm-workspace.yaml

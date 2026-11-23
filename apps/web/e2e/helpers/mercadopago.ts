@@ -117,7 +117,7 @@ export async function approvePaymentsThroughRealConfirm(page: Page): Promise<Arr
       method: "POST",
       headers: { Authorization: authorization },
     });
-    expect(confirmResponse.ok, `confirm booking ${bookingId} returned ${confirmResponse.status}`).toBe(true);
+    expect(confirmResponse.ok, `confirm booking ${bookingId} returned ${confirmResponse.status} (the API needs ENABLE_TEST_ROUTES=true)`).toBe(true);
 
     await route.fulfill({
       status: 201,

@@ -26,7 +26,7 @@ Fluxo completo, na ordem das pastas da collection:
    O booking nasce `pending` com prazo de 10 min (`expires_at`); o `bookingId` fica salvo na env var.
 9. Pagamento, uma das duas opções:
    - **payment/Payment summary** + **payment/Create payment (attempt)** — Checkout Transparente de verdade (sandbox). Precisa de um token de cartão de teste na env var `cardToken` (ver docs do request); na prática é mais simples pagar pelo front.
-   - **booking/Confirm booking (mocked payment)** — confirma sem gateway (só pra teste manual/e2e).
+   - **booking/Confirm booking (mocked payment)** — confirma sem gateway (só pra teste manual/e2e; exige `ENABLE_TEST_ROUTES=true` na API, senão 404).
 10. **booking/Get my bookings** — histórico de ingressos confirmados. **booking/Cancel booking** cancela e libera os assentos.
 11. **admin/** — CRUD de filmes, cinemas, salas e sessões; exige o token do admin. Os `Create` salvam o id criado (`movieId`, `cinemaId`, `roomId`, `adminSessionId`) pros requests seguintes da pasta.
 
